@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Add Rescue Option — Migraine Tracker{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Add Rescue Option</h1>
+  <a href="{{ url_for('protocols') }}" class="btn btn-secondary">Cancel</a>
+</div>
+
+<div class="form-card">
+  <form method="POST">
+    <div class="form-group">
+      <label for="name">Name</label>
+      <input type="text" id="name" name="name" required placeholder="e.g. Sumatriptan 100mg, Excedrin, Naproxen">
+    </div>
+
+    <div class="form-group">
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes" placeholder="Dose, instructions, side effects…"></textarea>
+    </div>
+
+    <div class="form-group">
+      <label class="toggle-label">
+        <input type="checkbox" name="available" value="1" checked>
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        Currently available
+      </label>
+    </div>
+
+    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:8px;">
+      <a href="{{ url_for('protocols') }}" class="btn btn-secondary">Cancel</a>
+      <button type="submit" class="btn btn-primary">Save</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

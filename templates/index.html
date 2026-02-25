@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Migraine Tracker{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Dashboard</h1>
+  <a href="{{ url_for('new_episode') }}" class="btn btn-primary">+ Log Episode</a>
+</div>
+
+{% set total = episodes | length %}
+<div class="stat-strip">
+  <div class="stat-box">
+    <div class="stat-label">Recent Episodes</div>
+    <div class="stat-value accent">{{ total }}</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">Active Protocols</div>
+    <div class="stat-value accent">{{ protocols | length }}</div>
+  </div>
+  {% if episodes %}
+  <div class="stat-box">
+    <div class="stat-label">Last Severity</div>
+    <div class="stat-value {% if episodes[0].peak_severity >= 7 %}" style="color:var(--high){% elif episodes[0].peak_severity >= 4 %}" style="color:var(--mid){% else %}" style="color:var(--low){% endif %}">
+      {{ episodes[0].peak_severity }}/10
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="page-header" style="margin-bottom:16px;">
+  <h2 style="font-size:17px; font-weight:600;">Recent Episodes</h2>
+  <a href="{{ url_for('episodes') }}" style="font-size:13px; color:var(--text-muted);">View all →</a>
+</div>
+
+{% if episodes %}
+  {% for ep in episodes %}
+  <div class="card {{ ep.severity_class }}">
+    <div class="episode-card">
+      <div class="severity-badge">{{ ep.peak_severity }}</div>
+      <div>
+        <div style="font-weight:600;">{{ ep.onset.strftime('%b %-d, %Y at %-I:%M %p') }}</div>
+        <div class="episode-meta">
+          {% if ep.duration_hours %}<span>{{ ep.duration_hours }}h duration</span>{% endif %}
+          <span class="imp-{{ ep.functional_impairment }}">{{ ep.impairment_label }}</span>
+          {% if ep.rescue_effectiveness %}<span>rescue {{ ep.rescue_effectiveness }}/10</span>{% endif %}
+        </div>
+        {% if ep.notes %}<div class="notes-text">{{ ep.notes }}</div>{% endif %}
+      </div>
+      <div class="episode-actions">
+        <a href="{{ url_for('edit_episode', episode_id=ep.id) }}" class="btn btn-secondary btn-sm">Edit</a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="empty-state">
+    <p>No episodes logged yet.</p>
+    <a href="{{ url_for('new_episode') }}" class="btn btn-primary">Log your first episode</a>
+  </div>
+{% endif %}
+
+{% if protocols %}
+<hr class="divider">
+<div class="page-header" style="margin-bottom:16px;">
+  <h2 style="font-size:17px; font-weight:600;">Active Protocols</h2>
+  <a href="{{ url_for('protocols') }}" style="font-size:13px; color:var(--text-muted);">Manage →</a>
+</div>
+
+{% for p in protocols %}
+<div class="card">
+  <div class="protocol-card">
+    <div class="protocol-info">
+      <div class="protocol-name">{{ p.name }}</div>
+      <div class="protocol-meta">
+        <span class="tag tag-{{ p.type }}">{{ p.type }}</span>
+        {% if p.dose_frequency %}{{ p.dose_frequency }}{% endif %}
+        {% if p.start_date %} · since {{ p.start_date.strftime('%b %-d, %Y') }}{% endif %}
+      </div>
+    </div>
+    <a href="{{ url_for('edit_protocol', protocol_id=p.id) }}" class="btn btn-secondary btn-sm">Edit</a>
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

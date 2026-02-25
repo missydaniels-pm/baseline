@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Log Episode — Migraine Tracker{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Log Episode</h1>
+  <a href="{{ url_for('episodes') }}" class="btn btn-secondary">Cancel</a>
+</div>
+
+<div class="form-card">
+  <form method="POST">
+    <div class="form-row">
+      <div class="form-group">
+        <label for="onset">Onset Date & Time</label>
+        <input type="datetime-local" id="onset" name="onset"
+               value="{{ now.strftime('%Y-%m-%dT%H:%M') if now else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="duration_hours">Duration (hours)</label>
+        <input type="number" id="duration_hours" name="duration_hours"
+               min="0" max="168" step="0.5" placeholder="e.g. 4.5">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="peak_severity">Peak Severity</label>
+      <div class="slider-wrap">
+        <input type="range" id="peak_severity" name="peak_severity"
+               min="1" max="10" value="5">
+        <span class="slider-value" id="peak_severity_display">5</span>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="functional_impairment">Functional Impairment</label>
+      <select id="functional_impairment" name="functional_impairment">
+        <option value="">— select —</option>
+        <option value="working_normally">Working normally</option>
+        <option value="working_reduced">Working reduced</option>
+        <option value="cannot_work">Cannot work</option>
+        <option value="completely_incapacitated">Completely incapacitated</option>
+      </select>
+    </div>
+
+    <hr class="divider">
+
+    <div class="form-group">
+      <label for="rescue_protocol">Rescue Protocol Used</label>
+      <select id="rescue_protocol" name="rescue_protocol">
+        <option value="">— none —</option>
+        {% for opt in rescue_options %}
+        <option value="{{ opt.name }}"{% if not opt.available %} class="option-unavailable"{% endif %}>
+          {{ opt.name }}{% if not opt.available %} (unavailable){% endif %}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="rescue_effectiveness">Rescue Effectiveness (1–10)</label>
+        <div class="slider-wrap">
+          <input type="range" id="rescue_effectiveness" name="rescue_effectiveness"
+                 min="1" max="10" value="5">
+          <span class="slider-value" id="rescue_effectiveness_display">5</span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="time_to_relief_hours">Time to Relief (hours)</label>
+        <input type="number" id="time_to_relief_hours" name="time_to_relief_hours"
+               min="0" max="72" step="0.25" placeholder="e.g. 1.5">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes" placeholder="Triggers, context, observations…"></textarea>
+    </div>
+
+    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:8px;">
+      <a href="{{ url_for('episodes') }}" class="btn btn-secondary">Cancel</a>
+      <button type="submit" class="btn btn-primary">Save Episode</button>
+    </div>
+  </form>
+</div>
+
+<script>
+  // Set default datetime to now
+  var onset = document.getElementById('onset');
+  if (!onset.value) {
+    var now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    onset.value = now.toISOString().slice(0, 16);
+  }
+</script>
+{% endblock %}

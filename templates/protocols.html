@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Protocols — Migraine Tracker{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Protocols</h1>
+</div>
+
+{# ── Preventatives ──────────────────────────────────────────────────── #}
+<div class="section-header">
+  <div>
+    <h2 class="section-title">Preventatives</h2>
+    <p class="section-sub">Ongoing medications and supplements to reduce frequency or severity.</p>
+  </div>
+  <a href="{{ url_for('new_protocol') }}" class="btn btn-primary btn-sm">+ Add</a>
+</div>
+
+{% set active_prev = preventatives | selectattr('status', 'equalto', 'active') | list %}
+{% set inactive_prev = preventatives | rejectattr('status', 'equalto', 'active') | list %}
+
+{% if active_prev %}
+  {% for p in active_prev %}
+  <div class="card">
+    <div class="protocol-card">
+      <div class="protocol-info">
+        <div class="protocol-name">{{ p.name }}</div>
+        <div class="protocol-meta">
+          {% if p.dose_frequency %}<span>{{ p.dose_frequency }}</span>{% endif %}
+          {% if p.start_date %}<span> · since {{ p.start_date.strftime('%b %-d, %Y') }}</span>{% endif %}
+          <span class="status-active"> · active</span>
+        </div>
+        {% if p.notes %}<div class="notes-text">{{ p.notes }}</div>{% endif %}
+      </div>
+      <a href="{{ url_for('edit_protocol', protocol_id=p.id) }}" class="btn btn-secondary btn-sm">Edit</a>
+    </div>
+  </div>
+  {% endfor %}
+{% endif %}
+
+{% if inactive_prev %}
+  {% for p in inactive_prev %}
+  <div class="card" style="opacity:0.6;">
+    <div class="protocol-card">
+      <div class="protocol-info">
+        <div class="protocol-name">{{ p.name }}</div>
+        <div class="protocol-meta">
+          {% if p.dose_frequency %}<span>{{ p.dose_frequency }}</span>{% endif %}
+          {% if p.start_date %}<span> · since {{ p.start_date.strftime('%b %-d, %Y') }}</span>{% endif %}
+          <span class="status-{{ p.status }}"> · {{ p.status }}</span>
+        </div>
+        {% if p.notes %}<div class="notes-text">{{ p.notes }}</div>{% endif %}
+      </div>
+      <a href="{{ url_for('edit_protocol', protocol_id=p.id) }}" class="btn btn-secondary btn-sm">Edit</a>
+    </div>
+  </div>
+  {% endfor %}
+{% endif %}
+
+{% if not preventatives %}
+  <div class="empty-state" style="padding:28px 0;">
+    <p>No preventatives tracked yet.</p>
+    <a href="{{ url_for('new_protocol') }}" class="btn btn-primary">Add first preventative</a>
+  </div>
+{% endif %}
+
+<hr class="divider">
+
+{# ── Rescue Options ─────────────────────────────────────────────────── #}
+<div class="section-header">
+  <div>
+    <h2 class="section-title">Rescue Options</h2>
+    <p class="section-sub">Medications available when an episode strikes. Toggle availability to reflect what's on hand.</p>
+  </div>
+  <a href="{{ url_for('new_rescue_option') }}" class="btn btn-primary btn-sm">+ Add</a>
+</div>
+
+{% if rescue_options %}
+<div class="rescue-grid">
+  {% for opt in rescue_options %}
+  <div class="rescue-card {% if not opt.available %}rescue-unavailable{% endif %}">
+    <div class="rescue-card-top">
+      <span class="rescue-name">{{ opt.name }}</span>
+      <span class="avail-badge {% if opt.available %}avail-yes{% else %}avail-no{% endif %}">
+        {% if opt.available %}available{% else %}unavailable{% endif %}
+      </span>
+    </div>
+    {% if opt.notes %}<div class="notes-text" style="margin-top:6px;">{{ opt.notes }}</div>{% endif %}
+    <div style="margin-top:10px;">
+      <a href="{{ url_for('edit_rescue_option', option_id=opt.id) }}" class="btn btn-secondary btn-sm">Edit</a>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+  <div class="empty-state" style="padding:28px 0;">
+    <p>No rescue options added yet.</p>
+    <a href="{{ url_for('new_rescue_option') }}" class="btn btn-primary">Add first rescue option</a>
+  </div>
+{% endif %}
+
+{% endblock %}

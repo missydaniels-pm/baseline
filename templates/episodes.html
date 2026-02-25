@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Episodes — Migraine Tracker{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Episodes</h1>
+  <a href="{{ url_for('new_episode') }}" class="btn btn-primary">+ Log Episode</a>
+</div>
+
+{% if episodes %}
+  {% for ep in episodes %}
+  <div class="card {{ ep.severity_class }}">
+    <div class="episode-card">
+      <div class="severity-badge">{{ ep.peak_severity }}</div>
+      <div>
+        <div style="font-weight:600;">{{ ep.onset.strftime('%A, %b %-d, %Y') }}
+          <span style="color:var(--text-muted); font-weight:400; font-size:14px;">at {{ ep.onset.strftime('%-I:%M %p') }}</span>
+        </div>
+        <div class="episode-meta">
+          {% if ep.duration_hours %}<span>⏱ {{ ep.duration_hours }}h</span>{% endif %}
+          <span class="imp-{{ ep.functional_impairment }}">{{ ep.impairment_label }}</span>
+          {% if ep.rescue_protocol %}<span>💊 {{ ep.rescue_protocol }}</span>{% endif %}
+          {% if ep.rescue_effectiveness %}<span>effectiveness {{ ep.rescue_effectiveness }}/10</span>{% endif %}
+          {% if ep.time_to_relief_hours %}<span>relief in {{ ep.time_to_relief_hours }}h</span>{% endif %}
+        </div>
+        {% if ep.notes %}<div class="notes-text">{{ ep.notes }}</div>{% endif %}
+      </div>
+      <div class="episode-actions">
+        <a href="{{ url_for('edit_episode', episode_id=ep.id) }}" class="btn btn-secondary btn-sm">Edit</a>
+        <form class="delete-form" method="POST" action="{{ url_for('delete_episode', episode_id=ep.id) }}"
+              onsubmit="return confirm('Delete this episode?')">
+          <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="empty-state">
+    <p>No episodes logged yet.</p>
+    <a href="{{ url_for('new_episode') }}" class="btn btn-primary">Log your first episode</a>
+  </div>
+{% endif %}
+{% endblock %}

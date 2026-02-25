@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Edit Preventative — Migraine Tracker{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Edit Preventative</h1>
+  <a href="{{ url_for('protocols') }}" class="btn btn-secondary">Cancel</a>
+</div>
+
+<div class="form-card">
+  <form method="POST">
+    <div class="form-group">
+      <label for="name">Name</label>
+      <input type="text" id="name" name="name" required value="{{ protocol.name }}">
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="dose_frequency">Dose / Frequency</label>
+        <input type="text" id="dose_frequency" name="dose_frequency"
+               value="{{ protocol.dose_frequency or '' }}" placeholder="e.g. 25mg nightly">
+      </div>
+      <div class="form-group">
+        <label for="start_date">Start Date</label>
+        <input type="date" id="start_date" name="start_date"
+               value="{{ protocol.start_date.strftime('%Y-%m-%d') if protocol.start_date else '' }}">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="status">Status</label>
+      <select id="status" name="status">
+        {% for s in ['active', 'paused', 'stopped'] %}
+        <option value="{{ s }}" {% if protocol.status == s %}selected{% endif %}>{{ s.capitalize() }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes">{{ protocol.notes or '' }}</textarea>
+    </div>
+
+    <div style="display:flex; gap:10px; justify-content:space-between; margin-top:8px;">
+      <form class="delete-form" method="POST" action="{{ url_for('delete_protocol', protocol_id=protocol.id) }}"
+            onsubmit="return confirm('Delete this preventative?')">
+        <button type="submit" class="btn btn-danger">Delete</button>
+      </form>
+      <div style="display:flex; gap:10px;">
+        <a href="{{ url_for('protocols') }}" class="btn btn-secondary">Cancel</a>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}
