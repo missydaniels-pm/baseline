@@ -8,7 +8,7 @@
 </div>
 
 <div class="form-card">
-  <form method="POST">
+  <form method="POST" id="episodeForm">
     <div class="form-row">
       <div class="form-group">
         <label for="onset">Onset Date & Time</label>
@@ -96,16 +96,17 @@
       <textarea id="notes" name="notes" placeholder="Symptoms, context, observations…">{{ episode.notes or '' }}</textarea>
     </div>
 
-    <div class="form-actions">
-      <form class="delete-form" method="POST" action="{{ url_for('delete_episode', episode_id=episode.id) }}"
-            onsubmit="return confirm('Delete this episode?')">
-        <button type="submit" class="btn btn-danger">Delete Episode</button>
-      </form>
-      <div class="form-actions-primary">
-        <a href="{{ url_for('episodes') }}" class="btn btn-secondary">Cancel</a>
-        <button type="submit" class="btn btn-primary">Save Changes</button>
-      </div>
-    </div>
   </form>
+
+  <div class="form-actions">
+    <form class="delete-form" method="POST" action="{{ url_for('delete_episode', episode_id=episode.id) }}"
+          onsubmit="return confirm('Delete this episode?')">
+      <button type="submit" class="btn btn-danger">Delete Episode</button>
+    </form>
+    <div class="form-actions-primary">
+      <a href="{{ url_for('episodes') }}" class="btn btn-secondary">Cancel</a>
+      <button type="submit" form="episodeForm" class="btn btn-primary">Save Changes</button>
+    </div>
+  </div>
 </div>
 {% endblock %}

@@ -539,6 +539,43 @@ def delete_protocol(protocol_id):
     return redirect(url_for('protocols'))
 
 
+# ---------------------------------------------------------------------------
+# Dev utilities
+# ---------------------------------------------------------------------------
+
+@app.route('/dev/reset', methods=['GET', 'POST'])
+def dev_reset():
+    if not app.debug:
+        return 'Not available in production.', 403
+
+    if request.method == 'POST':
+        user = get_user()
+        Experiment.query.filter_by(user_id=user.id).delete()
+        SymptomScore.query.filter(
+            SymptomScore.episode_id.in_(
+                db.session.query(Episode.id).filter_by(user_id=user.id)
+            )
+        ).delete(synchronize_session=False)
+        Episode.query.filter_by(user_id=user.id).delete()
+        Protocol.query.filter_by(user_id=user.id).delete()
+        Symptom.query.filter_by(user_id=user.id).delete()
+        user.onboarding_complete = False
+        user.baseline_episodes_per_month = None
+        db.session.commit()
+        flash('Dev reset complete. Onboarding restarted.', 'success')
+        return redirect(url_for('onboarding_step1'))
+
+    return '''<!doctype html><html><body style="font-family:sans-serif;max-width:400px;margin:60px auto;padding:20px;">
+        <h2>Dev Reset</h2>
+        <p>This will delete all episodes, symptoms, experiments, and protocols, and restart onboarding.</p>
+        <form method="POST">
+          <button type="submit" style="background:#e05252;color:#fff;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-size:15px;">
+            Reset everything
+          </button>
+          <a href="/" style="margin-left:12px;">Cancel</a>
+        </form></body></html>'''
+
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()

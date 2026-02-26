@@ -8,7 +8,7 @@
 </div>
 
 <div class="form-card">
-  <form method="POST">
+  <form method="POST" id="symptomForm">
     <div class="form-group">
       <label for="name">Name</label>
       <input type="text" id="name" name="name" value="{{ symptom.name }}" required autofocus>
@@ -22,24 +22,25 @@
              placeholder="e.g. Head and neck pain intensity">
     </div>
 
-    <div class="form-actions">
-      <div>
-        {% if symptom.is_active %}
-        <form method="POST" action="{{ url_for('deactivate_symptom', symptom_id=symptom.id) }}"
-              onsubmit="return confirm('Deactivate {{ symptom.name }}? It will stop appearing on the episode form, but all historical data is kept.')">
-          <button type="submit" class="btn btn-danger">Deactivate</button>
-        </form>
-        {% else %}
-        <form method="POST" action="{{ url_for('reactivate_symptom', symptom_id=symptom.id) }}">
-          <button type="submit" class="btn btn-reactivate">Reactivate</button>
-        </form>
-        {% endif %}
-      </div>
-      <div class="form-actions-primary">
-        <a href="{{ url_for('symptoms') }}" class="btn btn-secondary">Cancel</a>
-        <button type="submit" class="btn btn-primary">Save Changes</button>
-      </div>
-    </div>
   </form>
+
+  <div class="form-actions">
+    <div>
+      {% if symptom.is_active %}
+      <form method="POST" action="{{ url_for('deactivate_symptom', symptom_id=symptom.id) }}"
+            onsubmit="return confirm('Deactivate {{ symptom.name }}? It will stop appearing on the episode form, but all historical data is kept.')">
+        <button type="submit" class="btn btn-danger">Deactivate</button>
+      </form>
+      {% else %}
+      <form method="POST" action="{{ url_for('reactivate_symptom', symptom_id=symptom.id) }}">
+        <button type="submit" class="btn btn-reactivate">Reactivate</button>
+      </form>
+      {% endif %}
+    </div>
+    <div class="form-actions-primary">
+      <a href="{{ url_for('symptoms') }}" class="btn btn-secondary">Cancel</a>
+      <button type="submit" form="symptomForm" class="btn btn-primary">Save Changes</button>
+    </div>
+  </div>
 </div>
 {% endblock %}

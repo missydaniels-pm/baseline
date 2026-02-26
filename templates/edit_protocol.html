@@ -58,17 +58,18 @@
       <textarea id="notes" name="notes">{{ protocol.notes or '' }}</textarea>
     </div>
 
-    <div class="form-actions">
-      <form class="delete-form" method="POST" action="{{ url_for('delete_protocol', protocol_id=protocol.id) }}"
-            onsubmit="return confirm('Delete this preventative?')">
-        <button type="submit" class="btn btn-danger">Delete</button>
-      </form>
-      <div class="form-actions-primary">
-        <a href="{{ url_for('protocols') }}" class="btn btn-secondary">Cancel</a>
-        <button type="submit" class="btn btn-primary">Save Changes</button>
-      </div>
-    </div>
   </form>
+
+  <div class="form-actions">
+    <form class="delete-form" method="POST" action="{{ url_for('delete_protocol', protocol_id=protocol.id) }}"
+          onsubmit="return confirm('Delete this preventative?')">
+      <button type="submit" class="btn btn-danger">Delete</button>
+    </form>
+    <div class="form-actions-primary">
+      <a href="{{ url_for('protocols') }}" class="btn btn-secondary">Cancel</a>
+      <button type="submit" form="protocolForm" class="btn btn-primary">Save Changes</button>
+    </div>
+  </div>
 </div>
 
 {% if active_experiment and protocol.status != 'active' %}
