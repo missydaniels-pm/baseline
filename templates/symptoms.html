@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Symptoms — Baseline{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Symptoms</h1>
+  <a href="{{ url_for('new_symptom') }}" class="btn btn-primary">+ Add Symptom</a>
+</div>
+
+{% if active %}
+  {% for symptom in active %}
+  <div class="card">
+    <div class="symptom-card">
+      <div class="symptom-info">
+        <div class="symptom-name">{{ symptom.name }}</div>
+        <div class="symptom-meta">
+          {% if symptom.description %}<span>{{ symptom.description }}</span>{% endif %}
+          {% if symptom.baseline_score %}<span>baseline {{ symptom.baseline_score }}/10</span>{% endif %}
+        </div>
+      </div>
+      <div class="symptom-actions">
+        <a href="{{ url_for('edit_symptom', symptom_id=symptom.id) }}" class="btn btn-secondary btn-sm">Edit</a>
+        <form method="POST" action="{{ url_for('deactivate_symptom', symptom_id=symptom.id) }}"
+              onsubmit="return confirm('Deactivate {{ symptom.name }}? It will stop appearing on the episode form, but all historical data is kept.')">
+          <button type="submit" class="btn btn-sm btn-muted">Deactivate</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="empty-state">
+    <p>No active symptoms defined.</p>
+    <a href="{{ url_for('new_symptom') }}" class="btn btn-primary">Add your first symptom</a>
+  </div>
+{% endif %}
+
+{% if inactive %}
+<hr class="divider">
+<div class="section-header">
+  <div>
+    <div class="section-title">Inactive</div>
+    <div class="section-sub">These symptoms are hidden from episode logging but their data is preserved.</div>
+  </div>
+</div>
+
+{% for symptom in inactive %}
+<div class="card symptom-inactive">
+  <div class="symptom-card">
+    <div class="symptom-info">
+      <div class="symptom-name">
+        {{ symptom.name }}
+        <span class="tag-inactive">inactive</span>
+      </div>
+      <div class="symptom-meta">
+        {% if symptom.description %}<span>{{ symptom.description }}</span>{% endif %}
+        {% if symptom.baseline_score %}<span>baseline {{ symptom.baseline_score }}/10</span>{% endif %}
+      </div>
+    </div>
+    <div class="symptom-actions">
+      <a href="{{ url_for('edit_symptom', symptom_id=symptom.id) }}" class="btn btn-secondary btn-sm">Edit</a>
+      <form method="POST" action="{{ url_for('reactivate_symptom', symptom_id=symptom.id) }}">
+        <button type="submit" class="btn btn-sm btn-reactivate">Reactivate</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

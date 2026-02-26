@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Edit Symptom — Baseline{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Edit Symptom</h1>
+  <a href="{{ url_for('symptoms') }}" class="btn btn-secondary">Cancel</a>
+</div>
+
+<div class="form-card">
+  <form method="POST">
+    <div class="form-group">
+      <label for="name">Name</label>
+      <input type="text" id="name" name="name" value="{{ symptom.name }}" required autofocus>
+    </div>
+
+    <div class="form-group">
+      <label for="description">Description <span style="font-weight:400; text-transform:none; letter-spacing:0;">(optional)</span></label>
+      <div class="field-hint">Shown as a hint on the episode logging form.</div>
+      <input type="text" id="description" name="description"
+             value="{{ symptom.description or '' }}"
+             placeholder="e.g. Head and neck pain intensity">
+    </div>
+
+    <div class="form-actions">
+      <div>
+        {% if symptom.is_active %}
+        <form method="POST" action="{{ url_for('deactivate_symptom', symptom_id=symptom.id) }}"
+              onsubmit="return confirm('Deactivate {{ symptom.name }}? It will stop appearing on the episode form, but all historical data is kept.')">
+          <button type="submit" class="btn btn-danger">Deactivate</button>
+        </form>
+        {% else %}
+        <form method="POST" action="{{ url_for('reactivate_symptom', symptom_id=symptom.id) }}">
+          <button type="submit" class="btn btn-reactivate">Reactivate</button>
+        </form>
+        {% endif %}
+      </div>
+      <div class="form-actions-primary">
+        <a href="{{ url_for('symptoms') }}" class="btn btn-secondary">Cancel</a>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}

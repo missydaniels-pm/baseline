@@ -561,6 +561,70 @@ input[type="range"]::-moz-range-thumb {
   font-style: italic;
 }
 
+/* ─── Symptom management cards ──────────────────────────────────── */
+
+.symptom-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.symptom-info { flex: 1; }
+
+.symptom-name {
+  font-weight: 600;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.symptom-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.symptom-meta span {
+  margin-right: 14px;
+}
+
+.symptom-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  align-items: flex-start;
+}
+
+.symptom-inactive {
+  opacity: 0.6;
+}
+
+.tag-inactive {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  background: rgba(136,136,153,0.15);
+  color: var(--text-muted);
+}
+
+.btn-muted {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.btn-reactivate {
+  background: rgba(76,175,120,0.12);
+  color: var(--low);
+  border: 1px solid rgba(76,175,120,0.3);
+}
+
 /* ─── Onboarding wizard ──────────────────────────────────────────── */
 
 .wizard-card {
@@ -923,6 +987,19 @@ input[type="range"]::-moz-range-thumb {
   .slider-value {
     font-size: 16px;
     width: 32px;
+  }
+
+  /* Symptom management cards — stack on mobile */
+  .symptom-card {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .symptom-actions {
+    width: 100%;
+    justify-content: flex-end;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
   }
 
   /* Wizard card — full width on mobile */

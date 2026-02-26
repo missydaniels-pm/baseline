@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Add Symptom — Baseline{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Add Symptom</h1>
+  <a href="{{ url_for('symptoms') }}" class="btn btn-secondary">Cancel</a>
+</div>
+
+<div class="form-card">
+  <form method="POST">
+    <div class="form-group">
+      <label for="name">Name</label>
+      <input type="text" id="name" name="name" placeholder="e.g. Pain, Fatigue, Cognitive fog" required autofocus>
+    </div>
+
+    <div class="form-group">
+      <label for="description">Description <span style="font-weight:400; text-transform:none; letter-spacing:0;">(optional)</span></label>
+      <div class="field-hint">Shown as a hint on the episode logging form.</div>
+      <input type="text" id="description" name="description" placeholder="e.g. Head and neck pain intensity">
+    </div>
+
+    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:8px;">
+      <a href="{{ url_for('symptoms') }}" class="btn btn-secondary">Cancel</a>
+      <button type="submit" class="btn btn-primary">Add Symptom</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

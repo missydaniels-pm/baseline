@@ -28,6 +28,9 @@
     <a href="{{ url_for('episodes') }}" class="nav-link {% if 'episode' in request.endpoint %}active{% endif %}">
       <span class="nav-icon">◎</span> Episodes
     </a>
+    <a href="{{ url_for('symptoms') }}" class="nav-link {% if 'symptom' in request.endpoint %}active{% endif %}">
+      <span class="nav-icon">◈</span> Symptoms
+    </a>
     <a href="{{ url_for('protocols') }}" class="nav-link {% if 'protocol' in request.endpoint %}active{% endif %}">
       <span class="nav-icon">⊕</span> Protocols
     </a>

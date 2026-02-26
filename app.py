@@ -134,6 +134,75 @@ def onboarding_step2():
 
 
 # ---------------------------------------------------------------------------
+# Symptoms management
+# ---------------------------------------------------------------------------
+
+@app.route('/symptoms')
+def symptoms():
+    user = get_user()
+    active = Symptom.query.filter_by(user_id=user.id, is_active=True).order_by(Symptom.created_at).all()
+    inactive = Symptom.query.filter_by(user_id=user.id, is_active=False).order_by(Symptom.created_at).all()
+    return render_template('symptoms.html', active=active, inactive=inactive)
+
+
+@app.route('/symptoms/new', methods=['GET', 'POST'])
+def new_symptom():
+    user = get_user()
+
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        if name:
+            symptom = Symptom(
+                user_id=user.id,
+                name=name,
+                description=request.form.get('description', '').strip() or None,
+            )
+            db.session.add(symptom)
+            db.session.commit()
+            flash(f'"{name}" added.', 'success')
+        return redirect(url_for('symptoms'))
+
+    return render_template('new_symptom.html')
+
+
+@app.route('/symptoms/<int:symptom_id>/edit', methods=['GET', 'POST'])
+def edit_symptom(symptom_id):
+    user = get_user()
+    symptom = Symptom.query.filter_by(id=symptom_id, user_id=user.id).first_or_404()
+
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        if name:
+            symptom.name = name
+            symptom.description = request.form.get('description', '').strip() or None
+            db.session.commit()
+            flash('Symptom updated.', 'success')
+        return redirect(url_for('symptoms'))
+
+    return render_template('edit_symptom.html', symptom=symptom)
+
+
+@app.route('/symptoms/<int:symptom_id>/deactivate', methods=['POST'])
+def deactivate_symptom(symptom_id):
+    user = get_user()
+    symptom = Symptom.query.filter_by(id=symptom_id, user_id=user.id).first_or_404()
+    symptom.is_active = False
+    db.session.commit()
+    flash(f'"{symptom.name}" deactivated. Historical data preserved.', 'success')
+    return redirect(url_for('symptoms'))
+
+
+@app.route('/symptoms/<int:symptom_id>/reactivate', methods=['POST'])
+def reactivate_symptom(symptom_id):
+    user = get_user()
+    symptom = Symptom.query.filter_by(id=symptom_id, user_id=user.id).first_or_404()
+    symptom.is_active = True
+    db.session.commit()
+    flash(f'"{symptom.name}" reactivated.', 'success')
+    return redirect(url_for('symptoms'))
+
+
+# ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------
 
