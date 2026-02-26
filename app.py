@@ -26,6 +26,36 @@ def run_migrations():
             except Exception:
                 pass  # column already exists
 
+        # Make episodes.peak_severity nullable.
+        # SQLite can't ALTER COLUMN, so we recreate the table when needed.
+        col_info = conn.execute(text('PRAGMA table_info(episodes)')).fetchall()
+        peak_col = next((r for r in col_info if r[1] == 'peak_severity'), None)
+        if peak_col and peak_col[3] == 1:  # notnull == 1
+            print("Migrating episodes.peak_severity to nullable...")
+            conn.execute(text('PRAGMA foreign_keys=OFF'))
+            conn.execute(text('''
+                CREATE TABLE episodes_new (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    onset DATETIME NOT NULL,
+                    peak_severity INTEGER,
+                    duration_hours FLOAT,
+                    functional_impairment VARCHAR(50),
+                    rescue_protocol TEXT,
+                    rescue_effectiveness INTEGER,
+                    time_to_relief_hours FLOAT,
+                    notes TEXT,
+                    created_at DATETIME,
+                    FOREIGN KEY(user_id) REFERENCES users(id)
+                )
+            '''))
+            conn.execute(text('INSERT INTO episodes_new SELECT * FROM episodes'))
+            conn.execute(text('DROP TABLE episodes'))
+            conn.execute(text('ALTER TABLE episodes_new RENAME TO episodes'))
+            conn.execute(text('PRAGMA foreign_keys=ON'))
+            conn.commit()
+            print("Migration complete.")
+
 
 def run_data_migrations():
     """Migrate existing episode peak_severity values to SymptomScore records."""
