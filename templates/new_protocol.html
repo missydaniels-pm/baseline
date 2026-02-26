@@ -7,8 +7,25 @@
   <a href="{{ url_for('protocols') }}" class="btn btn-secondary">Cancel</a>
 </div>
 
+{% if active_experiment %}
+<div class="modal-overlay" id="experimentWarning" aria-hidden="true">
+  <div class="modal-card">
+    <div class="modal-title">Active experiment in progress</div>
+    <div class="modal-body">
+      You're currently <strong id="weeksIn"></strong> weeks into your
+      <strong id="expName"></strong> experiment. Adding a new active protocol now
+      may make it harder to know what's working.
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" id="modalCancel">Wait until experiment is complete</button>
+      <button type="button" class="btn btn-primary" id="modalContinue">Add it anyway</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <div class="form-card">
-  <form method="POST">
+  <form method="POST" id="protocolForm">
     <div class="form-group">
       <label for="name">Name</label>
       <input type="text" id="name" name="name" required placeholder="e.g. Metformin, Vitamin D, Amitriptyline">
@@ -45,4 +62,31 @@
     </div>
   </form>
 </div>
+
+{% if active_experiment %}
+<script>
+  var activeExpName = {{ active_experiment.name|tojson }};
+  var activeExpWeeks = {{ active_experiment.weeks_elapsed|round(0)|int }};
+  var allowSubmit = false;
+
+  document.getElementById('protocolForm').addEventListener('submit', function(e) {
+    if (!allowSubmit && document.getElementById('status').value === 'active') {
+      e.preventDefault();
+      document.getElementById('expName').textContent = activeExpName;
+      document.getElementById('weeksIn').textContent = activeExpWeeks;
+      document.getElementById('experimentWarning').classList.add('visible');
+    }
+  });
+
+  document.getElementById('modalCancel').addEventListener('click', function() {
+    document.getElementById('experimentWarning').classList.remove('visible');
+  });
+
+  document.getElementById('modalContinue').addEventListener('click', function() {
+    allowSubmit = true;
+    document.getElementById('experimentWarning').classList.remove('visible');
+    document.getElementById('protocolForm').submit();
+  });
+</script>
+{% endif %}
 {% endblock %}

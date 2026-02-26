@@ -561,6 +561,305 @@ input[type="range"]::-moz-range-thumb {
   font-style: italic;
 }
 
+/* ─── Warning banner ─────────────────────────────────────────────── */
+
+.warning-banner {
+  background: rgba(232,168,56,0.1);
+  border: 1px solid rgba(232,168,56,0.3);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  color: var(--mid);
+  font-size: 14px;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.warning-banner-ready {
+  background: rgba(76,175,120,0.1);
+  border-color: rgba(76,175,120,0.3);
+  color: var(--low);
+}
+
+/* ─── Modal overlay ───────────────────────────────────────────────── */
+
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.72);
+  z-index: 400;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal-overlay.visible {
+  display: flex;
+}
+
+.modal-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 32px;
+  max-width: 460px;
+  width: 100%;
+}
+
+.modal-title {
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.modal-body {
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+/* ─── Experiment cards ────────────────────────────────────────────── */
+
+.experiment-card-wrap {
+  padding: 20px 24px;
+}
+
+.experiment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.experiment-name {
+  font-weight: 700;
+  font-size: 15px;
+  margin-bottom: 3px;
+}
+
+.experiment-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.experiment-hypothesis {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 4px;
+}
+
+.experiment-status-col {
+  flex-shrink: 0;
+}
+
+.exp-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+}
+
+.exp-badge-active    { background: rgba(124,92,191,0.2); color: var(--accent-light); }
+.exp-badge-ready     { background: rgba(76,175,120,0.18); color: var(--low); }
+.exp-badge-completed { background: rgba(76,175,120,0.12); color: var(--low); }
+.exp-badge-abandoned { background: rgba(136,136,153,0.15); color: var(--text-muted); }
+
+/* ─── Progress bar ────────────────────────────────────────────────── */
+
+.experiment-progress-section {
+  margin-bottom: 14px;
+}
+
+.progress-bar-wrap {
+  background: var(--border);
+  border-radius: 4px;
+  height: 6px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.progress-bar {
+  height: 100%;
+  background: var(--accent-light);
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+.progress-bar-complete {
+  background: var(--low);
+}
+
+.progress-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.experiment-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* ─── Experiment outcome (completed card) ────────────────────────── */
+
+.experiment-outcome {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.outcome-rating {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent-light);
+}
+
+.outcome-decision {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+
+.decision-continue { background: rgba(76,175,120,0.15); color: var(--low); }
+.decision-pause    { background: rgba(232,168,56,0.15); color: var(--mid); }
+.decision-stop     { background: rgba(224,82,82,0.15);  color: var(--high); }
+
+/* ─── Assessment form — decision options ────────────────────────── */
+
+.decision-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.decision-option {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  font-size: 14px;
+}
+
+.decision-option input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.decision-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  transition: border-color 0.15s, background 0.15s;
+  cursor: pointer;
+}
+
+.decision-option input:checked + .decision-label {
+  border-color: var(--accent);
+  background: rgba(124,92,191,0.1);
+}
+
+.decision-icon {
+  font-size: 16px;
+  width: 24px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.decision-desc {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-top: 1px;
+}
+
+/* ─── Assess date preview ─────────────────────────────────────────── */
+
+.assess-date-preview {
+  background: rgba(124,92,191,0.1);
+  border: 1px solid rgba(124,92,191,0.25);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+}
+
+/* ─── Experiment offer page ───────────────────────────────────────── */
+
+.offer-card {
+  max-width: 500px;
+  text-align: center;
+  padding: 48px 32px;
+  margin: 0 auto;
+}
+
+.offer-icon {
+  font-size: 36px;
+  color: var(--accent-light);
+  margin-bottom: 16px;
+}
+
+.offer-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.offer-body {
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+
+.offer-sub {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 28px;
+}
+
+.offer-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
 /* ─── Symptom management cards ──────────────────────────────────── */
 
 .symptom-card {
@@ -987,6 +1286,40 @@ input[type="range"]::-moz-range-thumb {
   .slider-value {
     font-size: 16px;
     width: 32px;
+  }
+
+  /* Modal — full-width on mobile */
+  .modal-card {
+    padding: 24px 20px;
+  }
+
+  .modal-actions {
+    flex-direction: column-reverse;
+  }
+
+  /* Experiment cards — stack actions */
+  .experiment-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .experiment-actions {
+    flex-wrap: wrap;
+  }
+
+  .progress-labels {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  /* Decision options — full width */
+  .decision-label {
+    padding: 10px 12px;
+  }
+
+  /* Offer card — tighten on mobile */
+  .offer-card {
+    padding: 32px 16px;
   }
 
   /* Symptom management cards — stack on mobile */

@@ -1,5 +1,5 @@
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from datetime import datetime, timedelta, date
 
 db = SQLAlchemy()
 
@@ -16,6 +16,7 @@ class User(db.Model):
     episodes = db.relationship('Episode', backref='user', lazy=True, cascade='all, delete-orphan')
     protocols = db.relationship('Protocol', backref='user', lazy=True, cascade='all, delete-orphan')
     symptoms = db.relationship('Symptom', backref='user', lazy=True, cascade='all, delete-orphan')
+    experiments = db.relationship('Experiment', backref='user', lazy=True, cascade='all, delete-orphan')
 
     def __repr__(self):
         return f'<User {self.name}>'
@@ -128,3 +129,48 @@ class Protocol(db.Model):
             'paused': 'status-paused',
             'stopped': 'status-stopped',
         }.get(self.status, '')
+
+
+class Experiment(db.Model):
+    __tablename__ = 'experiments'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    name = db.Column(db.String(200), nullable=False)
+    hypothesis = db.Column(db.Text, nullable=True)
+    protocol_id = db.Column(db.Integer, db.ForeignKey('protocols.id'), nullable=True)
+    start_date = db.Column(db.Date, nullable=False)
+    stabilization_weeks = db.Column(db.Integer, default=8, nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='active')  # active/completed/abandoned
+    baseline_episodes_per_month = db.Column(db.Integer, nullable=True)
+    outcome_rating = db.Column(db.Integer, nullable=True)  # 1-10
+    outcome_notes = db.Column(db.Text, nullable=True)
+    decision = db.Column(db.String(20), nullable=True)  # continue/pause/stop
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    protocol = db.relationship('Protocol', backref=db.backref('experiments', lazy=True))
+
+    def __repr__(self):
+        return f'<Experiment {self.name}>'
+
+    @property
+    def assessment_date(self):
+        return self.start_date + timedelta(weeks=self.stabilization_weeks)
+
+    @property
+    def weeks_elapsed(self):
+        elapsed = (date.today() - self.start_date).days / 7
+        return min(max(0.0, elapsed), float(self.stabilization_weeks))
+
+    @property
+    def weeks_remaining(self):
+        remaining = (self.assessment_date - date.today()).days / 7
+        return max(0.0, remaining)
+
+    @property
+    def progress_pct(self):
+        return min(int(self.weeks_elapsed / self.stabilization_weeks * 100), 100)
+
+    @property
+    def ready_to_assess(self):
+        return date.today() >= self.assessment_date

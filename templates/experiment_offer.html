@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Track as Experiment? — Baseline{% endblock %}
+
+{% block content %}
+<div class="offer-card">
+  <div class="offer-icon">◆</div>
+  <h2 class="offer-title">Track this as an experiment?</h2>
+  <p class="offer-body">
+    You just added <strong>{{ protocol.name }}</strong>. Would you like to run a structured
+    experiment to measure whether it's actually working?
+  </p>
+  <p class="offer-sub">
+    You'll set a hypothesis, a stabilization period, and get a reminder when it's time to assess.
+  </p>
+  <div class="offer-actions">
+    <a href="{{ url_for('protocols') }}" class="btn btn-secondary">Not now</a>
+    <a href="{{ url_for('new_experiment') }}?protocol_id={{ protocol.id }}" class="btn btn-primary">Yes, set up an experiment →</a>
+  </div>
+</div>
+{% endblock %}

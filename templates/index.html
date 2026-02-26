@@ -7,6 +7,17 @@
   <a href="{{ url_for('new_episode') }}" class="btn btn-primary">+ Log Episode</a>
 </div>
 
+{% if experiments_ready %}
+<div class="warning-banner warning-banner-ready" style="margin-bottom:20px;">
+  {% for exp in experiments_ready %}
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; {% if not loop.first %}margin-top:10px; padding-top:10px; border-top:1px solid rgba(76,175,120,0.2);{% endif %}">
+    <span>✓ Your <strong>{{ exp.name }}</strong> experiment is ready to assess.</span>
+    <a href="{{ url_for('assess_experiment', exp_id=exp.id) }}" class="btn btn-primary btn-sm">Assess now →</a>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 {% set total = episodes | length %}
 <div class="stat-strip">
   <div class="stat-box">

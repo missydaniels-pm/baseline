@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Experiments — Baseline{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Experiments</h1>
+  <a href="{{ url_for('new_experiment') }}" class="btn btn-primary">+ Start Experiment</a>
+</div>
+
+{% if active | selectattr('ready_to_assess') | list %}
+<div class="warning-banner warning-banner-ready">
+  {% for exp in active if exp.ready_to_assess %}
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; {% if not loop.first %}margin-top:10px; padding-top:10px; border-top:1px solid rgba(76,175,120,0.2);{% endif %}">
+    <span>✓ <strong>{{ exp.name }}</strong> is ready to assess.</span>
+    <a href="{{ url_for('assess_experiment', exp_id=exp.id) }}" class="btn btn-primary btn-sm">Assess now →</a>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if active | rejectattr('ready_to_assess') | list | length > 1 %}
+<div class="warning-banner">
+  Running multiple experiments at once makes it harder to know what's working. Consider completing your current experiment first.
+</div>
+{% endif %}
+
+{% if active %}
+<div class="section-header" style="margin-bottom:12px;">
+  <div class="section-title">Active</div>
+</div>
+
+{% for exp in active %}
+<div class="card experiment-card-wrap">
+  <div class="experiment-header">
+    <div>
+      <div class="experiment-name">{{ exp.name }}</div>
+      {% if exp.protocol %}
+        <div class="experiment-meta">Protocol: <strong>{{ exp.protocol.name }}</strong></div>
+      {% endif %}
+      {% if exp.hypothesis %}
+        <div class="experiment-hypothesis">{{ exp.hypothesis }}</div>
+      {% endif %}
+    </div>
+    <div class="experiment-status-col">
+      {% if exp.ready_to_assess %}
+        <span class="exp-badge exp-badge-ready">Ready</span>
+      {% else %}
+        <span class="exp-badge exp-badge-active">Active</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="experiment-progress-section">
+    <div class="progress-bar-wrap">
+      <div class="progress-bar {% if exp.ready_to_assess %}progress-bar-complete{% endif %}"
+           style="width:{{ exp.progress_pct }}%"></div>
+    </div>
+    <div class="progress-labels">
+      <span>Started {{ exp.start_date.strftime('%b %-d') }}</span>
+      <span>
+        {% if exp.ready_to_assess %}
+          Assessment overdue — <a href="{{ url_for('assess_experiment', exp_id=exp.id) }}">assess now</a>
+        {% else %}
+          {% set wr = exp.weeks_remaining %}
+          {% if wr < 1 %}{{ (wr * 7)|round|int }} days remaining
+          {% else %}{{ wr|round(1) }} weeks remaining{% endif %}
+          · assess {{ exp.assessment_date.strftime('%b %-d, %Y') }}
+        {% endif %}
+      </span>
+    </div>
+  </div>
+
+  <div class="experiment-actions">
+    {% if exp.ready_to_assess %}
+      <a href="{{ url_for('assess_experiment', exp_id=exp.id) }}" class="btn btn-primary btn-sm">Assess →</a>
+    {% endif %}
+    <form method="POST" action="{{ url_for('abandon_experiment', exp_id=exp.id) }}"
+          onsubmit="return confirm('Abandon this experiment? This cannot be undone.')">
+      <button type="submit" class="btn btn-sm btn-muted">Abandon</button>
+    </form>
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+
+{% if completed %}
+<hr class="divider">
+<div class="section-header" style="margin-bottom:12px;">
+  <div class="section-title">Completed</div>
+</div>
+
+{% for exp in completed %}
+<div class="card">
+  <div class="experiment-header">
+    <div>
+      <div class="experiment-name">{{ exp.name }}</div>
+      {% if exp.protocol %}
+        <div class="experiment-meta">Protocol: <strong>{{ exp.protocol.name }}</strong></div>
+      {% endif %}
+      <div class="experiment-meta">
+        {{ exp.start_date.strftime('%b %-d, %Y') }} → {{ exp.assessment_date.strftime('%b %-d, %Y') }}
+      </div>
+    </div>
+    <div class="experiment-status-col">
+      <span class="exp-badge exp-badge-completed">Completed</span>
+    </div>
+  </div>
+  {% if exp.outcome_rating or exp.decision %}
+  <div class="experiment-outcome">
+    {% if exp.outcome_rating %}
+      <span class="outcome-rating">{{ exp.outcome_rating }}/10</span>
+    {% endif %}
+    {% if exp.decision %}
+      <span class="outcome-decision decision-{{ exp.decision }}">
+        {% if exp.decision == 'continue' %}Continue ✓
+        {% elif exp.decision == 'pause' %}Pause ⏸
+        {% elif exp.decision == 'stop' %}Stop ✕
+        {% endif %}
+      </span>
+    {% endif %}
+    {% if exp.outcome_notes %}
+      <div class="notes-text" style="margin-top:8px;">{{ exp.outcome_notes }}</div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+
+{% if abandoned %}
+<hr class="divider">
+<div class="section-header" style="margin-bottom:12px;">
+  <div class="section-title" style="color:var(--text-muted);">Abandoned</div>
+</div>
+{% for exp in abandoned %}
+<div class="card" style="opacity:0.55;">
+  <div class="experiment-header">
+    <div>
+      <div class="experiment-name">{{ exp.name }}</div>
+      {% if exp.protocol %}
+        <div class="experiment-meta">Protocol: {{ exp.protocol.name }}</div>
+      {% endif %}
+      <div class="experiment-meta">Started {{ exp.start_date.strftime('%b %-d, %Y') }}</div>
+    </div>
+    <span class="exp-badge exp-badge-abandoned">Abandoned</span>
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+
+{% if not active and not completed and not abandoned %}
+<div class="empty-state">
+  <p>No experiments yet.</p>
+  <p style="font-size:13px; max-width:400px; margin:0 auto 20px;">
+    Experiments help you isolate what's actually working by tracking a single protocol change over a defined period.
+  </p>
+  <a href="{{ url_for('new_experiment') }}" class="btn btn-primary">Start your first experiment</a>
+</div>
+{% endif %}
+{% endblock %}

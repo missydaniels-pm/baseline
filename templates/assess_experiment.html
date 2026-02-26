@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Assess Experiment — Baseline{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Assess Experiment</h1>
+  <a href="{{ url_for('experiments') }}" class="btn btn-secondary">Cancel</a>
+</div>
+
+<div class="form-card" style="max-width:660px;">
+  <div style="margin-bottom:24px;">
+    <div style="font-size:18px; font-weight:700; margin-bottom:4px;">{{ experiment.name }}</div>
+    {% if experiment.protocol %}
+    <div style="color:var(--text-muted); font-size:14px;">Protocol: {{ experiment.protocol.name }}</div>
+    {% endif %}
+    {% if experiment.hypothesis %}
+    <div class="field-hint" style="margin-top:8px; font-style:normal;">
+      <strong>Hypothesis:</strong> {{ experiment.hypothesis }}
+    </div>
+    {% endif %}
+    <div style="font-size:13px; color:var(--text-muted); margin-top:8px;">
+      Started {{ experiment.start_date.strftime('%b %-d, %Y') }}
+      · {{ experiment.stabilization_weeks }}-week stabilization period
+      {% if experiment.baseline_episodes_per_month %}
+        · baseline {{ experiment.baseline_episodes_per_month }} bad days/month
+      {% endif %}
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <form method="POST">
+    <div class="form-group">
+      <label for="outcome_rating">Overall outcome (1–10)</label>
+      <div class="field-hint">How effective was this protocol? 1 = no benefit, 10 = major improvement.</div>
+      <div class="slider-wrap">
+        <input type="range" id="outcome_rating" name="outcome_rating" min="1" max="10" value="5">
+        <span class="slider-value" id="outcome_rating_display">5</span>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="outcome_notes">Notes</label>
+      <div class="field-hint">What did you observe? Did you hit your hypothesis?</div>
+      <textarea id="outcome_notes" name="outcome_notes"
+                placeholder="e.g. Bad days dropped from 8 to 4 per month. Side effects were manageable."></textarea>
+    </div>
+
+    <div class="form-group">
+      <label>Decision</label>
+      <div class="field-hint">
+        What will you do with this protocol?
+        {% if experiment.protocol %} This will also update the protocol status.{% endif %}
+      </div>
+      <div class="decision-options">
+        <label class="decision-option">
+          <input type="radio" name="decision" value="continue" checked>
+          <span class="decision-label">
+            <span class="decision-icon">✓</span>
+            <span>
+              <strong>Continue</strong>
+              <span class="decision-desc">It's working — keep going</span>
+            </span>
+          </span>
+        </label>
+        <label class="decision-option">
+          <input type="radio" name="decision" value="pause">
+          <span class="decision-label">
+            <span class="decision-icon">⏸</span>
+            <span>
+              <strong>Pause</strong>
+              <span class="decision-desc">Inconclusive — try again later</span>
+            </span>
+          </span>
+        </label>
+        <label class="decision-option">
+          <input type="radio" name="decision" value="stop">
+          <span class="decision-label">
+            <span class="decision-icon">✕</span>
+            <span>
+              <strong>Stop</strong>
+              <span class="decision-desc">Not working or not worth it</span>
+            </span>
+          </span>
+        </label>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:8px;">
+      <a href="{{ url_for('experiments') }}" class="btn btn-secondary">Cancel</a>
+      <button type="submit" class="btn btn-primary">Complete Assessment</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

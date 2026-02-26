@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash
 from sqlalchemy import text
-from database import db, User, Episode, Protocol, Symptom, SymptomScore
-from datetime import datetime
+from database import db, User, Episode, Protocol, Symptom, SymptomScore, Experiment
+from datetime import datetime, date
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///migraine_tracker.db'
@@ -63,6 +63,11 @@ def get_user():
         db.session.add(user)
         db.session.commit()
     return user
+
+
+def get_active_experiment(user_id):
+    """Return the most recent active experiment for the user, or None."""
+    return Experiment.query.filter_by(user_id=user_id, status='active').order_by(Experiment.start_date.desc()).first()
 
 
 # ---------------------------------------------------------------------------
@@ -203,6 +208,89 @@ def reactivate_symptom(symptom_id):
 
 
 # ---------------------------------------------------------------------------
+# Experiments
+# ---------------------------------------------------------------------------
+
+@app.route('/experiments')
+def experiments():
+    user = get_user()
+    active = Experiment.query.filter_by(user_id=user.id, status='active').order_by(Experiment.start_date.desc()).all()
+    completed = Experiment.query.filter_by(user_id=user.id, status='completed').order_by(Experiment.start_date.desc()).all()
+    abandoned = Experiment.query.filter_by(user_id=user.id, status='abandoned').order_by(Experiment.start_date.desc()).all()
+    return render_template('experiments.html', active=active, completed=completed, abandoned=abandoned)
+
+
+@app.route('/experiments/new', methods=['GET', 'POST'])
+def new_experiment():
+    user = get_user()
+    preventatives = Protocol.query.filter_by(user_id=user.id, type='preventative', status='active').all()
+    prefill_protocol_id = request.args.get('protocol_id', type=int)
+
+    if request.method == 'POST':
+        start_str = request.form.get('start_date', '').strip()
+        start = datetime.strptime(start_str, '%Y-%m-%d').date() if start_str else date.today()
+        weeks = int(request.form.get('stabilization_weeks') or 8)
+        protocol_id = int(p) if (p := request.form.get('protocol_id')) else None
+
+        exp = Experiment(
+            user_id=user.id,
+            name=request.form.get('name', '').strip(),
+            hypothesis=request.form.get('hypothesis', '').strip() or None,
+            protocol_id=protocol_id,
+            start_date=start,
+            stabilization_weeks=weeks,
+            baseline_episodes_per_month=user.baseline_episodes_per_month,
+            status='active',
+        )
+        db.session.add(exp)
+        db.session.commit()
+        assess_date = exp.assessment_date.strftime('%b %-d, %Y')
+        flash(f'Experiment started. Assessment due {assess_date}.', 'success')
+        return redirect(url_for('experiments'))
+
+    return render_template('new_experiment.html', preventatives=preventatives,
+                           prefill_protocol_id=prefill_protocol_id, today=date.today())
+
+
+@app.route('/experiments/offer/<int:protocol_id>')
+def experiment_offer(protocol_id):
+    user = get_user()
+    protocol = Protocol.query.filter_by(id=protocol_id, user_id=user.id, type='preventative').first_or_404()
+    return render_template('experiment_offer.html', protocol=protocol)
+
+
+@app.route('/experiments/<int:exp_id>/assess', methods=['GET', 'POST'])
+def assess_experiment(exp_id):
+    user = get_user()
+    experiment = Experiment.query.filter_by(id=exp_id, user_id=user.id).first_or_404()
+
+    if request.method == 'POST':
+        experiment.outcome_rating = int(request.form.get('outcome_rating', 5))
+        experiment.outcome_notes = request.form.get('outcome_notes', '').strip() or None
+        experiment.decision = request.form.get('decision')
+        experiment.status = 'completed'
+
+        if experiment.protocol and experiment.decision in ('pause', 'stop'):
+            experiment.protocol.status = {'pause': 'paused', 'stop': 'stopped'}[experiment.decision]
+
+        db.session.commit()
+        flash(f'"{experiment.name}" assessed and completed.', 'success')
+        return redirect(url_for('experiments'))
+
+    return render_template('assess_experiment.html', experiment=experiment)
+
+
+@app.route('/experiments/<int:exp_id>/abandon', methods=['POST'])
+def abandon_experiment(exp_id):
+    user = get_user()
+    experiment = Experiment.query.filter_by(id=exp_id, user_id=user.id).first_or_404()
+    experiment.status = 'abandoned'
+    db.session.commit()
+    flash(f'"{experiment.name}" abandoned.', 'success')
+    return redirect(url_for('experiments'))
+
+
+# ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------
 
@@ -236,11 +324,17 @@ def index():
                 trend = 'neutral'
         symptom_stats.append({'symptom': symptom, 'avg_score': avg, 'baseline_score': baseline, 'trend': trend})
 
+    experiments_ready = [
+        e for e in Experiment.query.filter_by(user_id=user.id, status='active').all()
+        if e.ready_to_assess
+    ]
+
     return render_template('index.html',
                            episodes=recent_episodes,
                            protocols=active_preventatives,
                            rescue_options=rescue_options,
-                           symptom_stats=symptom_stats)
+                           symptom_stats=symptom_stats,
+                           experiments_ready=experiments_ready)
 
 
 # ---------------------------------------------------------------------------
@@ -351,6 +445,7 @@ def protocols():
 @app.route('/protocols/new', methods=['GET', 'POST'])
 def new_protocol():
     user = get_user()
+    active_experiment = get_active_experiment(user.id)
 
     if request.method == 'POST':
         start_date_str = request.form.get('start_date')
@@ -366,15 +461,19 @@ def new_protocol():
         db.session.add(protocol)
         db.session.commit()
         flash('Preventative added.', 'success')
+        # Offer to start an experiment for active protocols
+        if protocol.status == 'active':
+            return redirect(url_for('experiment_offer', protocol_id=protocol.id))
         return redirect(url_for('protocols'))
 
-    return render_template('new_protocol.html')
+    return render_template('new_protocol.html', active_experiment=active_experiment)
 
 
 @app.route('/protocols/<int:protocol_id>/edit', methods=['GET', 'POST'])
 def edit_protocol(protocol_id):
     user = get_user()
     protocol = Protocol.query.filter_by(id=protocol_id, user_id=user.id, type='preventative').first_or_404()
+    active_experiment = get_active_experiment(user.id)
 
     if request.method == 'POST':
         start_date_str = request.form.get('start_date')
@@ -387,7 +486,7 @@ def edit_protocol(protocol_id):
         flash('Preventative updated.', 'success')
         return redirect(url_for('protocols'))
 
-    return render_template('edit_protocol.html', protocol=protocol)
+    return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment)
 
 
 # ---------------------------------------------------------------------------

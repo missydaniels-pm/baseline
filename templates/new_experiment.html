@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Start Experiment — Baseline{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Start Experiment</h1>
+  <a href="{{ url_for('experiments') }}" class="btn btn-secondary">Cancel</a>
+</div>
+
+<div class="form-card">
+  <form method="POST">
+    <div class="form-group">
+      <label for="name">Experiment name</label>
+      <div class="field-hint">Give it a clear, memorable name. e.g. "Magnesium 400mg trial"</div>
+      <input type="text" id="name" name="name" required autofocus
+             placeholder="e.g. Magnesium 400mg trial">
+    </div>
+
+    <div class="form-group">
+      <label for="protocol_id">Protocol being tested</label>
+      <select id="protocol_id" name="protocol_id">
+        <option value="">— select a protocol —</option>
+        {% for p in preventatives %}
+        <option value="{{ p.id }}" {% if p.id == prefill_protocol_id %}selected{% endif %}>{{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="hypothesis">Hypothesis <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+      <div class="field-hint">What outcome do you expect? e.g. "I expect to have fewer than 4 bad days per month after 8 weeks."</div>
+      <textarea id="hypothesis" name="hypothesis" placeholder="I expect…"></textarea>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="start_date">Start date</label>
+        <input type="date" id="start_date" name="start_date"
+               value="{{ today.strftime('%Y-%m-%d') }}">
+      </div>
+      <div class="form-group">
+        <label for="stabilization_weeks">Stabilization period (weeks)</label>
+        <div class="field-hint">How long before assessing? Most protocols need 8–12 weeks.</div>
+        <input type="number" id="stabilization_weeks" name="stabilization_weeks"
+               min="1" max="52" value="8">
+      </div>
+    </div>
+
+    <div id="assess-date-preview" class="assess-date-preview" style="display:none;">
+      Assessment due: <strong id="assess-date-text"></strong>
+    </div>
+
+    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:8px;">
+      <a href="{{ url_for('experiments') }}" class="btn btn-secondary">Cancel</a>
+      <button type="submit" class="btn btn-primary">Start Experiment</button>
+    </div>
+  </form>
+</div>
+
+<script>
+  function updateAssessDate() {
+    var startVal = document.getElementById('start_date').value;
+    var weeks = parseInt(document.getElementById('stabilization_weeks').value) || 8;
+    var preview = document.getElementById('assess-date-preview');
+    var dateText = document.getElementById('assess-date-text');
+    if (startVal) {
+      var d = new Date(startVal + 'T00:00:00');
+      d.setDate(d.getDate() + weeks * 7);
+      var opts = { year: 'numeric', month: 'short', day: 'numeric' };
+      dateText.textContent = d.toLocaleDateString('en-US', opts);
+      preview.style.display = 'block';
+    } else {
+      preview.style.display = 'none';
+    }
+  }
+  document.getElementById('start_date').addEventListener('change', updateAssessDate);
+  document.getElementById('stabilization_weeks').addEventListener('input', updateAssessDate);
+  updateAssessDate();
+</script>
+{% endblock %}
