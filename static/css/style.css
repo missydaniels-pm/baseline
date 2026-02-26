@@ -418,6 +418,19 @@ input[type="range"]::-moz-range-thumb {
 /* Delete form inline */
 .delete-form { display: inline; }
 
+/* Form action rows (save/cancel/delete) */
+.form-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.form-actions-primary {
+  display: flex;
+  gap: 10px;
+}
+
 /* Section header (protocols page) */
 .section-header {
   display: flex;
@@ -548,10 +561,242 @@ input[type="range"]::-moz-range-thumb {
   font-style: italic;
 }
 
-@media (max-width: 700px) {
-  .layout { flex-direction: column; }
-  .sidebar { width: 100%; height: auto; position: static; flex-direction: row; flex-wrap: wrap; padding: 16px; }
-  .main { padding: 20px; }
-  .form-row { grid-template-columns: 1fr; }
-  .stat-strip { flex-wrap: wrap; }
+/* ─── Mobile navigation elements (hidden on desktop) ─────────────── */
+
+.mobile-header {
+  display: none;
+}
+
+.nav-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 150;
+  opacity: 0;
+  transition: opacity 0.25s;
+  pointer-events: none;
+}
+
+.nav-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+
+.nav-toggle span {
+  display: block;
+  width: 22px;
+  height: 2px;
+  background: var(--text);
+  border-radius: 2px;
+  transition: transform 0.25s, opacity 0.25s;
+  pointer-events: none;
+}
+
+.nav-toggle span:nth-child(2) { margin: 5px 0; }
+
+.nav-open .nav-toggle span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.nav-open .nav-toggle span:nth-child(2) { opacity: 0; transform: scaleX(0); }
+.nav-open .nav-toggle span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+/* ─── Responsive breakpoint ───────────────────────────────────────── */
+
+@media (max-width: 768px) {
+
+  /* Mobile header bar — fixed at top */
+  .mobile-header {
+    display: flex;
+    align-items: center;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 56px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 12px 0 4px;
+    z-index: 200;
+    gap: 4px;
+  }
+
+  .mobile-brand {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.3px;
+  }
+
+  .mobile-brand span { color: var(--accent-light); }
+
+  /* Overlay — shown when nav is open */
+  .nav-overlay {
+    display: block;
+  }
+
+  .nav-open .nav-overlay {
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  /* Layout — account for fixed header */
+  .layout {
+    flex-direction: column;
+    padding-top: 56px;
+  }
+
+  /* Sidebar becomes a slide-in drawer */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 260px;
+    padding-top: 72px;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 175;
+  }
+
+  .nav-open .sidebar {
+    transform: translateX(0);
+  }
+
+  /* Hide desktop brand inside drawer (shown in mobile header instead) */
+  .sidebar-brand { display: none; }
+
+  /* Main content — full width, comfortable mobile padding */
+  .main {
+    padding: 20px 16px 40px;
+    max-width: 100%;
+  }
+
+  /* Page header */
+  .page-header {
+    margin-bottom: 20px;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .page-title { font-size: 20px; }
+
+  /* Stat strip — 2-column grid */
+  .stat-strip {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  .stat-value { font-size: 22px; }
+
+  /* Cards */
+  .card { padding: 16px; }
+
+  .card-grid { grid-template-columns: 1fr; }
+
+  /* Episode cards — badge + content row, then actions full-width below */
+  .episode-card {
+    grid-template-columns: auto 1fr;
+    row-gap: 10px;
+  }
+
+  .episode-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Protocol cards — stack vertically */
+  .protocol-card {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* Rescue grid — single column */
+  .rescue-grid { grid-template-columns: 1fr; }
+
+  /* Section header — allow wrapping */
+  .section-header { flex-wrap: wrap; gap: 10px; }
+
+  /* Edit form actions — stack: primary (save/cancel) on top, delete below */
+  .form-actions {
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+
+  .form-actions-primary {
+    justify-content: flex-end;
+  }
+
+  /* Form card — full width */
+  .form-card {
+    padding: 20px 16px;
+    max-width: 100%;
+  }
+
+  /* Form row — single column on mobile */
+  .form-row {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  /* Inputs — 16px font prevents iOS auto-zoom, 48px min height for tap comfort */
+  input[type="text"],
+  input[type="number"],
+  input[type="date"],
+  input[type="datetime-local"],
+  textarea,
+  select {
+    font-size: 16px;
+    padding: 12px 14px;
+    min-height: 48px;
+    touch-action: manipulation;
+  }
+
+  textarea { min-height: 100px; }
+
+  /* Buttons — comfortable tap targets */
+  .btn {
+    padding: 12px 20px;
+    font-size: 15px;
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .btn-sm {
+    padding: 9px 14px;
+    font-size: 14px;
+    min-height: 40px;
+  }
+
+  /* Sliders — larger thumb for touch */
+  input[type="range"] {
+    height: 8px;
+    touch-action: pan-y;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    width: 28px;
+    height: 28px;
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+  }
+
+  .slider-value {
+    font-size: 16px;
+    width: 32px;
+  }
 }

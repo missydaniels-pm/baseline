@@ -27,12 +27,12 @@
       </label>
     </div>
 
-    <div style="display:flex; gap:10px; justify-content:space-between; margin-top:8px;">
+    <div class="form-actions">
       <form class="delete-form" method="POST" action="{{ url_for('delete_protocol', protocol_id=option.id) }}"
             onsubmit="return confirm('Delete this rescue option?')">
         <button type="submit" class="btn btn-danger">Delete</button>
       </form>
-      <div style="display:flex; gap:10px;">
+      <div class="form-actions-primary">
         <a href="{{ url_for('protocols') }}" class="btn btn-secondary">Cancel</a>
         <button type="submit" class="btn btn-primary">Save Changes</button>
       </div>

@@ -9,8 +9,18 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
+
+<header class="mobile-header">
+  <button class="nav-toggle" id="navToggle" aria-label="Open navigation">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="mobile-brand">migraine<span>.</span>log</div>
+</header>
+
+<div class="nav-overlay" id="navOverlay"></div>
+
 <div class="layout">
-  <nav class="sidebar">
+  <nav class="sidebar" id="sidebar">
     <div class="sidebar-brand">migraine<span>.</span>log</div>
     <a href="{{ url_for('index') }}" class="nav-link {% if request.endpoint == 'index' %}active{% endif %}">
       <span class="nav-icon">⌂</span> Dashboard
@@ -46,6 +56,24 @@
       display.textContent = slider.value;
       slider.addEventListener('input', function() { display.textContent = this.value; });
     }
+  });
+
+  // Mobile navigation toggle
+  var navToggle = document.getElementById('navToggle');
+  var navOverlay = document.getElementById('navOverlay');
+
+  navToggle.addEventListener('click', function() {
+    document.body.classList.toggle('nav-open');
+  });
+
+  navOverlay.addEventListener('click', function() {
+    document.body.classList.remove('nav-open');
+  });
+
+  document.querySelectorAll('.nav-link').forEach(function(link) {
+    link.addEventListener('click', function() {
+      document.body.classList.remove('nav-open');
+    });
   });
 </script>
 </body>
