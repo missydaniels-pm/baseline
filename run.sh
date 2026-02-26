@@ -13,5 +13,5 @@ source .venv/bin/activate
 echo "Installing dependencies..."
 pip install -q -r requirements.txt
 
-echo "Starting migraine tracker at http://localhost:5001"
+echo "Starting Baseline at http://localhost:5001"
 python app.py

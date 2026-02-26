@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Edit Episode — Migraine Tracker{% endblock %}
+{% block title %}Edit Episode — Baseline{% endblock %}
 
 {% block content %}
 <div class="page-header">
@@ -86,7 +86,7 @@
 
     <div class="form-group">
       <label for="notes">Notes</label>
-      <textarea id="notes" name="notes" placeholder="Triggers, context, observations…">{{ episode.notes or '' }}</textarea>
+      <textarea id="notes" name="notes" placeholder="Symptoms, context, observations…">{{ episode.notes or '' }}</textarea>
     </div>
 
     <div class="form-actions">

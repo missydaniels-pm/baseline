@@ -6,7 +6,7 @@ from datetime import datetime
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///migraine_tracker.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = 'migraine-tracker-secret-key'
+app.config['SECRET_KEY'] = 'baseline-secret-key'
 
 db.init_app(app)
 
