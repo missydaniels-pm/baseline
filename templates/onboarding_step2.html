@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Setup: Starting Point — Baseline{% endblock %}
+
+{% block content %}
+<div class="wizard-card">
+
+  <div class="wizard-progress">
+    <span class="wizard-step-dot active"></span>
+    <span class="wizard-step-line active"></span>
+    <span class="wizard-step-dot active"></span>
+    <span class="wizard-step-label">Step 2 of 2</span>
+  </div>
+
+  <h1 class="page-title" style="margin-bottom:8px;">What's your starting point?</h1>
+  <p style="color:var(--text-muted); margin-bottom:28px;">
+    Before we start tracking, let's establish where you are today.
+  </p>
+
+  <form method="POST">
+
+    <div class="form-group">
+      <label for="baseline_episodes_per_month">In the last 4 weeks, roughly how many bad days did you have?</label>
+      <div class="field-hint">This becomes your baseline to measure improvement against.</div>
+      <input type="number" id="baseline_episodes_per_month" name="baseline_episodes_per_month"
+             min="0" max="28" placeholder="e.g. 8" style="max-width:160px;">
+    </div>
+
+    <hr class="divider">
+
+    {% for symptom in symptoms %}
+    <div class="form-group">
+      <label for="score_{{ symptom.id }}">On your worst days, how would you rate your {{ symptom.name }}?</label>
+      {% if symptom.description %}
+        <div class="field-hint">{{ symptom.description }}</div>
+      {% endif %}
+      <div class="slider-wrap">
+        <input type="range" id="score_{{ symptom.id }}" name="score_{{ symptom.id }}"
+               min="1" max="10" value="{{ symptom.baseline_score or 7 }}">
+        <span class="slider-value" id="score_{{ symptom.id }}_display">
+          {{ symptom.baseline_score or 7 }}
+        </span>
+      </div>
+    </div>
+    {% endfor %}
+
+    <div style="display:flex; gap:10px; justify-content:space-between; margin-top:8px; align-items:center;">
+      <a href="{{ url_for('onboarding_step1') }}" class="btn btn-secondary">← Back</a>
+      <button type="submit" class="btn btn-primary">Start tracking →</button>
+    </div>
+
+  </form>
+</div>
+{% endblock %}

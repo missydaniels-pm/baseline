@@ -561,6 +561,131 @@ input[type="range"]::-moz-range-thumb {
   font-style: italic;
 }
 
+/* ─── Onboarding wizard ──────────────────────────────────────────── */
+
+.wizard-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 36px 40px;
+  max-width: 680px;
+}
+
+.wizard-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 28px;
+}
+
+.wizard-step-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.wizard-step-dot.active {
+  background: var(--accent-light);
+}
+
+.wizard-step-line {
+  height: 2px;
+  width: 28px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.wizard-step-line.active {
+  background: var(--accent-light);
+}
+
+.wizard-step-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ─── Symptom rows (onboarding step 1) ──────────────────────────── */
+
+.symptom-row {
+  margin-bottom: 8px;
+}
+
+.symptom-row-fields {
+  display: flex;
+  gap: 14px;
+}
+
+/* ─── Field hint ──────────────────────────────────────────────────── */
+
+.field-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-bottom: 6px;
+  margin-top: -2px;
+}
+
+/* ─── Symptom stat grid (dashboard) ──────────────────────────────── */
+
+.symptom-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.symptom-stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+}
+
+.symptom-stat-name {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.symptom-stat-score {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent-light);
+  line-height: 1.1;
+}
+
+.symptom-stat-score span {
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.symptom-stat-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.symptom-stat-baseline {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.trend-up   { color: var(--high); font-weight: 600; margin-left: 4px; }
+.trend-down { color: var(--low);  font-weight: 600; margin-left: 4px; }
+.trend-neutral { color: var(--text-muted); font-weight: 500; margin-left: 4px; }
+
 /* ─── Mobile navigation elements (hidden on desktop) ─────────────── */
 
 .mobile-header {
@@ -798,5 +923,22 @@ input[type="range"]::-moz-range-thumb {
   .slider-value {
     font-size: 16px;
     width: 32px;
+  }
+
+  /* Wizard card — full width on mobile */
+  .wizard-card {
+    padding: 20px 16px;
+    max-width: 100%;
+  }
+
+  /* Symptom rows — stack vertically on mobile */
+  .symptom-row-fields {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  /* Symptom stat grid — 2-column on mobile */
+  .symptom-stat-grid {
+    grid-template-columns: 1fr 1fr;
   }
 }

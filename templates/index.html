@@ -17,15 +17,39 @@
     <div class="stat-label">Active Protocols</div>
     <div class="stat-value accent">{{ protocols | length }}</div>
   </div>
-  {% if episodes %}
-  <div class="stat-box">
-    <div class="stat-label">Last Severity</div>
-    <div class="stat-value {% if episodes[0].peak_severity >= 7 %}" style="color:var(--high){% elif episodes[0].peak_severity >= 4 %}" style="color:var(--mid){% else %}" style="color:var(--low){% endif %}">
-      {{ episodes[0].peak_severity }}/10
-    </div>
-  </div>
-  {% endif %}
 </div>
+
+{% if symptom_stats %}
+<div class="page-header" style="margin-bottom:12px;">
+  <h2 style="font-size:17px; font-weight:600;">Your Symptoms</h2>
+</div>
+<div class="symptom-stat-grid">
+  {% for stat in symptom_stats %}
+  <div class="symptom-stat-card">
+    <div class="symptom-stat-name">{{ stat.symptom.name }}</div>
+    {% if stat.avg_score is not none %}
+      <div class="symptom-stat-score">{{ stat.avg_score }}<span>/10</span></div>
+      <div class="symptom-stat-meta">avg last 5 episodes</div>
+    {% else %}
+      <div class="symptom-stat-score" style="font-size:18px; color:var(--text-muted);">—</div>
+      <div class="symptom-stat-meta">no episodes yet</div>
+    {% endif %}
+    {% if stat.baseline_score is not none %}
+      <div class="symptom-stat-baseline">baseline {{ stat.baseline_score }}/10
+        {% if stat.trend == 'up' %}
+          <span class="trend-up">↑ worse</span>
+        {% elif stat.trend == 'down' %}
+          <span class="trend-down">↓ better</span>
+        {% elif stat.trend == 'neutral' %}
+          <span class="trend-neutral">— stable</span>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+<hr class="divider" style="margin-top:8px;">
+{% endif %}
 
 <div class="page-header" style="margin-bottom:16px;">
   <h2 style="font-size:17px; font-weight:600;">Recent Episodes</h2>
@@ -36,13 +60,15 @@
   {% for ep in episodes %}
   <div class="card {{ ep.severity_class }}">
     <div class="episode-card">
-      <div class="severity-badge">{{ ep.peak_severity }}</div>
+      <div class="severity-badge">{{ ep.max_score or '—' }}</div>
       <div>
         <div style="font-weight:600;">{{ ep.onset.strftime('%b %-d, %Y at %-I:%M %p') }}</div>
         <div class="episode-meta">
+          {% for ss in ep.symptom_scores %}
+            <span>{{ ss.symptom.name }}: {{ ss.score }}/10</span>
+          {% endfor %}
           {% if ep.duration_hours %}<span>{{ ep.duration_hours }}h duration</span>{% endif %}
           <span class="imp-{{ ep.functional_impairment }}">{{ ep.impairment_label }}</span>
-          {% if ep.rescue_effectiveness %}<span>rescue {{ ep.rescue_effectiveness }}/10</span>{% endif %}
         </div>
         {% if ep.notes %}<div class="notes-text">{{ ep.notes }}</div>{% endif %}
       </div>

@@ -22,14 +22,19 @@
       </div>
     </div>
 
+    {% for symptom in symptoms %}
     <div class="form-group">
-      <label for="peak_severity">Peak Severity</label>
+      <label for="score_{{ symptom.id }}">{{ symptom.name }}</label>
+      {% if symptom.description %}
+        <div class="field-hint">{{ symptom.description }}</div>
+      {% endif %}
       <div class="slider-wrap">
-        <input type="range" id="peak_severity" name="peak_severity"
+        <input type="range" id="score_{{ symptom.id }}" name="score_{{ symptom.id }}"
                min="1" max="10" value="5">
-        <span class="slider-value" id="peak_severity_display">5</span>
+        <span class="slider-value" id="score_{{ symptom.id }}_display">5</span>
       </div>
     </div>
+    {% endfor %}
 
     <div class="form-group">
       <label for="functional_impairment">Functional Impairment</label>

@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Setup: What to Track — Baseline{% endblock %}
+
+{% block content %}
+<div class="wizard-card">
+
+  <div class="wizard-progress">
+    <span class="wizard-step-dot active"></span>
+    <span class="wizard-step-line"></span>
+    <span class="wizard-step-dot"></span>
+    <span class="wizard-step-label">Step 1 of 2</span>
+  </div>
+
+  <h1 class="page-title" style="margin-bottom:8px;">What do you want to track?</h1>
+  <p style="color:var(--text-muted); margin-bottom:6px;">
+    What are the 1–3 symptoms or outcomes you most want to track?
+  </p>
+  <p class="field-hint" style="margin-bottom:28px;">
+    Focus on what matters most to you. Examples: Pain, Fatigue, Cognitive fog, Energy, Mood, Nausea, Mobility
+  </p>
+
+  <form method="POST">
+
+    <div id="symptom-rows">
+
+      <div class="symptom-row" id="row-1">
+        <div class="symptom-row-fields">
+          <div class="form-group" style="flex:1;">
+            <label for="name_1">Symptom name</label>
+            <input type="text" id="name_1" name="name_1" placeholder="e.g. Pain"
+                   value="{{ symptoms[0].name if symptoms|length > 0 else '' }}" required>
+          </div>
+          <div class="form-group" style="flex:1.4;">
+            <label for="description_1">Description <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+            <input type="text" id="description_1" name="description_1" placeholder="e.g. Head and neck pain intensity"
+                   value="{{ symptoms[0].description if symptoms|length > 0 and symptoms[0].description else '' }}">
+          </div>
+        </div>
+      </div>
+
+      <div class="symptom-row" id="row-2" {% if symptoms|length < 2 %}style="display:none;"{% endif %}>
+        <div class="symptom-row-fields">
+          <div class="form-group" style="flex:1;">
+            <label for="name_2">Symptom name</label>
+            <input type="text" id="name_2" name="name_2" placeholder="e.g. Fatigue"
+                   value="{{ symptoms[1].name if symptoms|length > 1 else '' }}">
+          </div>
+          <div class="form-group" style="flex:1.4;">
+            <label for="description_2">Description <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+            <input type="text" id="description_2" name="description_2" placeholder="e.g. Energy and ability to function"
+                   value="{{ symptoms[1].description if symptoms|length > 1 and symptoms[1].description else '' }}">
+          </div>
+        </div>
+      </div>
+
+      <div class="symptom-row" id="row-3" {% if symptoms|length < 3 %}style="display:none;"{% endif %}>
+        <div class="symptom-row-fields">
+          <div class="form-group" style="flex:1;">
+            <label for="name_3">Symptom name</label>
+            <input type="text" id="name_3" name="name_3" placeholder="e.g. Nausea"
+                   value="{{ symptoms[2].name if symptoms|length > 2 else '' }}">
+          </div>
+          <div class="form-group" style="flex:1.4;">
+            <label for="description_3">Description <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+            <input type="text" id="description_3" name="description_3" placeholder="e.g. Nausea and stomach upset"
+                   value="{{ symptoms[2].description if symptoms|length > 2 and symptoms[2].description else '' }}">
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <button type="button" class="btn btn-secondary" id="add-row-btn"
+            {% if symptoms|length >= 3 %}style="display:none;"{% endif %}
+            style="margin-bottom:28px;">
+      + Add another symptom
+    </button>
+
+    <div style="display:flex; justify-content:flex-end; margin-top:8px;">
+      <button type="submit" class="btn btn-primary">Next: Set baseline →</button>
+    </div>
+
+  </form>
+</div>
+
+<script>
+  var visibleRows = {{ [symptoms|length, 1]|max }};
+  var addBtn = document.getElementById('add-row-btn');
+
+  addBtn.addEventListener('click', function() {
+    visibleRows++;
+    var row = document.getElementById('row-' + visibleRows);
+    if (row) row.style.display = '';
+    if (visibleRows >= 3) addBtn.style.display = 'none';
+  });
+</script>
+{% endblock %}
