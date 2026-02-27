@@ -23,7 +23,9 @@
   <div class="card">
     <div class="protocol-card">
       <div class="protocol-info">
-        <div class="protocol-name">{{ p.name }}</div>
+        <div class="protocol-name">
+          <a href="{{ url_for('protocol_detail', protocol_id=p.id) }}" style="color:var(--text);">{{ p.name }}</a>
+        </div>
         <div class="protocol-meta">
           {% if p.dose_frequency %}<span>{{ p.dose_frequency }}</span>{% endif %}
           {% if p.start_date %}<span> · since {{ p.start_date.strftime('%b %-d, %Y') }}</span>{% endif %}
@@ -31,7 +33,10 @@
         </div>
         {% if p.notes %}<div class="notes-text">{{ p.notes }}</div>{% endif %}
       </div>
-      <a href="{{ url_for('edit_protocol', protocol_id=p.id) }}" class="btn btn-secondary btn-sm">Edit</a>
+      <div style="display:flex; gap:8px; flex-shrink:0;">
+        <a href="{{ url_for('protocol_detail', protocol_id=p.id) }}" class="btn btn-secondary btn-sm">History</a>
+        <a href="{{ url_for('edit_protocol', protocol_id=p.id) }}" class="btn btn-secondary btn-sm">Edit</a>
+      </div>
     </div>
   </div>
   {% endfor %}
@@ -42,7 +47,9 @@
   <div class="card" style="opacity:0.6;">
     <div class="protocol-card">
       <div class="protocol-info">
-        <div class="protocol-name">{{ p.name }}</div>
+        <div class="protocol-name">
+          <a href="{{ url_for('protocol_detail', protocol_id=p.id) }}" style="color:var(--text);">{{ p.name }}</a>
+        </div>
         <div class="protocol-meta">
           {% if p.dose_frequency %}<span>{{ p.dose_frequency }}</span>{% endif %}
           {% if p.start_date %}<span> · since {{ p.start_date.strftime('%b %-d, %Y') }}</span>{% endif %}
@@ -50,7 +57,10 @@
         </div>
         {% if p.notes %}<div class="notes-text">{{ p.notes }}</div>{% endif %}
       </div>
-      <a href="{{ url_for('edit_protocol', protocol_id=p.id) }}" class="btn btn-secondary btn-sm">Edit</a>
+      <div style="display:flex; gap:8px; flex-shrink:0;">
+        <a href="{{ url_for('protocol_detail', protocol_id=p.id) }}" class="btn btn-secondary btn-sm">History</a>
+        <a href="{{ url_for('edit_protocol', protocol_id=p.id) }}" class="btn btn-secondary btn-sm">Edit</a>
+      </div>
     </div>
   </div>
   {% endfor %}

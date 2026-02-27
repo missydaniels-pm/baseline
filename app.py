@@ -3,7 +3,7 @@ import json
 import re
 from flask import Flask, render_template, request, redirect, url_for, flash
 from sqlalchemy import text
-from database import db, User, Episode, Protocol, Symptom, SymptomScore, Experiment, CheckIn, ProtocolCompliance
+from database import db, User, Episode, Protocol, Symptom, SymptomScore, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent
 from datetime import datetime, date, timedelta
 from dotenv import load_dotenv
 
@@ -27,6 +27,8 @@ def run_migrations():
         'ALTER TABLE users ADD COLUMN onboarding_complete BOOLEAN NOT NULL DEFAULT 0',
         'ALTER TABLE users ADD COLUMN baseline_episodes_per_month INTEGER',
         'ALTER TABLE users ADD COLUMN ai_logging_enabled BOOLEAN NOT NULL DEFAULT 0',
+        'ALTER TABLE protocol_compliance ADD COLUMN took BOOLEAN NOT NULL DEFAULT 1',
+        'ALTER TABLE protocol_compliance ADD COLUMN notes TEXT',
     ]
     with db.engine.connect() as conn:
         for ddl in migrations:
@@ -788,6 +790,14 @@ def new_protocol():
             notes=request.form.get('notes') or None,
         )
         db.session.add(protocol)
+        db.session.flush()
+        event_type = {'active': 'started', 'paused': 'paused', 'stopped': 'stopped'}.get(protocol.status, 'started')
+        db.session.add(ProtocolEvent(
+            protocol_id=protocol.id,
+            user_id=user.id,
+            event_type=event_type,
+            date=protocol.start_date or date.today(),
+        ))
         db.session.commit()
         flash('Preventative added.', 'success')
         # Offer to start an experiment for active protocols
@@ -805,17 +815,93 @@ def edit_protocol(protocol_id):
     active_experiment = get_active_experiment(user.id)
 
     if request.method == 'POST':
+        old_status = protocol.status
+        old_dose = protocol.dose_frequency
+
         start_date_str = request.form.get('start_date')
         protocol.name = request.form.get('name')
         protocol.start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date() if start_date_str else None
         protocol.dose_frequency = request.form.get('dose_frequency') or None
         protocol.status = request.form.get('status', protocol.status)
         protocol.notes = request.form.get('notes') or None
+
+        if old_status != protocol.status:
+            event_type = {'active': 'reactivated', 'paused': 'paused', 'stopped': 'stopped'}.get(protocol.status, protocol.status)
+            db.session.add(ProtocolEvent(
+                protocol_id=protocol.id, user_id=user.id,
+                event_type=event_type, date=date.today(),
+            ))
+        if old_dose != protocol.dose_frequency:
+            detail = f'Changed from "{old_dose or "not set"}" to "{protocol.dose_frequency or "not set"}"'
+            db.session.add(ProtocolEvent(
+                protocol_id=protocol.id, user_id=user.id,
+                event_type='dose_changed', detail=detail, date=date.today(),
+            ))
+
         db.session.commit()
         flash('Preventative updated.', 'success')
         return redirect(url_for('protocols'))
 
     return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment)
+
+
+@app.route('/protocols/<int:protocol_id>')
+def protocol_detail(protocol_id):
+    user = get_user()
+    protocol = Protocol.query.filter_by(id=protocol_id, user_id=user.id, type='preventative').first_or_404()
+
+    compliance = ProtocolCompliance.query.filter_by(protocol_id=protocol_id, user_id=user.id).all()
+    events = ProtocolEvent.query.filter_by(protocol_id=protocol_id, user_id=user.id).all()
+
+    timeline = []
+    for c in compliance:
+        timeline.append({
+            'date': c.date,
+            'type': 'taken' if c.took else 'missed',
+            'notes': c.notes,
+            'detail': None,
+            'created_at': c.created_at,
+        })
+    for e in events:
+        timeline.append({
+            'date': e.date,
+            'type': e.event_type,
+            'notes': None,
+            'detail': e.detail,
+            'created_at': e.created_at,
+        })
+    timeline.sort(key=lambda x: (x['date'], x['created_at']), reverse=True)
+
+    today_log = ProtocolCompliance.query.filter_by(
+        protocol_id=protocol_id, user_id=user.id, date=date.today()
+    ).first()
+
+    return render_template('protocol_detail.html',
+                           protocol=protocol, timeline=timeline, today_log=today_log, today=date.today())
+
+
+@app.route('/protocols/<int:protocol_id>/log', methods=['POST'])
+def log_protocol_today(protocol_id):
+    user = get_user()
+    protocol = Protocol.query.filter_by(id=protocol_id, user_id=user.id, type='preventative').first_or_404()
+
+    took = request.form.get('took') == 'yes'
+    notes = request.form.get('notes', '').strip() or None
+
+    existing = ProtocolCompliance.query.filter_by(
+        protocol_id=protocol_id, user_id=user.id, date=date.today()
+    ).first()
+    if existing:
+        existing.took = took
+        existing.notes = notes
+    else:
+        db.session.add(ProtocolCompliance(
+            user_id=user.id, protocol_id=protocol_id,
+            date=date.today(), took=took, notes=notes,
+        ))
+    db.session.commit()
+    flash('Logged.', 'success')
+    return redirect(url_for('protocol_detail', protocol_id=protocol_id))
 
 
 # ---------------------------------------------------------------------------

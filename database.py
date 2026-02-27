@@ -201,7 +201,28 @@ class ProtocolCompliance(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     protocol_id = db.Column(db.Integer, db.ForeignKey('protocols.id'), nullable=False)
     date = db.Column(db.Date, nullable=False)
+    took = db.Column(db.Boolean, nullable=False, default=True)   # True=taken, False=missed
+    notes = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    protocol = db.relationship('Protocol')
+
+    def __repr__(self):
+        return f'<ProtocolCompliance user={self.user_id} protocol={self.protocol_id} date={self.date} took={self.took}>'
+
+
+class ProtocolEvent(db.Model):
+    """Status changes and dose changes recorded automatically or on creation."""
+    __tablename__ = 'protocol_events'
+
+    id = db.Column(db.Integer, primary_key=True)
+    protocol_id = db.Column(db.Integer, db.ForeignKey('protocols.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    # event_type: 'started' | 'paused' | 'stopped' | 'reactivated' | 'dose_changed'
+    event_type = db.Column(db.String(30), nullable=False)
+    detail = db.Column(db.Text, nullable=True)   # e.g. dose change description
+    date = db.Column(db.Date, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):
-        return f'<ProtocolCompliance user={self.user_id} protocol={self.protocol_id} date={self.date}>'
+        return f'<ProtocolEvent {self.event_type} {self.date}>'

@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}{{ protocol.name }} — Baseline{% endblock %}
+
+{% block content %}
+{% macro _log_form(default_took, default_notes) %}
+  <div class="form-group" style="margin-bottom:14px;">
+    <label>Did you take it today?</label>
+    <div style="display:flex; gap:10px; margin-top:6px;">
+      <label class="proto-log-option">
+        <input type="radio" name="took" value="yes" {% if default_took %}checked{% endif %}>
+        <span class="proto-log-label proto-log-taken">Taken</span>
+      </label>
+      <label class="proto-log-option">
+        <input type="radio" name="took" value="no" {% if not default_took %}checked{% endif %}>
+        <span class="proto-log-label proto-log-missed">Missed</span>
+      </label>
+    </div>
+  </div>
+  <div class="form-group" style="margin-bottom:14px;">
+    <label for="log_notes">Notes <span style="font-weight:400;text-transform:none;">(optional)</span></label>
+    <input type="text" id="log_notes" name="notes" placeholder="e.g. took it late, with food…"
+           value="{{ default_notes or '' }}" style="max-width:400px;">
+  </div>
+  <button type="submit" class="btn btn-primary btn-sm">Save</button>
+{% endmacro %}
+
+<div class="page-header">
+  <h1 class="page-title">{{ protocol.name }}</h1>
+  <a href="{{ url_for('protocols') }}" class="btn btn-secondary btn-sm">← Protocols</a>
+</div>
+
+{# ── Basic info ─────────────────────────────────────────────────────────── #}
+<div class="card" style="margin-bottom:24px;">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap;">
+    <div>
+      <div class="protocol-meta" style="margin-bottom:8px;">
+        {% if protocol.dose_frequency %}<span>{{ protocol.dose_frequency }}</span>{% endif %}
+        {% if protocol.start_date %}<span> · since {{ protocol.start_date.strftime('%b %-d, %Y') }}</span>{% endif %}
+        <span class="status-{{ protocol.status }}"> · {{ protocol.status }}</span>
+      </div>
+      {% if protocol.notes %}<div class="notes-text">{{ protocol.notes }}</div>{% endif %}
+    </div>
+    <a href="{{ url_for('edit_protocol', protocol_id=protocol.id) }}" class="btn btn-secondary btn-sm" style="flex-shrink:0;">Edit</a>
+  </div>
+</div>
+
+{# ── Log today ──────────────────────────────────────────────────────────── #}
+<div class="section-header" style="margin-bottom:12px;">
+  <div>
+    <h2 class="section-title">Today</h2>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:28px;">
+  {% if today_log %}
+    <div style="margin-bottom:12px; font-size:14px;">
+      Already logged today:
+      {% if today_log.took %}
+        <strong style="color:var(--low);">Taken</strong>
+      {% else %}
+        <strong style="color:var(--high);">Missed</strong>
+      {% endif %}
+      {% if today_log.notes %}<span style="color:var(--text-muted);"> — {{ today_log.notes }}</span>{% endif %}
+    </div>
+    <details>
+      <summary style="cursor:pointer; font-size:13px; color:var(--text-muted);">Update today's entry</summary>
+      <div style="margin-top:12px;">
+        <form method="POST" action="{{ url_for('log_protocol_today', protocol_id=protocol.id) }}">
+          {{ _log_form(today_log.took, today_log.notes) }}
+        </form>
+      </div>
+    </details>
+  {% else %}
+    <form method="POST" action="{{ url_for('log_protocol_today', protocol_id=protocol.id) }}">
+      {{ _log_form(true, none) }}
+    </form>
+  {% endif %}
+</div>
+
+{# ── History timeline ───────────────────────────────────────────────────── #}
+<div class="section-header" style="margin-bottom:12px;">
+  <div>
+    <h2 class="section-title">History</h2>
+  </div>
+</div>
+
+{% if timeline %}
+  <div class="proto-timeline">
+    {% set ns = namespace(last_date=none) %}
+    {% for entry in timeline %}
+      {% if entry.date != ns.last_date %}
+        <div class="proto-timeline-date">{{ entry.date.strftime('%A, %B %-d, %Y') }}</div>
+        {% set ns.last_date = entry.date %}
+      {% endif %}
+
+      <div class="proto-timeline-entry proto-entry-{{ entry.type }}">
+        <div class="proto-timeline-dot"></div>
+        <div class="proto-timeline-content">
+          <span class="proto-entry-label">
+            {% if entry.type == 'taken' %}Taken
+            {% elif entry.type == 'missed' %}Missed
+            {% elif entry.type == 'started' %}Started
+            {% elif entry.type == 'paused' %}Paused
+            {% elif entry.type == 'stopped' %}Stopped
+            {% elif entry.type == 'reactivated' %}Reactivated
+            {% elif entry.type == 'dose_changed' %}Dose / frequency changed
+            {% else %}{{ entry.type }}
+            {% endif %}
+          </span>
+          {% if entry.detail %}
+            <span class="proto-entry-detail">{{ entry.detail }}</span>
+          {% endif %}
+          {% if entry.notes %}
+            <span class="proto-entry-detail">{{ entry.notes }}</span>
+          {% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="empty-state" style="padding:32px 0;">
+    <p>No history logged yet.</p>
+    <p style="font-size:13px;">Use the daily check-in or the "Log today" form above to record your progress.</p>
+  </div>
+{% endif %}
+
+{% endblock %}
