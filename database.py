@@ -13,10 +13,14 @@ class User(db.Model):
     onboarding_complete = db.Column(db.Boolean, default=False, nullable=False)
     baseline_episodes_per_month = db.Column(db.Integer, nullable=True)
 
+    ai_logging_enabled = db.Column(db.Boolean, default=False, nullable=False)
+
     episodes = db.relationship('Episode', backref='user', lazy=True, cascade='all, delete-orphan')
     protocols = db.relationship('Protocol', backref='user', lazy=True, cascade='all, delete-orphan')
     symptoms = db.relationship('Symptom', backref='user', lazy=True, cascade='all, delete-orphan')
     experiments = db.relationship('Experiment', backref='user', lazy=True, cascade='all, delete-orphan')
+    checkins = db.relationship('CheckIn', backref='user', lazy=True, cascade='all, delete-orphan')
+    protocol_compliance = db.relationship('ProtocolCompliance', backref='user', lazy=True, cascade='all, delete-orphan')
 
     def __repr__(self):
         return f'<User {self.name}>'
@@ -174,3 +178,30 @@ class Experiment(db.Model):
     @property
     def ready_to_assess(self):
         return date.today() >= self.assessment_date
+
+
+class CheckIn(db.Model):
+    __tablename__ = 'checkins'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    role = db.Column(db.String(10), nullable=False)   # 'user' | 'assistant'
+    content = db.Column(db.Text, nullable=False)
+    episode_id = db.Column(db.Integer, db.ForeignKey('episodes.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<CheckIn {self.role} {self.created_at}>'
+
+
+class ProtocolCompliance(db.Model):
+    __tablename__ = 'protocol_compliance'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    protocol_id = db.Column(db.Integer, db.ForeignKey('protocols.id'), nullable=False)
+    date = db.Column(db.Date, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<ProtocolCompliance user={self.user_id} protocol={self.protocol_id} date={self.date}>'

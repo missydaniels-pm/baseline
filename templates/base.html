@@ -22,6 +22,9 @@
 <div class="layout">
   <nav class="sidebar" id="sidebar">
     <div class="sidebar-brand">Base<span>line</span></div>
+    <a href="{{ url_for('checkin') }}" class="nav-link {% if request.endpoint == 'checkin' %}active{% endif %}">
+      <span class="nav-icon">💬</span> Check-in
+    </a>
     <a href="{{ url_for('index') }}" class="nav-link {% if request.endpoint == 'index' %}active{% endif %}">
       <span class="nav-icon">⌂</span> Dashboard
     </a>
@@ -36,6 +39,10 @@
     </a>
     <a href="{{ url_for('symptoms') }}" class="nav-link {% if 'symptom' in request.endpoint %}active{% endif %}">
       <span class="nav-icon">◈</span> Symptoms
+    </a>
+    <div class="nav-spacer"></div>
+    <a href="{{ url_for('settings') }}" class="nav-link {% if request.endpoint == 'settings' %}active{% endif %}">
+      <span class="nav-icon">⚙</span> Settings
     </a>
   </nav>
 

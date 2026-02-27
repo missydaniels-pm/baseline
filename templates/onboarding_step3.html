@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Setup: AI Logging — Baseline{% endblock %}
+
+{% block content %}
+<div class="wizard-card">
+
+  <div class="wizard-progress">
+    <span class="wizard-step-dot active"></span>
+    <span class="wizard-step-line active"></span>
+    <span class="wizard-step-dot active"></span>
+    <span class="wizard-step-line active"></span>
+    <span class="wizard-step-dot active"></span>
+    <span class="wizard-step-label">Step 3 of 3</span>
+  </div>
+
+  <h1 class="page-title" style="margin-bottom:8px;">One more thing — AI logging</h1>
+  <p style="color:var(--text-muted); margin-bottom:24px;">
+    Baseline can include a conversational check-in feature powered by Claude AI.
+    Instead of filling out forms, you type naturally — "had a rough morning,
+    head pain was about a 7, took my sumatriptan" — and it logs the episode for you.
+  </p>
+
+  <div class="warning-banner" style="margin-bottom:24px;">
+    <strong>Privacy note:</strong> When AI logging is enabled, your check-in messages are
+    sent to Anthropic's API for processing. You can turn this on or off at any time in
+    Settings.
+  </div>
+
+  <form method="POST" id="step3Form">
+    <input type="hidden" name="choice" id="choiceInput" value="skip">
+
+    <div style="display:flex; flex-direction:column; gap:12px; margin-top:8px;">
+      <button type="button" class="btn btn-primary" style="justify-content:center;"
+              onclick="document.getElementById('choiceInput').value='enable'; document.getElementById('step3Form').submit();">
+        Enable AI logging
+      </button>
+      <button type="button" class="btn btn-secondary" style="justify-content:center;"
+              onclick="document.getElementById('choiceInput').value='skip'; document.getElementById('step3Form').submit();">
+        No thanks, I'll use the forms
+      </button>
+    </div>
+  </form>
+
+</div>
+{% endblock %}

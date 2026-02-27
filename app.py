@@ -1,11 +1,20 @@
+import os
+import json
+import re
 from flask import Flask, render_template, request, redirect, url_for, flash
 from sqlalchemy import text
-from database import db, User, Episode, Protocol, Symptom, SymptomScore, Experiment
-from datetime import datetime, date
+from database import db, User, Episode, Protocol, Symptom, SymptomScore, Experiment, CheckIn, ProtocolCompliance
+from datetime import datetime, date, timedelta
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///migraine_tracker.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'connect_args': {'check_same_thread': False, 'timeout': 20}
+}
 app.config['SECRET_KEY'] = 'baseline-secret-key'
 
 db.init_app(app)
@@ -17,6 +26,7 @@ def run_migrations():
         'ALTER TABLE protocols ADD COLUMN available BOOLEAN NOT NULL DEFAULT 1',
         'ALTER TABLE users ADD COLUMN onboarding_complete BOOLEAN NOT NULL DEFAULT 0',
         'ALTER TABLE users ADD COLUMN baseline_episodes_per_month INTEGER',
+        'ALTER TABLE users ADD COLUMN ai_logging_enabled BOOLEAN NOT NULL DEFAULT 0',
     ]
     with db.engine.connect() as conn:
         for ddl in migrations:
@@ -160,12 +170,278 @@ def onboarding_step2():
             if score_str:
                 symptom.baseline_score = int(score_str)
 
-        user.onboarding_complete = True
         db.session.commit()
-        flash('Welcome! Your tracking is set up.', 'success')
-        return redirect(url_for('index'))
+        return redirect(url_for('onboarding_step3'))
 
     return render_template('onboarding_step2.html', symptoms=symptoms)
+
+
+@app.route('/onboarding/step3', methods=['GET', 'POST'])
+def onboarding_step3():
+    user = get_user()
+
+    if request.method == 'POST':
+        choice = request.form.get('choice')
+        user.ai_logging_enabled = (choice == 'enable')
+        user.onboarding_complete = True
+        db.session.commit()
+        flash('Welcome to Baseline!', 'success')
+        return redirect(url_for('index'))
+
+    return render_template('onboarding_step3.html')
+
+
+# ---------------------------------------------------------------------------
+# Settings
+# ---------------------------------------------------------------------------
+
+@app.route('/settings', methods=['GET', 'POST'])
+def settings():
+    user = get_user()
+
+    if request.method == 'POST':
+        user.ai_logging_enabled = ('ai_logging' in request.form)
+        db.session.commit()
+        flash('Settings saved.', 'success')
+        return redirect(url_for('settings'))
+
+    api_key_set = bool(os.environ.get('ANTHROPIC_API_KEY'))
+    return render_template('settings.html', user=user, api_key_set=api_key_set)
+
+
+# ---------------------------------------------------------------------------
+# AI Check-in
+# ---------------------------------------------------------------------------
+
+def build_system_prompt(user):
+    today = date.today().isoformat()
+    symptoms = Symptom.query.filter_by(user_id=user.id, is_active=True).all()
+    preventatives = Protocol.query.filter_by(user_id=user.id, type='preventative', status='active').all()
+    rescues = Protocol.query.filter_by(user_id=user.id, type='rescue').all()
+    active_exp = get_active_experiment(user.id)
+
+    symptom_list = '\n'.join(
+        f'  - id={s.id}, name="{s.name}"' + (f', description="{s.description}"' if s.description else '')
+        for s in symptoms
+    ) or '  (none)'
+
+    preventative_list = '\n'.join(
+        f'  - id={p.id}, name="{p.name}", dose="{p.dose_frequency or "not specified"}"'
+        for p in preventatives
+    ) or '  (none)'
+
+    rescue_list = '\n'.join(
+        f'  - id={r.id}, name="{r.name}"'
+        for r in rescues
+    ) or '  (none)'
+
+    exp_text = ''
+    if active_exp:
+        exp_text = f'\nActive experiment: "{active_exp.name}" (started {active_exp.start_date}).'
+
+    return f"""You are a warm, empathetic health companion helping someone track their migraines and health.
+Today is {today}.{exp_text}
+
+The user tracks these symptoms (use their exact IDs in your JSON):
+{symptom_list}
+
+Active preventative protocols:
+{preventative_list}
+
+Rescue options:
+{rescue_list}
+
+The user will describe how they are feeling or what happened today. Parse their message and respond with ONLY valid JSON (no markdown, no code fences). Use this exact schema:
+
+{{
+  "had_episode": true or false,
+  "episode_data": {{
+    "onset": "YYYY-MM-DDTHH:MM or null",
+    "symptom_scores": {{"<symptom_id_as_string>": <1-10 integer>}},
+    "functional_impairment": "working_normally or working_reduced or cannot_work or completely_incapacitated or null",
+    "rescue_option_used": "<rescue name> or null",
+    "rescue_effectiveness": <1-10 integer or null>,
+    "time_to_relief_hours": <float or null>,
+    "notes": "<string or null>"
+  }},
+  "protocol_compliance": [<list of preventative protocol IDs taken today>],
+  "general_notes": "<string or null>",
+  "suggested_response": "<warm 1-3 sentence reply to the user>"
+}}
+
+If no episode occurred, set had_episode to false and episode_data fields to null/empty.
+Always populate suggested_response with a warm, brief reply."""
+
+
+def parse_checkin(user, message_text):
+    api_key = os.environ.get('ANTHROPIC_API_KEY')
+    if not api_key:
+        return None, 'ANTHROPIC_API_KEY is not set.'
+
+    from anthropic import Anthropic
+    client = Anthropic(api_key=api_key)
+
+    cutoff = datetime.utcnow() - timedelta(days=7)
+    history = CheckIn.query.filter(
+        CheckIn.user_id == user.id,
+        CheckIn.created_at >= cutoff
+    ).order_by(CheckIn.created_at.asc()).all()
+
+    messages = [{'role': ci.role, 'content': ci.content} for ci in history]
+    messages.append({'role': 'user', 'content': message_text})
+
+    response = client.messages.create(
+        model='claude-sonnet-4-6',
+        max_tokens=1024,
+        system=build_system_prompt(user),
+        messages=messages,
+    )
+    raw = response.content[0].text
+
+    match = re.search(r'\{[\s\S]*\}', raw)
+    if not match:
+        return None, raw
+
+    try:
+        parsed = json.loads(match.group(0))
+        return parsed, raw
+    except json.JSONDecodeError:
+        return None, raw
+
+
+@app.route('/checkin', methods=['GET', 'POST'])
+def checkin():
+    user = get_user()
+
+    if request.method == 'POST':
+        if not user.ai_logging_enabled:
+            flash('AI logging is disabled. Enable it in Settings.', 'error')
+            return redirect(url_for('checkin'))
+
+        message_text = request.form.get('message', '').strip()
+        if not message_text:
+            return redirect(url_for('checkin'))
+
+        # Call the API before opening any write transaction to avoid holding a SQLite lock
+        parsed, raw = parse_checkin(user, message_text)
+
+        episode_id = None
+
+        if parsed is None:
+            # Parse failure — save raw as assistant message
+            assistant_content = raw if raw else 'Sorry, I had trouble understanding that. Could you rephrase?'
+        else:
+            if parsed.get('had_episode'):
+                ep_data = parsed.get('episode_data', {})
+
+                # Check for a recent episode from this chat session (correction flow)
+                two_hours_ago = datetime.utcnow() - timedelta(hours=2)
+                recent_ci = (
+                    CheckIn.query
+                    .filter(
+                        CheckIn.user_id == user.id,
+                        CheckIn.role == 'assistant',
+                        CheckIn.episode_id.isnot(None),
+                        CheckIn.created_at >= two_hours_ago,
+                    )
+                    .order_by(CheckIn.created_at.desc())
+                    .first()
+                )
+
+                if recent_ci:
+                    # Correction flow — update existing episode
+                    episode = Episode.query.get(recent_ci.episode_id)
+                    if episode:
+                        episode_id = episode.id
+                        onset_str = ep_data.get('onset')
+                        if onset_str:
+                            try:
+                                episode.onset = datetime.strptime(onset_str, '%Y-%m-%dT%H:%M')
+                            except ValueError:
+                                pass
+                        episode.functional_impairment = ep_data.get('functional_impairment') or episode.functional_impairment
+                        episode.rescue_protocol = ep_data.get('rescue_option_used') or episode.rescue_protocol
+                        if ep_data.get('rescue_effectiveness'):
+                            episode.rescue_effectiveness = ep_data['rescue_effectiveness']
+                        if ep_data.get('time_to_relief_hours'):
+                            episode.time_to_relief_hours = ep_data['time_to_relief_hours']
+                        episode.notes = ep_data.get('notes') or episode.notes
+
+                        # Replace symptom scores
+                        for ss in list(episode.symptom_scores):
+                            db.session.delete(ss)
+                        db.session.flush()
+                        for sym_id_str, score in (ep_data.get('symptom_scores') or {}).items():
+                            db.session.add(SymptomScore(
+                                episode_id=episode.id,
+                                symptom_id=int(sym_id_str),
+                                score=int(score),
+                            ))
+                else:
+                    # New episode
+                    onset_str = ep_data.get('onset')
+                    try:
+                        onset = datetime.strptime(onset_str, '%Y-%m-%dT%H:%M') if onset_str else datetime.utcnow()
+                    except ValueError:
+                        onset = datetime.utcnow()
+
+                    episode = Episode(
+                        user_id=user.id,
+                        onset=onset,
+                        peak_severity=None,
+                        functional_impairment=ep_data.get('functional_impairment') or None,
+                        rescue_protocol=ep_data.get('rescue_option_used') or None,
+                        rescue_effectiveness=ep_data.get('rescue_effectiveness') or None,
+                        time_to_relief_hours=ep_data.get('time_to_relief_hours') or None,
+                        notes=ep_data.get('notes') or None,
+                    )
+                    db.session.add(episode)
+                    db.session.flush()
+                    episode_id = episode.id
+
+                    for sym_id_str, score in (ep_data.get('symptom_scores') or {}).items():
+                        db.session.add(SymptomScore(
+                            episode_id=episode.id,
+                            symptom_id=int(sym_id_str),
+                            score=int(score),
+                        ))
+
+            # Log protocol compliance (deduplicate)
+            today_date = date.today()
+            for proto_id in (parsed.get('protocol_compliance') or []):
+                exists = ProtocolCompliance.query.filter_by(
+                    user_id=user.id,
+                    protocol_id=int(proto_id),
+                    date=today_date,
+                ).first()
+                if not exists:
+                    db.session.add(ProtocolCompliance(
+                        user_id=user.id,
+                        protocol_id=int(proto_id),
+                        date=today_date,
+                    ))
+
+            assistant_content = parsed.get('suggested_response') or 'Got it, thanks for the update!'
+
+        # Write user message and assistant reply in a single transaction
+        db.session.add(CheckIn(user_id=user.id, role='user', content=message_text))
+        db.session.add(CheckIn(
+            user_id=user.id,
+            role='assistant',
+            content=assistant_content,
+            episode_id=episode_id,
+        ))
+        db.session.commit()
+        return redirect(url_for('checkin'))
+
+    # GET
+    cutoff = datetime.utcnow() - timedelta(days=7)
+    history = CheckIn.query.filter(
+        CheckIn.user_id == user.id,
+        CheckIn.created_at >= cutoff,
+    ).order_by(CheckIn.created_at.asc()).all()
+    api_key_set = bool(os.environ.get('ANTHROPIC_API_KEY'))
+    return render_template('checkin.html', user=user, history=history, api_key_set=api_key_set)
 
 
 # ---------------------------------------------------------------------------
@@ -603,6 +879,8 @@ def dev_reset():
 
     if request.method == 'POST':
         user = get_user()
+        CheckIn.query.filter_by(user_id=user.id).delete()
+        ProtocolCompliance.query.filter_by(user_id=user.id).delete()
         Experiment.query.filter_by(user_id=user.id).delete()
         SymptomScore.query.filter(
             SymptomScore.episode_id.in_(
@@ -613,6 +891,7 @@ def dev_reset():
         Protocol.query.filter_by(user_id=user.id).delete()
         Symptom.query.filter_by(user_id=user.id).delete()
         user.onboarding_complete = False
+        user.ai_logging_enabled = False
         user.baseline_episodes_per_month = None
         db.session.commit()
         flash('Dev reset complete. Onboarding restarted.', 'success')

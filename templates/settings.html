@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Settings — Baseline{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Settings</h1>
+</div>
+
+<div class="settings-section">
+  <h2 class="section-title" style="margin-bottom:20px;">AI Logging</h2>
+
+  <form method="POST">
+
+    <div class="settings-row" style="margin-bottom:20px;">
+      <div>
+        <div class="settings-row-label">Enable AI logging</div>
+        <div class="settings-row-desc">
+          When enabled, you can describe your day in plain language on the Check-in page
+          and Claude will automatically log episodes and medication compliance for you.
+          Your messages are sent to Anthropic's API.
+        </div>
+      </div>
+      <label class="toggle-label" style="flex-shrink:0; margin-top:2px;">
+        <input type="checkbox" name="ai_logging" {% if user.ai_logging_enabled %}checked{% endif %}>
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+      </label>
+    </div>
+
+    <div style="margin-bottom:20px; padding:12px 16px; background:var(--surface2); border-radius:8px; font-size:13px; color:var(--text-muted);">
+      ANTHROPIC_API_KEY:
+      {% if api_key_set %}
+        <span style="color:var(--low); font-weight:600;">&#10003; configured</span>
+      {% else %}
+        <span style="color:var(--high); font-weight:600;">&#10007; not set</span>
+        &mdash; add it to your <code>.env</code> file and restart.
+      {% endif %}
+    </div>
+
+    <button type="submit" class="btn btn-primary">Save settings</button>
+  </form>
+</div>
+{% endblock %}

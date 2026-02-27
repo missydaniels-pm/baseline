@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Check-in — Baseline{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Daily Check-in</h1>
+</div>
+
+<div class="chat-shell">
+
+  <div class="chat-history" id="chatHistory">
+
+    {% if not history %}
+      <div class="chat-empty">
+        <p>How are you feeling today?</p>
+        <p style="font-size:13px;">Describe your day in plain language — any episodes, medications taken, or just how you're doing. I'll take care of the logging.</p>
+      </div>
+    {% else %}
+      {% set ns = namespace(last_date=none) %}
+      {% for msg in history %}
+        {% set msg_date = msg.created_at.strftime('%Y-%m-%d') %}
+        {% if msg_date != ns.last_date %}
+          <div class="chat-date-sep">
+            <span>{{ msg.created_at.strftime('%A, %B %-d') }}</span>
+          </div>
+          {% set ns.last_date = msg_date %}
+        {% endif %}
+
+        <div class="chat-bubble-wrap {{ msg.role }}">
+          <div>
+            <div class="chat-bubble chat-bubble-{{ msg.role }}">{{ msg.content }}</div>
+            <div class="chat-time">{{ msg.created_at.strftime('%-I:%M %p') }}</div>
+            {% if msg.episode_id %}
+              <div>
+                <span class="chat-episode-tag">Episode logged</span>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    {% endif %}
+
+  </div><!-- .chat-history -->
+
+  <div class="chat-input-area">
+    {% if not user.ai_logging_enabled %}
+      <div class="chat-notice-banner">
+        AI logging is disabled. <a href="{{ url_for('settings') }}">Enable it in Settings</a> to use the chat check-in.
+      </div>
+    {% elif not api_key_set %}
+      <div class="chat-notice-banner">
+        <strong>API key not configured.</strong> Set the <code>ANTHROPIC_API_KEY</code> environment variable (or add it to your <code>.env</code> file) and restart the server.
+      </div>
+    {% else %}
+      <form method="POST" id="checkinForm">
+        <div class="chat-input-row">
+          <textarea id="messageInput" name="message" placeholder="How are you feeling today?" rows="1"></textarea>
+          <button type="submit" class="btn btn-primary">Send</button>
+        </div>
+      </form>
+      <div class="chat-privacy">Messages are processed by Anthropic's API. <a href="https://www.anthropic.com/privacy" target="_blank" rel="noopener">Privacy policy</a>.</div>
+    {% endif %}
+  </div><!-- .chat-input-area -->
+
+</div><!-- .chat-shell -->
+
+<script>
+  // Auto-scroll to bottom
+  var history = document.getElementById('chatHistory');
+  if (history) history.scrollTop = history.scrollHeight;
+
+  // Enter to submit, Shift+Enter for newline
+  var textarea = document.getElementById('messageInput');
+  if (textarea) {
+    textarea.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        document.getElementById('checkinForm').submit();
+      }
+    });
+
+    // Auto-resize textarea
+    textarea.addEventListener('input', function() {
+      this.style.height = 'auto';
+      this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+    });
+  }
+</script>
+{% endblock %}
