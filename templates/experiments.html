@@ -74,6 +74,7 @@
     {% if exp.ready_to_assess %}
       <a href="{{ url_for('assess_experiment', exp_id=exp.id) }}" class="btn btn-primary btn-sm">Assess →</a>
     {% endif %}
+    <a href="{{ url_for('edit_experiment', exp_id=exp.id) }}" class="btn btn-sm btn-secondary">Edit</a>
     <form method="POST" action="{{ url_for('abandon_experiment', exp_id=exp.id) }}"
           onsubmit="return confirm('Abandon this experiment? This cannot be undone.')">
       <button type="submit" class="btn btn-sm btn-muted">Abandon</button>

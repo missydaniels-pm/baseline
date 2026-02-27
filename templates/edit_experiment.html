@@ -1,19 +1,17 @@
 {% extends "base.html" %}
-{% block title %}Start Experiment — Baseline{% endblock %}
+{% block title %}Edit Experiment — Baseline{% endblock %}
 
 {% block content %}
 <div class="page-header">
-  <h1 class="page-title">Start Experiment</h1>
+  <h1 class="page-title">Edit Experiment</h1>
   <a href="{{ url_for('experiments') }}" class="btn btn-secondary">Cancel</a>
 </div>
 
 <div class="form-card">
-  <form method="POST">
+  <form method="POST" id="experimentForm">
     <div class="form-group">
       <label for="name">Experiment name</label>
-      <div class="field-hint">Give it a clear, memorable name. e.g. "Magnesium 400mg trial"</div>
-      <input type="text" id="name" name="name" required autofocus
-             placeholder="e.g. Magnesium 400mg trial">
+      <input type="text" id="name" name="name" required autofocus value="{{ experiment.name }}">
     </div>
 
     <div class="form-group">
@@ -21,15 +19,15 @@
       <select id="protocol_id" name="protocol_id">
         <option value="">— select a protocol —</option>
         {% for p in preventatives %}
-        <option value="{{ p.id }}" {% if p.id == prefill_protocol_id %}selected{% endif %}>{{ p.name }}</option>
+        <option value="{{ p.id }}" {% if experiment.protocol_id == p.id %}selected{% endif %}>{{ p.name }}{% if p.status != 'active' %} ({{ p.status }}){% endif %}</option>
         {% endfor %}
       </select>
     </div>
 
     <div class="form-group">
       <label for="hypothesis">Hypothesis <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
-      <div class="field-hint">What outcome do you expect? e.g. "I expect to have fewer than 4 bad days per month after 8 weeks."</div>
-      <textarea id="hypothesis" name="hypothesis" placeholder="I expect…"></textarea>
+      <div class="field-hint">What outcome do you expect?</div>
+      <textarea id="hypothesis" name="hypothesis" placeholder="I expect…">{{ experiment.hypothesis or '' }}</textarea>
     </div>
 
     <div class="form-row">
@@ -37,15 +35,15 @@
         <label for="start_date">Start date</label>
         <div class="date-input-wrap">
           <input type="date" id="start_date" name="start_date"
-                 value="{{ today.strftime('%Y-%m-%d') }}">
+                 value="{{ experiment.start_date.strftime('%Y-%m-%d') if experiment.start_date else '' }}">
           <button type="button" class="btn btn-today" onclick="document.getElementById('start_date').value=new Date().toLocaleDateString('en-CA'); updateAssessDate();">Today</button>
         </div>
       </div>
       <div class="form-group">
         <label for="stabilization_weeks">Stabilization period (weeks)</label>
-        <div class="field-hint">How long before assessing? Most protocols need 8–12 weeks.</div>
+        <div class="field-hint">How long before assessing?</div>
         <input type="number" id="stabilization_weeks" name="stabilization_weeks"
-               min="1" max="52" value="8">
+               min="1" max="52" value="{{ experiment.stabilization_weeks }}">
       </div>
     </div>
 
@@ -53,11 +51,15 @@
       Assessment due: <strong id="assess-date-text"></strong>
     </div>
 
-    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:8px;">
-      <a href="{{ url_for('experiments') }}" class="btn btn-secondary">Cancel</a>
-      <button type="submit" class="btn btn-primary">Start Experiment</button>
-    </div>
   </form>
+
+  <div class="form-actions">
+    <div></div>
+    <div class="form-actions-primary">
+      <a href="{{ url_for('experiments') }}" class="btn btn-secondary">Cancel</a>
+      <button type="submit" form="experimentForm" class="btn btn-primary">Save Changes</button>
+    </div>
+  </div>
 </div>
 
 <script>

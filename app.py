@@ -310,6 +310,29 @@ def assess_experiment(exp_id):
     return render_template('assess_experiment.html', experiment=experiment)
 
 
+@app.route('/experiments/<int:exp_id>/edit', methods=['GET', 'POST'])
+def edit_experiment(exp_id):
+    user = get_user()
+    experiment = Experiment.query.filter_by(id=exp_id, user_id=user.id).first_or_404()
+    preventatives = Protocol.query.filter_by(user_id=user.id, type='preventative').all()
+
+    if request.method == 'POST':
+        experiment.name = request.form.get('name', '').strip()
+        experiment.hypothesis = request.form.get('hypothesis', '').strip() or None
+        experiment.stabilization_weeks = int(request.form.get('stabilization_weeks') or 8)
+        start_str = request.form.get('start_date', '').strip()
+        if start_str:
+            experiment.start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+        protocol_id = request.form.get('protocol_id')
+        experiment.protocol_id = int(protocol_id) if protocol_id else None
+        db.session.commit()
+        flash(f'"{experiment.name}" updated.', 'success')
+        return redirect(url_for('experiments'))
+
+    return render_template('edit_experiment.html', experiment=experiment,
+                           preventatives=preventatives)
+
+
 @app.route('/experiments/<int:exp_id>/abandon', methods=['POST'])
 def abandon_experiment(exp_id):
     user = get_user()

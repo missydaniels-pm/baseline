@@ -12,8 +12,11 @@
     <div class="form-row">
       <div class="form-group">
         <label for="onset">Onset Date & Time</label>
-        <input type="datetime-local" id="onset" name="onset"
-               value="{{ episode.onset.strftime('%Y-%m-%dT%H:%M') }}">
+        <div class="date-input-wrap">
+          <input type="datetime-local" id="onset" name="onset"
+                 value="{{ episode.onset.strftime('%Y-%m-%dT%H:%M') }}">
+          <button type="button" class="btn btn-today" id="onsetNowBtn">Now</button>
+        </div>
       </div>
       <div class="form-group">
         <label for="duration_hours">Duration (hours)</label>
@@ -109,4 +112,12 @@
     </div>
   </div>
 </div>
+
+<script>
+  document.getElementById('onsetNowBtn').addEventListener('click', function() {
+    var now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    document.getElementById('onset').value = now.toISOString().slice(0, 16);
+  });
+</script>
 {% endblock %}

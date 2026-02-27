@@ -924,6 +924,41 @@ input[type="range"]::-moz-range-thumb {
   border: 1px solid rgba(76,175,120,0.3);
 }
 
+/* ─── Date input with Today button ──────────────────────────────── */
+
+.date-input-wrap {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.date-input-wrap input[type="date"],
+.date-input-wrap input[type="datetime-local"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.btn-today {
+  flex-shrink: 0;
+  padding: 0 10px;
+  height: 38px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn-today:hover {
+  background: var(--surface-active);
+  color: var(--text);
+}
+
 /* ─── Onboarding wizard ──────────────────────────────────────────── */
 
 .wizard-card {

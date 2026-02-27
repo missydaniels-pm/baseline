@@ -39,8 +39,11 @@
       </div>
       <div class="form-group">
         <label for="start_date">Start Date</label>
-        <input type="date" id="start_date" name="start_date"
-               value="{{ protocol.start_date.strftime('%Y-%m-%d') if protocol.start_date else '' }}">
+        <div class="date-input-wrap">
+          <input type="date" id="start_date" name="start_date"
+                 value="{{ protocol.start_date.strftime('%Y-%m-%d') if protocol.start_date else '' }}">
+          <button type="button" class="btn btn-today" onclick="document.getElementById('start_date').value=new Date().toLocaleDateString('en-CA');">Today</button>
+        </div>
       </div>
     </div>
 
