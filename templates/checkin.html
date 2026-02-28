@@ -101,17 +101,20 @@
   }
 
   // Form submit: prevent double-send, show loading state
+  var submitting = false;
   if (form) {
     form.addEventListener('submit', function(e) {
+      if (submitting) { e.preventDefault(); return; }
       var msg = textarea ? textarea.value.trim() : '';
       if (!msg) { e.preventDefault(); return; }
 
       // Stamp local time at moment of send
       if (clientTimeInput) clientTimeInput.value = localISOString();
 
-      // Disable input to prevent double-submit
+      // Prevent double-submit: disable button only (not textarea — disabled fields aren't submitted)
       if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = 'Sending…'; }
-      if (textarea) textarea.disabled = true;
+      if (textarea) textarea.style.opacity = '0.5';
+      submitting = true;
 
       // Optimistically append user bubble + typing indicator
       if (chatEl) {
