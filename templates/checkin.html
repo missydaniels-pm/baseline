@@ -91,7 +91,7 @@
     textarea.addEventListener('keydown', function(e) {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        if (form) form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+        if (sendBtn && !sendBtn.disabled) sendBtn.click();
       }
     });
     textarea.addEventListener('input', function() {
