@@ -254,7 +254,7 @@ def build_system_prompt(user, client_time=None):
         exp_text = f'\nActive experiment: "{active_exp.name}" (started {active_exp.start_date}).'
 
     return f"""You are a warm, empathetic health companion helping someone track their migraines and health.
-Today is {today}, current time is approximately {current_time} UTC.{exp_text}
+Today is {today}, current local time is approximately {current_time}.{exp_text}
 
 The user tracks these symptoms (use their exact IDs in your JSON):
 {symptom_list}
@@ -675,7 +675,7 @@ def new_episode():
             duration_hours=float(request.form.get('duration_hours') or 0) or None,
             functional_impairment=request.form.get('functional_impairment'),
             rescue_protocol=request.form.get('rescue_protocol') or None,
-            rescue_effectiveness=int(v) if (v := request.form.get('rescue_effectiveness')) else None,
+            rescue_effectiveness=int(request.form.get('rescue_effectiveness', 5)) if request.form.get('rescue_protocol') else None,
             time_to_relief_hours=float(v) if (v := request.form.get('time_to_relief_hours')) else None,
             notes=request.form.get('notes') or None,
         )
@@ -707,7 +707,7 @@ def edit_episode(episode_id):
         episode.duration_hours = float(v) if (v := request.form.get('duration_hours')) else None
         episode.functional_impairment = request.form.get('functional_impairment')
         episode.rescue_protocol = request.form.get('rescue_protocol') or None
-        episode.rescue_effectiveness = int(v) if (v := request.form.get('rescue_effectiveness')) else None
+        episode.rescue_effectiveness = int(request.form.get('rescue_effectiveness', 5)) if episode.rescue_protocol else None
         episode.time_to_relief_hours = float(v) if (v := request.form.get('time_to_relief_hours')) else None
         episode.notes = request.form.get('notes') or None
 
