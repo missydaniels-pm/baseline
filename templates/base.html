@@ -29,16 +29,16 @@
       <span class="nav-icon">⌂</span> Dashboard
     </a>
     <a href="{{ url_for('episodes') }}" class="nav-link {% if 'episode' in request.endpoint %}active{% endif %}">
-      <span class="nav-icon">◎</span> Episodes
+      <span class="nav-icon">✦</span> Episodes
     </a>
     <a href="{{ url_for('protocols') }}" class="nav-link {% if 'protocol' in request.endpoint %}active{% endif %}">
-      <span class="nav-icon">⊕</span> Protocols
+      <span class="nav-icon">📋</span> Protocols
     </a>
     <a href="{{ url_for('experiments') }}" class="nav-link {% if 'experiment' in request.endpoint %}active{% endif %}">
-      <span class="nav-icon">◆</span> Experiments
+      <span class="nav-icon">⚗</span> Experiments
     </a>
     <a href="{{ url_for('symptoms') }}" class="nav-link {% if 'symptom' in request.endpoint %}active{% endif %}">
-      <span class="nav-icon">◈</span> Symptoms
+      <span class="nav-icon">♡</span> Symptoms
     </a>
     <div class="nav-spacer"></div>
     <a href="{{ url_for('settings') }}" class="nav-link {% if request.endpoint == 'settings' %}active{% endif %}">

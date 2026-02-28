@@ -216,7 +216,9 @@ def settings():
 # ---------------------------------------------------------------------------
 
 def build_system_prompt(user):
-    today = date.today().isoformat()
+    now = datetime.utcnow()
+    today = now.strftime('%Y-%m-%d')
+    current_time = now.strftime('%H:%M')
     symptoms = Symptom.query.filter_by(user_id=user.id, is_active=True).all()
     preventatives = Protocol.query.filter_by(user_id=user.id, type='preventative', status='active').all()
     rescues = Protocol.query.filter_by(user_id=user.id, type='rescue').all()
@@ -242,7 +244,7 @@ def build_system_prompt(user):
         exp_text = f'\nActive experiment: "{active_exp.name}" (started {active_exp.start_date}).'
 
     return f"""You are a warm, empathetic health companion helping someone track their migraines and health.
-Today is {today}.{exp_text}
+Today is {today}, current time is approximately {current_time} UTC.{exp_text}
 
 The user tracks these symptoms (use their exact IDs in your JSON):
 {symptom_list}
@@ -253,7 +255,11 @@ Active preventative protocols:
 Rescue options:
 {rescue_list}
 
-The user will describe how they are feeling or what happened today. Parse their message and respond with ONLY valid JSON (no markdown, no code fences). Use this exact schema:
+The user will describe how they are feeling or what happened today. Parse their message and respond with ONLY valid JSON (no markdown, no code fences).
+
+For the episode onset field: if the user mentions a specific time (e.g. "around 2pm", "this morning at 8"), infer the full datetime. Otherwise use the current date and time ({today}T{current_time}) as the onset. Never return null for onset when had_episode is true.
+
+Use this exact schema:
 
 {{
   "had_episode": true or false,
@@ -336,77 +342,32 @@ def checkin():
             if parsed.get('had_episode'):
                 ep_data = parsed.get('episode_data', {})
 
-                # Check for a recent episode from this chat session (correction flow)
-                two_hours_ago = datetime.utcnow() - timedelta(hours=2)
-                recent_ci = (
-                    CheckIn.query
-                    .filter(
-                        CheckIn.user_id == user.id,
-                        CheckIn.role == 'assistant',
-                        CheckIn.episode_id.isnot(None),
-                        CheckIn.created_at >= two_hours_ago,
-                    )
-                    .order_by(CheckIn.created_at.desc())
-                    .first()
+                onset_str = ep_data.get('onset')
+                try:
+                    onset = datetime.strptime(onset_str, '%Y-%m-%dT%H:%M') if onset_str else datetime.utcnow()
+                except ValueError:
+                    onset = datetime.utcnow()
+
+                episode = Episode(
+                    user_id=user.id,
+                    onset=onset,
+                    peak_severity=None,
+                    functional_impairment=ep_data.get('functional_impairment') or None,
+                    rescue_protocol=ep_data.get('rescue_option_used') or None,
+                    rescue_effectiveness=ep_data.get('rescue_effectiveness') or None,
+                    time_to_relief_hours=ep_data.get('time_to_relief_hours') or None,
+                    notes=ep_data.get('notes') or None,
                 )
+                db.session.add(episode)
+                db.session.flush()
+                episode_id = episode.id
 
-                if recent_ci:
-                    # Correction flow — update existing episode
-                    episode = Episode.query.get(recent_ci.episode_id)
-                    if episode:
-                        episode_id = episode.id
-                        onset_str = ep_data.get('onset')
-                        if onset_str:
-                            try:
-                                episode.onset = datetime.strptime(onset_str, '%Y-%m-%dT%H:%M')
-                            except ValueError:
-                                pass
-                        episode.functional_impairment = ep_data.get('functional_impairment') or episode.functional_impairment
-                        episode.rescue_protocol = ep_data.get('rescue_option_used') or episode.rescue_protocol
-                        if ep_data.get('rescue_effectiveness'):
-                            episode.rescue_effectiveness = ep_data['rescue_effectiveness']
-                        if ep_data.get('time_to_relief_hours'):
-                            episode.time_to_relief_hours = ep_data['time_to_relief_hours']
-                        episode.notes = ep_data.get('notes') or episode.notes
-
-                        # Replace symptom scores
-                        for ss in list(episode.symptom_scores):
-                            db.session.delete(ss)
-                        db.session.flush()
-                        for sym_id_str, score in (ep_data.get('symptom_scores') or {}).items():
-                            db.session.add(SymptomScore(
-                                episode_id=episode.id,
-                                symptom_id=int(sym_id_str),
-                                score=int(score),
-                            ))
-                else:
-                    # New episode
-                    onset_str = ep_data.get('onset')
-                    try:
-                        onset = datetime.strptime(onset_str, '%Y-%m-%dT%H:%M') if onset_str else datetime.utcnow()
-                    except ValueError:
-                        onset = datetime.utcnow()
-
-                    episode = Episode(
-                        user_id=user.id,
-                        onset=onset,
-                        peak_severity=None,
-                        functional_impairment=ep_data.get('functional_impairment') or None,
-                        rescue_protocol=ep_data.get('rescue_option_used') or None,
-                        rescue_effectiveness=ep_data.get('rescue_effectiveness') or None,
-                        time_to_relief_hours=ep_data.get('time_to_relief_hours') or None,
-                        notes=ep_data.get('notes') or None,
-                    )
-                    db.session.add(episode)
-                    db.session.flush()
-                    episode_id = episode.id
-
-                    for sym_id_str, score in (ep_data.get('symptom_scores') or {}).items():
-                        db.session.add(SymptomScore(
-                            episode_id=episode.id,
-                            symptom_id=int(sym_id_str),
-                            score=int(score),
-                        ))
+                for sym_id_str, score in (ep_data.get('symptom_scores') or {}).items():
+                    db.session.add(SymptomScore(
+                        episode_id=episode.id,
+                        symptom_id=int(sym_id_str),
+                        score=int(score),
+                    ))
 
             # Log protocol compliance (deduplicate)
             today_date = date.today()
