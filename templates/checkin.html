@@ -53,9 +53,10 @@
       </div>
     {% else %}
       <form method="POST" id="checkinForm">
+        <input type="hidden" name="client_time" id="clientTime">
         <div class="chat-input-row">
           <textarea id="messageInput" name="message" placeholder="How are you feeling today?" rows="1"></textarea>
-          <button type="submit" class="btn btn-primary">Send</button>
+          <button type="submit" class="btn btn-primary" id="sendBtn">Send</button>
         </div>
       </form>
       <div class="chat-privacy">Messages are processed by Anthropic's API. <a href="https://www.anthropic.com/privacy" target="_blank" rel="noopener">Privacy policy</a>.</div>
@@ -65,24 +66,69 @@
 </div><!-- .chat-shell -->
 
 <script>
-  // Auto-scroll to bottom
-  var history = document.getElementById('chatHistory');
-  if (history) history.scrollTop = history.scrollHeight;
-
-  // Enter to submit, Shift+Enter for newline
+  var chatEl = document.getElementById('chatHistory');
   var textarea = document.getElementById('messageInput');
+  var sendBtn = document.getElementById('sendBtn');
+  var form = document.getElementById('checkinForm');
+  var clientTimeInput = document.getElementById('clientTime');
+
+  // Local time helper
+  function localISOString() {
+    var d = new Date();
+    var pad = function(n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+           'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  // Seed client_time on load
+  if (clientTimeInput) clientTimeInput.value = localISOString();
+
+  // Auto-scroll to bottom on load
+  if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
+
+  // Enter to submit (Shift+Enter = newline), auto-resize textarea
   if (textarea) {
     textarea.addEventListener('keydown', function(e) {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        document.getElementById('checkinForm').submit();
+        if (form) form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
       }
     });
-
-    // Auto-resize textarea
     textarea.addEventListener('input', function() {
       this.style.height = 'auto';
       this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+    });
+  }
+
+  // Form submit: prevent double-send, show loading state
+  if (form) {
+    form.addEventListener('submit', function(e) {
+      var msg = textarea ? textarea.value.trim() : '';
+      if (!msg) { e.preventDefault(); return; }
+
+      // Stamp local time at moment of send
+      if (clientTimeInput) clientTimeInput.value = localISOString();
+
+      // Disable input to prevent double-submit
+      if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = 'Sending…'; }
+      if (textarea) textarea.disabled = true;
+
+      // Optimistically append user bubble + typing indicator
+      if (chatEl) {
+        var safe = msg.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                      .replace(/\n/g,'<br>');
+        var userBubble = document.createElement('div');
+        userBubble.className = 'chat-bubble-wrap user';
+        userBubble.innerHTML = '<div><div class="chat-bubble chat-bubble-user">' + safe + '</div></div>';
+        chatEl.appendChild(userBubble);
+
+        var typing = document.createElement('div');
+        typing.className = 'chat-bubble-wrap assistant';
+        typing.innerHTML = '<div><div class="chat-bubble chat-bubble-assistant chat-typing">' +
+                           '<span></span><span></span><span></span></div></div>';
+        chatEl.appendChild(typing);
+        chatEl.scrollTop = chatEl.scrollHeight;
+      }
     });
   }
 </script>

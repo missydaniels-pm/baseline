@@ -35,7 +35,12 @@
       <span class="nav-icon">📋</span> Protocols
     </a>
     <a href="{{ url_for('experiments') }}" class="nav-link {% if 'experiment' in request.endpoint %}active{% endif %}">
-      <span class="nav-icon">⚗</span> Experiments
+      <span class="nav-icon">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:inline-block;vertical-align:-2px;">
+          <path d="M6 1.5 H10 M6 1.5 V6 L2.5 13.5 H13.5 L10 6 V1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M4 10.5 Q8 9.5 12 10.5 L13.5 13.5 H2.5 Z" fill="currentColor" opacity="0.25"/>
+        </svg>
+      </span> Experiments
     </a>
     <a href="{{ url_for('symptoms') }}" class="nav-link {% if 'symptom' in request.endpoint %}active{% endif %}">
       <span class="nav-icon">♡</span> Symptoms

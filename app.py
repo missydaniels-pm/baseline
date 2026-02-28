@@ -215,10 +215,20 @@ def settings():
 # AI Check-in
 # ---------------------------------------------------------------------------
 
-def build_system_prompt(user):
-    now = datetime.utcnow()
-    today = now.strftime('%Y-%m-%d')
-    current_time = now.strftime('%H:%M')
+def build_system_prompt(user, client_time=None):
+    if client_time:
+        try:
+            local_dt = datetime.strptime(client_time, '%Y-%m-%dT%H:%M')
+            today = local_dt.strftime('%Y-%m-%d')
+            current_time = local_dt.strftime('%H:%M')
+        except ValueError:
+            now = datetime.utcnow()
+            today = now.strftime('%Y-%m-%d')
+            current_time = now.strftime('%H:%M')
+    else:
+        now = datetime.utcnow()
+        today = now.strftime('%Y-%m-%d')
+        current_time = now.strftime('%H:%M')
     symptoms = Symptom.query.filter_by(user_id=user.id, is_active=True).all()
     preventatives = Protocol.query.filter_by(user_id=user.id, type='preventative', status='active').all()
     rescues = Protocol.query.filter_by(user_id=user.id, type='rescue').all()
@@ -278,10 +288,11 @@ Use this exact schema:
 }}
 
 If no episode occurred, set had_episode to false and episode_data fields to null/empty.
+If the user describes experiencing a tracked symptom but does not give a severity score, still set had_episode to true and omit the score — but in suggested_response warmly ask them to rate it on a scale of 1–10 so it can be logged accurately.
 Always populate suggested_response with a warm, brief reply."""
 
 
-def parse_checkin(user, message_text):
+def parse_checkin(user, message_text, client_time=None):
     api_key = os.environ.get('ANTHROPIC_API_KEY')
     if not api_key:
         return None, 'ANTHROPIC_API_KEY is not set.'
@@ -301,7 +312,7 @@ def parse_checkin(user, message_text):
     response = client.messages.create(
         model='claude-sonnet-4-6',
         max_tokens=1024,
-        system=build_system_prompt(user),
+        system=build_system_prompt(user, client_time=client_time),
         messages=messages,
     )
     raw = response.content[0].text
@@ -330,8 +341,10 @@ def checkin():
         if not message_text:
             return redirect(url_for('checkin'))
 
+        client_time = request.form.get('client_time', '').strip() or None
+
         # Call the API before opening any write transaction to avoid holding a SQLite lock
-        parsed, raw = parse_checkin(user, message_text)
+        parsed, raw = parse_checkin(user, message_text, client_time=client_time)
 
         episode_id = None
 
@@ -344,7 +357,12 @@ def checkin():
 
                 onset_str = ep_data.get('onset')
                 try:
-                    onset = datetime.strptime(onset_str, '%Y-%m-%dT%H:%M') if onset_str else datetime.utcnow()
+                    if onset_str:
+                        onset = datetime.strptime(onset_str, '%Y-%m-%dT%H:%M')
+                    elif client_time:
+                        onset = datetime.strptime(client_time, '%Y-%m-%dT%H:%M')
+                    else:
+                        onset = datetime.utcnow()
                 except ValueError:
                     onset = datetime.utcnow()
 
