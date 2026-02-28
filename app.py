@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import random
 from flask import Flask, render_template, request, redirect, url_for, flash
 from sqlalchemy import text
 from database import db, User, Episode, Protocol, Symptom, SymptomScore, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent
@@ -968,6 +969,142 @@ def dev_reset():
         <form method="POST">
           <button type="submit" style="background:#e05252;color:#fff;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-size:15px;">
             Reset everything
+          </button>
+          <a href="/" style="margin-left:12px;">Cancel</a>
+        </form></body></html>'''
+
+
+@app.route('/dev/seed', methods=['GET', 'POST'])
+def dev_seed():
+    if not app.debug:
+        return 'Not available in production.', 403
+
+    user = get_user()
+    existing = Episode.query.filter_by(user_id=user.id).count()
+    if existing >= 20:
+        return (
+            '<!doctype html><html><body style="font-family:sans-serif;max-width:500px;margin:60px auto;padding:20px;">'
+            f'<h2>Seed aborted</h2><p>You already have {existing} episodes. '
+            'Seeder only runs with fewer than 20 to avoid overwriting real data.</p>'
+            '<a href="/">← Back</a></body></html>'
+        ), 400
+
+    if request.method == 'POST':
+        today = date.today()
+        base_date = today - timedelta(weeks=12)
+
+        # ── Symptoms ──────────────────────────────────────────────────────
+        symptoms = Symptom.query.filter_by(user_id=user.id, is_active=True).all()
+        if not symptoms:
+            s1 = Symptom(user_id=user.id, name='Headache',
+                         description='Throbbing head pain, typically one-sided',
+                         is_active=True, baseline_score=7)
+            s2 = Symptom(user_id=user.id, name='Nausea',
+                         description='Stomach upset and queasiness',
+                         is_active=True, baseline_score=5)
+            db.session.add_all([s1, s2])
+            db.session.flush()
+            symptoms = [s1, s2]
+
+        # ── Protocols ─────────────────────────────────────────────────────
+        prev1 = Protocol(
+            user_id=user.id, name='Magnesium Glycinate 400mg',
+            type='preventative', start_date=base_date,
+            dose_frequency='400mg daily at bedtime', status='active',
+        )
+        prev2_start = base_date + timedelta(weeks=4)
+        prev2 = Protocol(
+            user_id=user.id, name='Riboflavin 400mg',
+            type='preventative', start_date=prev2_start,
+            dose_frequency='400mg daily with breakfast', status='active',
+        )
+        rescue = Protocol(
+            user_id=user.id, name='Sumatriptan 50mg',
+            type='rescue', available=True,
+        )
+        db.session.add_all([prev1, prev2, rescue])
+        db.session.flush()
+
+        db.session.add(ProtocolEvent(protocol_id=prev1.id, user_id=user.id,
+                                     event_type='started', date=prev1.start_date))
+        db.session.add(ProtocolEvent(protocol_id=prev2.id, user_id=user.id,
+                                     event_type='started', date=prev2.start_date))
+        db.session.flush()
+
+        # ── Episodes ──────────────────────────────────────────────────────
+        impairments_early = ['working_reduced', 'cannot_work', 'cannot_work', 'completely_incapacitated']
+        impairments_late  = ['working_normally', 'working_reduced', 'working_reduced', 'cannot_work']
+
+        for week in range(12):
+            week_start = base_date + timedelta(weeks=week)
+            n_episodes = random.randint(3, 4)
+            day_offsets = sorted(random.sample(range(7), n_episodes))
+            rescue_day = random.choice(day_offsets) if random.random() < 0.85 else None
+
+            for day_offset in day_offsets:
+                ep_date = week_start + timedelta(days=day_offset)
+                if ep_date > today:
+                    continue
+                onset = datetime(ep_date.year, ep_date.month, ep_date.day,
+                                 random.randint(5, 22), random.choice([0, 15, 30, 45]))
+
+                # Scores trend downward after week 6
+                base_score = random.randint(6, 9) if week < 6 else random.randint(4, 7)
+                impairment = random.choice(impairments_early if week < 6 else impairments_late)
+                used_rescue = (day_offset == rescue_day)
+
+                episode = Episode(
+                    user_id=user.id,
+                    onset=onset,
+                    peak_severity=None,
+                    duration_hours=round(random.uniform(4, 24), 1),
+                    functional_impairment=impairment,
+                    rescue_protocol=rescue.name if used_rescue else None,
+                    rescue_effectiveness=random.randint(4, 9) if used_rescue else None,
+                    time_to_relief_hours=round(random.uniform(0.5, 4.0), 1) if used_rescue else None,
+                )
+                db.session.add(episode)
+                db.session.flush()
+
+                for symptom in symptoms:
+                    score = max(1, min(10, base_score + random.randint(-1, 1)))
+                    db.session.add(SymptomScore(
+                        episode_id=episode.id, symptom_id=symptom.id, score=score))
+
+        # ── Protocol compliance ───────────────────────────────────────────
+        missed_notes = ['Forgot', 'Upset stomach, skipped', 'Away from home', 'Ran out briefly']
+
+        def seed_compliance(protocol, start):
+            current = start
+            while current <= today:
+                took = random.random() < 0.85
+                notes = random.choice(missed_notes) if not took and random.random() < 0.35 else None
+                db.session.add(ProtocolCompliance(
+                    user_id=user.id, protocol_id=protocol.id,
+                    date=current, took=took, notes=notes,
+                ))
+                current += timedelta(days=1)
+
+        seed_compliance(prev1, prev1.start_date)
+        seed_compliance(prev2, prev2.start_date)
+
+        db.session.commit()
+        flash('12 weeks of test data seeded successfully.', 'success')
+        return redirect(url_for('index'))
+
+    return '''<!doctype html><html><body style="font-family:sans-serif;max-width:500px;margin:60px auto;padding:20px;">
+        <h2>Seed Test Data</h2>
+        <p>Generates <strong>12 weeks</strong> of realistic test data:</p>
+        <ul style="line-height:1.8;">
+          <li>3–4 episodes per week (36–48 total) with symptom scores trending lower after week 6</li>
+          <li>2 preventative protocols starting at weeks 1 and 5</li>
+          <li>1 rescue option (Sumatriptan 50mg) used ~once per week</li>
+          <li>Daily protocol compliance entries</li>
+        </ul>
+        <p style="color:#888; font-size:13px;">Only runs if you have fewer than 20 existing episodes.</p>
+        <form method="POST">
+          <button type="submit" style="background:#5a6fd6;color:#fff;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-size:15px;">
+            Seed test data
           </button>
           <a href="/" style="margin-left:12px;">Cancel</a>
         </form></body></html>'''
