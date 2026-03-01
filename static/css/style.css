@@ -2089,3 +2089,103 @@ input[type="range"]::-moz-range-thumb {
     padding: 28px 20px;
   }
 }
+
+/* ── Help page ────────────────────────────────── */
+
+.help-toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 32px;
+}
+
+.help-toc a {
+  font-size: 13px;
+  color: var(--accent-light);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.help-toc a:hover {
+  background: var(--surface2);
+}
+
+.help-section {
+  max-width: 680px;
+}
+
+.help-heading {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  margin-bottom: 12px;
+}
+
+.help-subheading {
+  font-size: 15px;
+  font-weight: 600;
+  margin-top: 20px;
+  margin-bottom: 8px;
+}
+
+.help-section p {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.help-section p a {
+  color: var(--accent-light);
+  text-decoration: none;
+}
+
+.help-section p a:hover {
+  text-decoration: underline;
+}
+
+.help-examples {
+  font-style: italic;
+}
+
+.help-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px 0;
+}
+
+.help-list li {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-muted);
+  padding: 4px 0 4px 20px;
+  position: relative;
+}
+
+.help-list li::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 12px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.help-contact {
+  margin-top: 8px;
+}
+
+.help-contact a {
+  color: var(--accent-light);
+  text-decoration: none;
+}
+
+.help-contact a:hover {
+  text-decoration: underline;
+}

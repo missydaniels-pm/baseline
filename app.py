@@ -323,6 +323,11 @@ def onboarding_step3():
 # Settings
 # ---------------------------------------------------------------------------
 
+@app.route('/help')
+def help_page():
+    return render_template('help.html')
+
+
 @app.route('/settings', methods=['GET', 'POST'])
 def settings():
     user = get_user()

@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Help — Baseline{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Help</h1>
+</div>
+
+<nav class="help-toc">
+  <a href="#what-is-baseline">What is Baseline?</a>
+  <a href="#getting-started">Getting Started</a>
+  <a href="#daily-checkin">The Daily Check-in</a>
+  <a href="#logging-episodes">Logging Episodes</a>
+  <a href="#protocols">Protocols</a>
+  <a href="#experiments">Running Experiments</a>
+  <a href="#dashboard">Your Dashboard</a>
+  <a href="#early-version">A note on this early version</a>
+</nav>
+
+
+<section class="help-section" id="what-is-baseline">
+  <h2 class="help-heading">What is Baseline?</h2>
+  <p>Baseline is a tool for people managing chronic health conditions who want real data on what is and isn't working.</p>
+  <p>Most health trackers just log symptoms. Baseline helps you run structured experiments — introduce one change at a time, track the results, and build an evidence base for your own health decisions. Think of it as giving you the tools to be a scientist of your own health.</p>
+</section>
+
+<hr class="divider">
+
+<section class="help-section" id="getting-started">
+  <h2 class="help-heading">Getting Started</h2>
+
+  <h3 class="help-subheading">Set up what you're tracking</h3>
+  <p>When you first open Baseline, you'll go through a short setup. You'll define the 1–3 symptoms you most want to track. Keep it focused — you can always add more later, but starting with your most important symptoms gives you the clearest signal.</p>
+  <p class="help-examples">Examples: Pain, Fatigue, Cognitive fog, Energy, Mood, Nausea, Mobility.</p>
+
+  <h3 class="help-subheading">Establish your baseline</h3>
+  <p>Before you start tracking, Baseline asks you to estimate where you are right now. How many bad days have you had in the last 4 weeks? On your worst days, how would you rate each symptom?</p>
+  <p>This gives you a starting point to measure against. It doesn't need to be perfect — a rough honest estimate is enough.</p>
+
+  <h3 class="help-subheading">Enable AI logging</h3>
+  <p>Baseline can use AI to make logging as easy as sending a text message. Instead of filling out forms, you describe your day in plain language and Baseline figures out what to record.</p>
+  <p>This is optional. If you prefer the structured forms, skip it and turn it on later in <a href="{{ url_for('settings') }}">Settings</a>. If you enable it, your messages are processed by Anthropic's API.</p>
+</section>
+
+<hr class="divider">
+
+<section class="help-section" id="daily-checkin">
+  <h2 class="help-heading">The Daily Check-in</h2>
+  <p>If you've enabled AI logging, the <a href="{{ url_for('checkin') }}">Daily Check-in</a> is your main way to log how you're doing. Just describe your day the way you'd tell a friend:</p>
+  <ul class="help-list">
+    <li>"Pretty rough today, fatigue around a 7, took my rescue option around noon, felt better by 3"</li>
+    <li>"Good day, did all my protocols, no symptoms worth noting"</li>
+    <li>"Forgot my magnesium this morning, slight headache in the afternoon, managed to work through it"</li>
+  </ul>
+  <p>Baseline will extract what it needs and confirm what it logged. If it gets something wrong, just correct it in the chat.</p>
+</section>
+
+<hr class="divider">
+
+<section class="help-section" id="logging-episodes">
+  <h2 class="help-heading">Logging Episodes</h2>
+  <p>An episode is any significant health event worth recording — a bad day, a flare, a symptom spike. You can log episodes through the Daily Check-in or through the structured form in the <a href="{{ url_for('episodes') }}">Episodes</a> section.</p>
+  <p>For each episode you can record:</p>
+  <ul class="help-list">
+    <li>When it started and how long it lasted</li>
+    <li>Severity for each of your tracked symptoms</li>
+    <li>How much it affected your ability to function</li>
+    <li>What rescue option you used (if any) and how well it worked</li>
+    <li>Notes, context, or anything else worth remembering</li>
+  </ul>
+</section>
+
+<hr class="divider">
+
+<section class="help-section" id="protocols">
+  <h2 class="help-heading">Protocols</h2>
+
+  <h3 class="help-subheading">Preventative protocols</h3>
+  <p>These are the ongoing interventions you're using to manage your condition — medications, supplements, lifestyle changes, dietary protocols. Add them in the <a href="{{ url_for('protocols') }}">Protocols</a> section with a start date and notes.</p>
+  <p>Each protocol has a detail page where you can log daily compliance and see a full history timeline showing every taken and missed entry alongside status changes.</p>
+
+  <h3 class="help-subheading">Rescue options</h3>
+  <p>These are the things you reach for when you're in the middle of a bad episode — medications, specific interventions, rest protocols. When you log an episode, you can record which rescue option you used and how effective it was.</p>
+</section>
+
+<hr class="divider">
+
+<section class="help-section" id="experiments">
+  <h2 class="help-heading">Running Experiments</h2>
+  <p>This is the core of Baseline. An experiment lets you test one protocol change in a structured way.</p>
+
+  <h3 class="help-subheading">Starting an experiment</h3>
+  <p>When you add a new preventative protocol, Baseline will ask if you want to track it as an experiment. You can also start one manually from the <a href="{{ url_for('experiments') }}">Experiments</a> section. For each experiment you define which protocol you're testing, your hypothesis, and how long you'll give it before assessing (default is 8 weeks).</p>
+
+  <h3 class="help-subheading">During an experiment</h3>
+  <p>Keep logging as normal. The Experiments page shows your progress and how many weeks remain.</p>
+  <p>Try not to add other new preventative protocols while an experiment is active. If you change too many things at once, you won't be able to tell what's working.</p>
+
+  <h3 class="help-subheading">Assessing the outcome</h3>
+  <p>When your experiment period ends, Baseline will prompt you to assess the outcome. The assessment page shows your actual data — episode frequency before and during, symptom score changes, and a trend chart with the experiment start date marked. You'll rate how well it worked, add notes, and decide whether to continue, pause, or stop the protocol.</p>
+  <p>Over time, your completed experiments build up an evidence base — a real record of what you've tried and what the data showed.</p>
+</section>
+
+<hr class="divider">
+
+<section class="help-section" id="dashboard">
+  <h2 class="help-heading">Your Dashboard</h2>
+  <p>The <a href="{{ url_for('index') }}">Dashboard</a> is where your logging pays off. The more consistently you track, the more meaningful the data becomes. Charts and insights appear once you have at least two weeks of episodes logged.</p>
+
+  <h3 class="help-subheading">Symptom cards</h3>
+  <p>At the top of the dashboard, you'll see a card for each tracked symptom showing your average score this month. Each card also shows the percentage change from your starting baseline — so you can see at a glance if things are improving, worsening, or holding steady.</p>
+
+  <h3 class="help-subheading">Episode frequency chart</h3>
+  <p>The bar chart shows how many episodes you've had each week across the last 12 weeks. Vertical lines mark when you started each preventative protocol. This makes it easy to see whether your episode pattern changed after starting a new treatment.</p>
+
+  <h3 class="help-subheading">Symptom trend chart</h3>
+  <p>The line chart tracks how each symptom score has moved week by week over the same 12-week period. Protocol start dates are marked here too, so you can visually connect treatment changes with symptom trends.</p>
+
+  <h3 class="help-subheading">Protocol impact markers</h3>
+  <p>The vertical lines on both charts mark the start date of each preventative protocol. These matter because they let you visually answer the most important question: did things get better after I started this? Look for changes in the pattern after each marker.</p>
+
+  <h3 class="help-subheading">Rescue effectiveness table</h3>
+  <p>Below the charts, the rescue table summarises each rescue option you've used: how many times, your average effectiveness rating, and average time to relief. This helps you decide which rescue option to reach for first when you need it.</p>
+
+  <h3 class="help-subheading">When will my charts appear?</h3>
+  <p>The dashboard shows an empty state message until you have at least two weeks of data. This is intentional — the charts need enough data points to be meaningful. Keep logging consistently and the insights will build up.</p>
+</section>
+
+<hr class="divider">
+
+<section class="help-section" id="early-version">
+  <h2 class="help-heading">A note on this early version</h2>
+  <p>You're using an early version of Baseline. It's functional but not finished — you might notice some rough edges as we continue to build.</p>
+  <p>Your feedback is genuinely valuable. If something is confusing, broken, or missing, please reach out. You're helping shape what this becomes.</p>
+  <p class="help-contact">Contact: <a href="mailto:daniels.missy@gmail.com">daniels.missy@gmail.com</a></p>
+</section>
+
+{% endblock %}
