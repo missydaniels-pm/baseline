@@ -1,3 +1,5 @@
 .venv
 instance/
 .env
+.DS_Store
+.claude/
