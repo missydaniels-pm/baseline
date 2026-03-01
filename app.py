@@ -384,19 +384,16 @@ def change_password():
 # ---------------------------------------------------------------------------
 
 def build_system_prompt(user, client_time=None):
+    local_dt = None
     if client_time:
         try:
             local_dt = datetime.strptime(client_time, '%Y-%m-%dT%H:%M')
-            today = local_dt.strftime('%Y-%m-%d')
-            current_time = local_dt.strftime('%H:%M')
         except ValueError:
-            now = datetime.utcnow()
-            today = now.strftime('%Y-%m-%d')
-            current_time = now.strftime('%H:%M')
-    else:
-        now = datetime.utcnow()
-        today = now.strftime('%Y-%m-%d')
-        current_time = now.strftime('%H:%M')
+            pass
+    if local_dt is None:
+        local_dt = datetime.utcnow()
+    today = local_dt.strftime('%Y-%m-%d')
+    current_time = local_dt.strftime('%H:%M')
     symptoms = Symptom.query.filter_by(user_id=user.id, is_active=True).all()
     preventatives = Protocol.query.filter_by(user_id=user.id, type='preventative', status='active').all()
     rescues = Protocol.query.filter_by(user_id=user.id, type='rescue').all()
@@ -528,14 +525,18 @@ def checkin():
                 ep_data = parsed.get('episode_data', {})
 
                 onset_str = ep_data.get('onset')
-                try:
-                    if onset_str:
+                onset = None
+                if onset_str:
+                    try:
                         onset = datetime.strptime(onset_str, '%Y-%m-%dT%H:%M')
-                    elif client_time:
+                    except ValueError:
+                        pass
+                if onset is None and client_time:
+                    try:
                         onset = datetime.strptime(client_time, '%Y-%m-%dT%H:%M')
-                    else:
-                        onset = datetime.utcnow()
-                except ValueError:
+                    except ValueError:
+                        pass
+                if onset is None:
                     onset = datetime.utcnow()
 
                 episode = Episode(
