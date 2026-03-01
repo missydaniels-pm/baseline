@@ -142,7 +142,7 @@ def get_active_experiment(user_id):
 # Authentication gate + onboarding gate
 # ---------------------------------------------------------------------------
 
-PUBLIC_ENDPOINTS = {'login', 'register', 'static'}
+PUBLIC_ENDPOINTS = {'login', 'register', 'static', 'dev_bootstrap'}
 
 @app.before_request
 def require_auth():
@@ -1453,6 +1453,41 @@ def dev_seed():
           </button>
           <a href="/" style="margin-left:12px;">Cancel</a>
         </form></body></html>'''
+
+
+@app.route('/dev/bootstrap')
+def dev_bootstrap():
+    if User.query.count() > 0:
+        return (
+            '<!doctype html><html><body style="font-family:sans-serif;max-width:500px;margin:60px auto;padding:20px;">'
+            '<h2>Bootstrap not needed</h2>'
+            '<p>Users already exist in the database.</p>'
+            '<a href="/login">← Go to login</a></body></html>'
+        )
+
+    admin = User(
+        name='Admin',
+        email='admin@baseline.app',
+        password_hash=bcrypt.generate_password_hash('Baseline2026!').decode('utf-8'),
+        onboarding_complete=True,
+        is_active=True,
+    )
+    db.session.add(admin)
+    db.session.flush()
+
+    code = secrets.token_urlsafe(12)
+    db.session.add(InviteCode(code=code))
+    db.session.commit()
+
+    return (
+        '<!doctype html><html><body style="font-family:sans-serif;max-width:500px;margin:60px auto;padding:20px;">'
+        '<h2>Bootstrap Complete</h2>'
+        '<p>Admin account created: <strong>admin@baseline.app</strong> / <strong>Baseline2026!</strong></p>'
+        '<p style="margin-top:16px;">Invite code for next user:</p>'
+        f'<p style="font-size:20px;font-weight:bold;background:#222;color:#7c5cbf;padding:16px;border-radius:8px;'
+        f'text-align:center;letter-spacing:1px;font-family:monospace;">{code}</p>'
+        '<a href="/login">← Go to login</a></body></html>'
+    )
 
 
 @app.route('/dev/create-invite')
