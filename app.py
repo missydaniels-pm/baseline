@@ -371,7 +371,8 @@ def change_password():
     elif new_pw != confirm:
         flash('New passwords do not match.', 'error')
     else:
-        user.password_hash = bcrypt.generate_password_hash(new_pw).decode('utf-8')
+        new_hash = bcrypt.generate_password_hash(new_pw).decode('utf-8')
+        User.query.filter_by(id=user.id).update({'password_hash': new_hash})
         db.session.commit()
         flash('Password updated.', 'success')
 
