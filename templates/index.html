@@ -1,6 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — Baseline{% endblock %}
 
+{% block head_extra %}
+{% if has_chart_data %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3/dist/chartjs-plugin-annotation.min.js"></script>
+{% endif %}
+{% endblock %}
+
 {% block content %}
 <div class="page-header">
   <h1 class="page-title">Dashboard</h1>
@@ -18,21 +25,13 @@
 </div>
 {% endif %}
 
-{% set total = episodes | length %}
-<div class="stat-strip">
-  <div class="stat-box">
-    <div class="stat-label">Recent Episodes</div>
-    <div class="stat-value accent">{{ total }}</div>
-  </div>
-  <div class="stat-box">
-    <div class="stat-label">Active Protocols</div>
-    <div class="stat-value accent">{{ protocols | length }}</div>
-  </div>
-</div>
-
+{# ── Symptom Baseline Cards ────────────────────────────────────── #}
 {% if symptom_stats %}
-<div class="page-header" style="margin-bottom:12px;">
-  <h2 style="font-size:17px; font-weight:600;">Your Symptoms</h2>
+<div class="section-header">
+  <div>
+    <div class="section-title">Your Symptoms</div>
+    <div class="section-sub">Average scores this month vs baseline</div>
+  </div>
 </div>
 <div class="symptom-stat-grid">
   {% for stat in symptom_stats %}
@@ -40,19 +39,21 @@
     <div class="symptom-stat-name">{{ stat.symptom.name }}</div>
     {% if stat.avg_score is not none %}
       <div class="symptom-stat-score">{{ stat.avg_score }}<span>/10</span></div>
-      <div class="symptom-stat-meta">avg last 5 episodes</div>
+      <div class="symptom-stat-meta">avg this month</div>
     {% else %}
       <div class="symptom-stat-score" style="font-size:18px; color:var(--text-muted);">—</div>
-      <div class="symptom-stat-meta">no episodes yet</div>
+      <div class="symptom-stat-meta">no episodes this month</div>
     {% endif %}
     {% if stat.baseline_score is not none %}
       <div class="symptom-stat-baseline">baseline {{ stat.baseline_score }}/10
-        {% if stat.trend == 'up' %}
-          <span class="trend-up">↑ worse</span>
-        {% elif stat.trend == 'down' %}
-          <span class="trend-down">↓ better</span>
-        {% elif stat.trend == 'neutral' %}
-          <span class="trend-neutral">— stable</span>
+        {% if stat.pct_change is not none %}
+          {% if stat.trend == 'up' %}
+            <span class="symptom-stat-pct worse">↑ {{ stat.pct_change }}%</span>
+          {% elif stat.trend == 'down' %}
+            <span class="symptom-stat-pct better">↓ {{ stat.pct_change|abs }}%</span>
+          {% elif stat.trend == 'neutral' %}
+            <span class="symptom-stat-pct stable">— stable</span>
+          {% endif %}
         {% endif %}
       </div>
     {% endif %}
@@ -62,40 +63,72 @@
 <hr class="divider" style="margin-top:8px;">
 {% endif %}
 
-<div class="page-header" style="margin-bottom:16px;">
-  <h2 style="font-size:17px; font-weight:600;">Recent Episodes</h2>
-  <a href="{{ url_for('episodes') }}" style="font-size:13px; color:var(--text-muted);">View all →</a>
+{# ── Charts ────────────────────────────────────────────────────── #}
+{% if has_chart_data %}
+<div class="section-header">
+  <div>
+    <div class="section-title">Trends</div>
+    <div class="section-sub">Last 12 weeks</div>
+  </div>
 </div>
-
-{% if episodes %}
-  {% for ep in episodes %}
-  <div class="card {{ ep.severity_class }}">
-    <div class="episode-card">
-      <div class="severity-badge">{{ ep.max_score or '—' }}</div>
-      <div>
-        <div style="font-weight:600;">{{ ep.onset.strftime('%b %-d, %Y at %-I:%M %p') }}</div>
-        <div class="episode-meta">
-          {% for ss in ep.symptom_scores %}
-            <span>{{ ss.symptom.name }}: {{ ss.score }}/10</span>
-          {% endfor %}
-          {% if ep.duration_hours %}<span>{{ ep.duration_hours }}h duration</span>{% endif %}
-          <span class="imp-{{ ep.functional_impairment }}">{{ ep.impairment_label }}</span>
-        </div>
-        {% if ep.notes %}<div class="notes-text">{{ ep.notes }}</div>{% endif %}
-      </div>
-      <div class="episode-actions">
-        <a href="{{ url_for('edit_episode', episode_id=ep.id) }}" class="btn btn-secondary btn-sm">Edit</a>
-      </div>
-    </div>
+<div class="chart-row">
+  <div class="chart-container">
+    <div class="chart-card-title">Episode Frequency</div>
+    <canvas id="episodeFreqChart"></canvas>
   </div>
-  {% endfor %}
+  <div class="chart-container">
+    <div class="chart-card-title">Symptom Trends</div>
+    <canvas id="symptomTrendChart"></canvas>
+  </div>
+</div>
 {% else %}
-  <div class="empty-state">
-    <p>No episodes logged yet.</p>
-    <a href="{{ url_for('new_episode') }}" class="btn btn-primary">Log your first episode</a>
-  </div>
+<div class="chart-empty-state">
+  <p>Charts will appear once you have at least 2 weeks of data.</p>
+  <p style="font-size:13px;">Keep logging episodes and checking in!</p>
+</div>
 {% endif %}
 
+{# ── Rescue Effectiveness ──────────────────────────────────────── #}
+{% if rescue_stats %}
+<div class="section-header">
+  <div>
+    <div class="section-title">Rescue Effectiveness</div>
+    <div class="section-sub">All-time usage stats</div>
+  </div>
+</div>
+<div class="card" style="padding:12px 16px;">
+  <table class="rescue-table">
+    <thead>
+      <tr>
+        <th>Rescue</th>
+        <th>Times Used</th>
+        <th>Avg Effectiveness</th>
+        <th>Avg Relief Time</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rescue_stats %}
+      <tr>
+        <td class="rescue-table-name">{{ r.name }}</td>
+        <td>{{ r.times_used }}</td>
+        <td>
+          {% if r.avg_effectiveness is not none %}
+            {{ r.avg_effectiveness }}<span class="rescue-table-unit">/10</span>
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          {% if r.avg_relief_hours is not none %}
+            {{ r.avg_relief_hours }}<span class="rescue-table-unit">hrs</span>
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{# ── Active Protocols ──────────────────────────────────────────── #}
 {% if protocols %}
 <hr class="divider">
 <div class="page-header" style="margin-bottom:16px;">
@@ -118,5 +151,124 @@
   </div>
 </div>
 {% endfor %}
+{% endif %}
+
+{# ── Chart.js initialization ───────────────────────────────────── #}
+{% if has_chart_data %}
+<script>
+(function() {
+  // Dark theme defaults
+  Chart.defaults.color = '#888899';
+  Chart.defaults.borderColor = '#2e2e3e';
+  Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+
+  var weekLabels = {{ week_labels | tojson }};
+  var episodeCounts = {{ episode_counts | tojson }};
+  var symptomDatasets = {{ symptom_trend_datasets | tojson }};
+  var protocolAnnotations = {{ protocol_annotations | tojson }};
+
+  // Build annotation objects for protocol start dates
+  var annotations = {};
+  protocolAnnotations.forEach(function(pa, i) {
+    annotations['proto' + i] = {
+      type: 'line',
+      xMin: pa.week_index,
+      xMax: pa.week_index,
+      borderColor: 'rgba(160,125,224,0.5)',
+      borderWidth: 1,
+      borderDash: [4, 4],
+      label: {
+        display: true,
+        content: pa.name,
+        position: 'start',
+        backgroundColor: 'rgba(26,26,36,0.9)',
+        color: '#a07de0',
+        font: { size: 10, weight: '500' },
+        padding: 4
+      }
+    };
+  });
+
+  // Episode frequency bar chart
+  new Chart(document.getElementById('episodeFreqChart'), {
+    type: 'bar',
+    data: {
+      labels: weekLabels,
+      datasets: [{
+        data: episodeCounts,
+        backgroundColor: 'rgba(124,92,191,0.6)',
+        borderColor: '#7c5cbf',
+        borderWidth: 1,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        annotation: { annotations: annotations }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: { stepSize: 1, precision: 0 },
+          grid: { color: 'rgba(46,46,62,0.5)' }
+        },
+        x: {
+          grid: { display: false },
+          ticks: { maxRotation: 45, font: { size: 11 } }
+        }
+      }
+    }
+  });
+
+  // Symptom trend line chart
+  var lineDatasets = symptomDatasets.map(function(ds) {
+    return {
+      label: ds.label,
+      data: ds.data,
+      borderColor: ds.color,
+      backgroundColor: ds.color,
+      tension: 0.3,
+      spanGaps: true,
+      pointRadius: 3,
+      pointHoverRadius: 5,
+      borderWidth: 2
+    };
+  });
+
+  new Chart(document.getElementById('symptomTrendChart'), {
+    type: 'line',
+    data: {
+      labels: weekLabels,
+      datasets: lineDatasets
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { boxWidth: 12, padding: 12, font: { size: 11 } }
+        },
+        annotation: { annotations: annotations }
+      },
+      scales: {
+        y: {
+          min: 0,
+          max: 10,
+          ticks: { stepSize: 2 },
+          grid: { color: 'rgba(46,46,62,0.5)' }
+        },
+        x: {
+          grid: { display: false },
+          ticks: { maxRotation: 45, font: { size: 11 } }
+        }
+      }
+    }
+  });
+})();
+</script>
 {% endif %}
 {% endblock %}

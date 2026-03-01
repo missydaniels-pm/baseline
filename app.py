@@ -5,6 +5,7 @@ import random
 from flask import Flask, render_template, request, redirect, url_for, flash
 from sqlalchemy import text
 from database import db, User, Episode, Protocol, Symptom, SymptomScore, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent
+from collections import defaultdict
 from datetime import datetime, date, timedelta
 from dotenv import load_dotenv
 
@@ -565,7 +566,92 @@ def assess_experiment(exp_id):
         flash(f'"{experiment.name}" assessed and completed.', 'success')
         return redirect(url_for('experiments'))
 
-    return render_template('assess_experiment.html', experiment=experiment)
+    # ── Compute assessment context data ──
+    today = date.today()
+    before_start = experiment.start_date - timedelta(weeks=8)
+    exp_start = experiment.start_date
+
+    episodes_before = (
+        Episode.query.filter(Episode.user_id == user.id,
+                             Episode.onset >= datetime.combine(before_start, datetime.min.time()),
+                             Episode.onset < datetime.combine(exp_start, datetime.min.time()))
+        .order_by(Episode.onset)
+        .all()
+    )
+    episodes_during = (
+        Episode.query.filter(Episode.user_id == user.id,
+                             Episode.onset >= datetime.combine(exp_start, datetime.min.time()))
+        .order_by(Episode.onset)
+        .all()
+    )
+
+    weeks_before = max((exp_start - before_start).days / 7.0, 1)
+    weeks_during = max((today - exp_start).days / 7.0, 1)
+    freq_before = round(len(episodes_before) / weeks_before, 1)
+    freq_during = round(len(episodes_during) / weeks_during, 1)
+
+    # Per-symptom avg before vs during
+    active_symptoms = Symptom.query.filter_by(user_id=user.id, is_active=True).all()
+    symptom_comparison = []
+    for symptom in active_symptoms:
+        before_scores = [
+            ss.score for ep in episodes_before
+            for ss in ep.symptom_scores if ss.symptom_id == symptom.id
+        ]
+        during_scores = [
+            ss.score for ep in episodes_during
+            for ss in ep.symptom_scores if ss.symptom_id == symptom.id
+        ]
+        symptom_comparison.append({
+            'name': symptom.name,
+            'avg_before': round(sum(before_scores) / len(before_scores), 1) if before_scores else None,
+            'avg_during': round(sum(during_scores) / len(during_scores), 1) if during_scores else None,
+        })
+
+    # Weekly symptom trend data across full window (before + during)
+    window_start = before_start - timedelta(days=before_start.weekday())  # Monday
+    total_weeks = max(int(((today - window_start).days + 6) / 7), 1)
+    chart_labels = []
+    for i in range(total_weeks):
+        ws = window_start + timedelta(weeks=i)
+        chart_labels.append(ws.strftime('%b %-d'))
+
+    all_window_episodes = episodes_before + episodes_during
+    symptom_colors = ['#a07de0', '#4caf78', '#e8a838', '#e05252', '#5c9dbf', '#bf5ca0']
+    assess_chart_datasets = []
+    for idx, symptom in enumerate(active_symptoms):
+        weekly_data = []
+        for i in range(total_weeks):
+            ws = window_start + timedelta(weeks=i)
+            we = ws + timedelta(days=7)
+            week_scores = [
+                ss.score for ep in all_window_episodes
+                for ss in ep.symptom_scores
+                if ss.symptom_id == symptom.id and ws <= ep.onset.date() < we
+            ]
+            weekly_data.append(round(sum(week_scores) / len(week_scores), 1) if week_scores else None)
+        assess_chart_datasets.append({
+            'label': symptom.name,
+            'data': weekly_data,
+            'color': symptom_colors[idx % len(symptom_colors)]
+        })
+
+    exp_start_week_index = (exp_start - window_start).days / 7.0
+    has_before_data = len(episodes_before) >= 2
+
+    assess_data = {
+        'freq_before': freq_before,
+        'freq_during': freq_during,
+        'weeks_during': int(weeks_during),
+        'symptom_comparison': symptom_comparison,
+        'chart_labels': chart_labels,
+        'chart_datasets': assess_chart_datasets,
+        'exp_start_week_index': round(exp_start_week_index, 1),
+        'has_before_data': has_before_data,
+        'has_chart_data': len(all_window_episodes) >= 2,
+    }
+
+    return render_template('assess_experiment.html', experiment=experiment, assess_data=assess_data)
 
 
 @app.route('/experiments/<int:exp_id>/edit', methods=['GET', 'POST'])
@@ -608,32 +694,118 @@ def abandon_experiment(exp_id):
 @app.route('/')
 def index():
     user = get_user()
-    recent_episodes = Episode.query.filter_by(user_id=user.id).order_by(Episode.onset.desc()).limit(5).all()
+    today = date.today()
     active_preventatives = Protocol.query.filter_by(user_id=user.id, type='preventative', status='active').all()
-    rescue_options = Protocol.query.filter_by(user_id=user.id, type='rescue').all()
 
+    # ── Symptom cards: avg this month + pct change from baseline ──
+    month_start = today.replace(day=1)
     active_symptoms = Symptom.query.filter_by(user_id=user.id, is_active=True).all()
     symptom_stats = []
     for symptom in active_symptoms:
         scores = (
             db.session.query(SymptomScore.score)
             .join(Episode, SymptomScore.episode_id == Episode.id)
-            .filter(Episode.user_id == user.id, SymptomScore.symptom_id == symptom.id)
-            .order_by(Episode.onset.desc())
-            .limit(5)
+            .filter(Episode.user_id == user.id, SymptomScore.symptom_id == symptom.id,
+                    Episode.onset >= datetime.combine(month_start, datetime.min.time()))
             .all()
         )
         avg = round(sum(s[0] for s in scores) / len(scores), 1) if scores else None
         baseline = symptom.baseline_score
         trend = None
-        if avg is not None and baseline is not None:
+        pct_change = None
+        if avg is not None and baseline is not None and baseline > 0:
+            pct_change = round((avg - baseline) / baseline * 100)
             if avg > baseline + 0.5:
                 trend = 'up'
             elif avg < baseline - 0.5:
                 trend = 'down'
             else:
                 trend = 'neutral'
-        symptom_stats.append({'symptom': symptom, 'avg_score': avg, 'baseline_score': baseline, 'trend': trend})
+        symptom_stats.append({
+            'symptom': symptom, 'avg_score': avg, 'baseline_score': baseline,
+            'trend': trend, 'pct_change': pct_change
+        })
+
+    # ── Episode frequency: weekly counts for last 12 weeks ──
+    twelve_weeks_ago = today - timedelta(weeks=12)
+    all_episodes_12w = (
+        Episode.query.filter(Episode.user_id == user.id,
+                             Episode.onset >= datetime.combine(twelve_weeks_ago, datetime.min.time()))
+        .order_by(Episode.onset)
+        .all()
+    )
+
+    # Build week buckets (Monday-anchored)
+    week_start = twelve_weeks_ago - timedelta(days=twelve_weeks_ago.weekday())  # Monday
+    week_labels = []
+    episode_counts = []
+    for i in range(12):
+        ws = week_start + timedelta(weeks=i)
+        we = ws + timedelta(days=7)
+        week_labels.append(ws.strftime('%b %-d'))
+        count = sum(1 for ep in all_episodes_12w if ws <= ep.onset.date() < we)
+        episode_counts.append(count)
+
+    # ── Symptom trend datasets: weekly avg per symptom for 12 weeks ──
+    symptom_colors = ['#a07de0', '#4caf78', '#e8a838', '#e05252', '#5c9dbf', '#bf5ca0']
+    symptom_trend_datasets = []
+    for idx, symptom in enumerate(active_symptoms):
+        scores_12w = (
+            db.session.query(SymptomScore.score, Episode.onset)
+            .join(Episode, SymptomScore.episode_id == Episode.id)
+            .filter(Episode.user_id == user.id, SymptomScore.symptom_id == symptom.id,
+                    Episode.onset >= datetime.combine(twelve_weeks_ago, datetime.min.time()))
+            .all()
+        )
+        weekly_data = []
+        for i in range(12):
+            ws = week_start + timedelta(weeks=i)
+            we = ws + timedelta(days=7)
+            week_scores = [s[0] for s in scores_12w if ws <= s[1].date() < we]
+            weekly_data.append(round(sum(week_scores) / len(week_scores), 1) if week_scores else None)
+        symptom_trend_datasets.append({
+            'label': symptom.name,
+            'data': weekly_data,
+            'color': symptom_colors[idx % len(symptom_colors)]
+        })
+
+    # ── Protocol annotations: vertical lines at start dates ──
+    protocol_annotations = []
+    for p in active_preventatives:
+        if p.start_date and p.start_date >= twelve_weeks_ago:
+            days_from_start = (p.start_date - week_start).days
+            week_index = days_from_start / 7.0
+            if 0 <= week_index < 12:
+                protocol_annotations.append({'name': p.name, 'week_index': round(week_index, 1)})
+
+    # ── Rescue effectiveness stats ──
+    rescue_episodes = (
+        Episode.query.filter(Episode.user_id == user.id,
+                             Episode.rescue_protocol.isnot(None),
+                             Episode.rescue_protocol != '')
+        .all()
+    )
+    rescue_grouped = defaultdict(list)
+    for ep in rescue_episodes:
+        rescue_grouped[ep.rescue_protocol].append(ep)
+    rescue_stats = []
+    for name, eps in rescue_grouped.items():
+        eff_scores = [ep.rescue_effectiveness for ep in eps if ep.rescue_effectiveness is not None]
+        relief_hours = [ep.time_to_relief_hours for ep in eps if ep.time_to_relief_hours is not None]
+        rescue_stats.append({
+            'name': name,
+            'times_used': len(eps),
+            'avg_effectiveness': round(sum(eff_scores) / len(eff_scores), 1) if eff_scores else None,
+            'avg_relief_hours': round(sum(relief_hours) / len(relief_hours), 1) if relief_hours else None,
+        })
+    rescue_stats.sort(key=lambda r: r['times_used'], reverse=True)
+
+    # ── Chart data availability ──
+    if all_episodes_12w:
+        earliest = all_episodes_12w[0].onset.date()
+        has_chart_data = (today - earliest).days >= 14
+    else:
+        has_chart_data = False
 
     experiments_ready = [
         e for e in Experiment.query.filter_by(user_id=user.id, status='active').all()
@@ -641,11 +813,15 @@ def index():
     ]
 
     return render_template('index.html',
-                           episodes=recent_episodes,
                            protocols=active_preventatives,
-                           rescue_options=rescue_options,
                            symptom_stats=symptom_stats,
-                           experiments_ready=experiments_ready)
+                           experiments_ready=experiments_ready,
+                           week_labels=week_labels,
+                           episode_counts=episode_counts,
+                           symptom_trend_datasets=symptom_trend_datasets,
+                           protocol_annotations=protocol_annotations,
+                           rescue_stats=rescue_stats,
+                           has_chart_data=has_chart_data)
 
 
 # ---------------------------------------------------------------------------

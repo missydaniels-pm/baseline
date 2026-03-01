@@ -1,95 +1,254 @@
 {% extends "base.html" %}
 {% block title %}Assess Experiment — Baseline{% endblock %}
 
+{% block head_extra %}
+{% if assess_data and assess_data.has_chart_data %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3/dist/chartjs-plugin-annotation.min.js"></script>
+{% endif %}
+{% endblock %}
+
 {% block content %}
 <div class="page-header">
   <h1 class="page-title">Assess Experiment</h1>
   <a href="{{ url_for('experiments') }}" class="btn btn-secondary">Cancel</a>
 </div>
 
-<div class="form-card" style="max-width:660px;">
-  <div style="margin-bottom:24px;">
-    <div style="font-size:18px; font-weight:700; margin-bottom:4px;">{{ experiment.name }}</div>
-    {% if experiment.protocol %}
-    <div style="color:var(--text-muted); font-size:14px;">Protocol: {{ experiment.protocol.name }}</div>
-    {% endif %}
-    {% if experiment.hypothesis %}
-    <div class="field-hint" style="margin-top:8px; font-style:normal;">
-      <strong>Hypothesis:</strong> {{ experiment.hypothesis }}
-    </div>
-    {% endif %}
-    <div style="font-size:13px; color:var(--text-muted); margin-top:8px;">
-      Started {{ experiment.start_date.strftime('%b %-d, %Y') }}
-      · {{ experiment.stabilization_weeks }}-week stabilization period
-      {% if experiment.baseline_episodes_per_month %}
-        · baseline {{ experiment.baseline_episodes_per_month }} bad days/month
+<div class="assess-layout">
+  {# ── Data Panel (left) ─────────────────────────────────────────── #}
+  <div class="assess-data-panel">
+    <div class="card">
+      <div class="assess-panel-title">Your Data</div>
+
+      <div class="assess-stat-row">
+        <span class="assess-stat-label">Duration</span>
+        <span class="assess-stat-value">{{ assess_data.weeks_during }} weeks</span>
+      </div>
+
+      {# Episode frequency comparison #}
+      <div style="font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:8px;">
+        Episodes / Week
+      </div>
+      <div class="assess-compare-row">
+        {% if assess_data.has_before_data %}
+        <div class="assess-compare-box">
+          <div class="assess-compare-label">Before</div>
+          <div class="assess-compare-value before">{{ assess_data.freq_before }}</div>
+        </div>
+        <div class="assess-arrow">→</div>
+        {% endif %}
+        <div class="assess-compare-box">
+          <div class="assess-compare-label">During</div>
+          <div class="assess-compare-value during">{{ assess_data.freq_during }}</div>
+        </div>
+      </div>
+
+      {# Symptom score comparisons #}
+      {% if assess_data.symptom_comparison %}
+      <div style="font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:8px;">
+        Avg Symptom Scores
+      </div>
+      <div class="assess-symptom-list">
+        {% for sc in assess_data.symptom_comparison %}
+        <div class="assess-symptom-row">
+          <span class="assess-symptom-name">{{ sc.name }}</span>
+          <span class="assess-symptom-scores">
+            {% if assess_data.has_before_data %}
+              <span class="assess-score-before">{{ sc.avg_before if sc.avg_before is not none else '—' }}</span>
+              <span style="color:var(--text-muted);">→</span>
+            {% endif %}
+            <span class="assess-score-during">{{ sc.avg_during if sc.avg_during is not none else '—' }}</span>
+          </span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if not assess_data.has_before_data %}
+      <div class="assess-no-data">
+        Not enough pre-experiment data to show a before comparison. Scores above reflect the experiment period only.
+      </div>
+      {% endif %}
+
+      {# Mini trend chart #}
+      {% if assess_data.has_chart_data %}
+      <div style="font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:8px; margin-top:8px;">
+        Trend
+      </div>
+      <div class="assess-chart-wrap">
+        <canvas id="assessTrendChart"></canvas>
+      </div>
       {% endif %}
     </div>
   </div>
 
-  <hr class="divider">
-
-  <form method="POST">
-    <div class="form-group">
-      <label for="outcome_rating">Overall outcome (1–10)</label>
-      <div class="field-hint">How effective was this protocol? 1 = no benefit, 10 = major improvement.</div>
-      <div class="slider-wrap">
-        <input type="range" id="outcome_rating" name="outcome_rating" min="1" max="10" value="5">
-        <span class="slider-value" id="outcome_rating_display">5</span>
+  {# ── Form (right) ──────────────────────────────────────────────── #}
+  <div>
+    <div class="form-card" style="max-width:100%;">
+      <div style="margin-bottom:24px;">
+        <div style="font-size:18px; font-weight:700; margin-bottom:4px;">{{ experiment.name }}</div>
+        {% if experiment.protocol %}
+        <div style="color:var(--text-muted); font-size:14px;">Protocol: {{ experiment.protocol.name }}</div>
+        {% endif %}
+        {% if experiment.hypothesis %}
+        <div class="field-hint" style="margin-top:8px; font-style:normal;">
+          <strong>Hypothesis:</strong> {{ experiment.hypothesis }}
+        </div>
+        {% endif %}
+        <div style="font-size:13px; color:var(--text-muted); margin-top:8px;">
+          Started {{ experiment.start_date.strftime('%b %-d, %Y') }}
+          · {{ experiment.stabilization_weeks }}-week stabilization period
+          {% if experiment.baseline_episodes_per_month %}
+            · baseline {{ experiment.baseline_episodes_per_month }} bad days/month
+          {% endif %}
+        </div>
       </div>
-    </div>
 
-    <div class="form-group">
-      <label for="outcome_notes">Notes</label>
-      <div class="field-hint">What did you observe? Did you hit your hypothesis?</div>
-      <textarea id="outcome_notes" name="outcome_notes"
-                placeholder="e.g. Bad days dropped from 8 to 4 per month. Side effects were manageable."></textarea>
-    </div>
+      <hr class="divider">
 
-    <div class="form-group">
-      <label>Decision</label>
-      <div class="field-hint">
-        What will you do with this protocol?
-        {% if experiment.protocol %} This will also update the protocol status.{% endif %}
-      </div>
-      <div class="decision-options">
-        <label class="decision-option">
-          <input type="radio" name="decision" value="continue" checked>
-          <span class="decision-label">
-            <span class="decision-icon">✓</span>
-            <span>
-              <strong>Continue</strong>
-              <span class="decision-desc">It's working — keep going</span>
-            </span>
-          </span>
-        </label>
-        <label class="decision-option">
-          <input type="radio" name="decision" value="pause">
-          <span class="decision-label">
-            <span class="decision-icon">⏸</span>
-            <span>
-              <strong>Pause</strong>
-              <span class="decision-desc">Inconclusive — try again later</span>
-            </span>
-          </span>
-        </label>
-        <label class="decision-option">
-          <input type="radio" name="decision" value="stop">
-          <span class="decision-label">
-            <span class="decision-icon">✕</span>
-            <span>
-              <strong>Stop</strong>
-              <span class="decision-desc">Not working or not worth it</span>
-            </span>
-          </span>
-        </label>
-      </div>
-    </div>
+      <form method="POST">
+        <div class="form-group">
+          <label for="outcome_rating">Overall outcome (1–10)</label>
+          <div class="field-hint">How effective was this protocol? 1 = no benefit, 10 = major improvement.</div>
+          <div class="slider-wrap">
+            <input type="range" id="outcome_rating" name="outcome_rating" min="1" max="10" value="5">
+            <span class="slider-value" id="outcome_rating_display">5</span>
+          </div>
+        </div>
 
-    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:8px;">
-      <a href="{{ url_for('experiments') }}" class="btn btn-secondary">Cancel</a>
-      <button type="submit" class="btn btn-primary">Complete Assessment</button>
+        <div class="form-group">
+          <label for="outcome_notes">Notes</label>
+          <div class="field-hint">What did you observe? Did you hit your hypothesis?</div>
+          <textarea id="outcome_notes" name="outcome_notes"
+                    placeholder="e.g. Bad days dropped from 8 to 4 per month. Side effects were manageable."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Decision</label>
+          <div class="field-hint">
+            What will you do with this protocol?
+            {% if experiment.protocol %} This will also update the protocol status.{% endif %}
+          </div>
+          <div class="decision-options">
+            <label class="decision-option">
+              <input type="radio" name="decision" value="continue" checked>
+              <span class="decision-label">
+                <span class="decision-icon">✓</span>
+                <span>
+                  <strong>Continue</strong>
+                  <span class="decision-desc">It's working — keep going</span>
+                </span>
+              </span>
+            </label>
+            <label class="decision-option">
+              <input type="radio" name="decision" value="pause">
+              <span class="decision-label">
+                <span class="decision-icon">⏸</span>
+                <span>
+                  <strong>Pause</strong>
+                  <span class="decision-desc">Inconclusive — try again later</span>
+                </span>
+              </span>
+            </label>
+            <label class="decision-option">
+              <input type="radio" name="decision" value="stop">
+              <span class="decision-label">
+                <span class="decision-icon">✕</span>
+                <span>
+                  <strong>Stop</strong>
+                  <span class="decision-desc">Not working or not worth it</span>
+                </span>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:8px;">
+          <a href="{{ url_for('experiments') }}" class="btn btn-secondary">Cancel</a>
+          <button type="submit" class="btn btn-primary">Complete Assessment</button>
+        </div>
+      </form>
     </div>
-  </form>
+  </div>
 </div>
+
+{# ── Assessment chart init ─────────────────────────────────────── #}
+{% if assess_data and assess_data.has_chart_data %}
+<script>
+(function() {
+  Chart.defaults.color = '#888899';
+  Chart.defaults.borderColor = '#2e2e3e';
+  Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+
+  var chartLabels = {{ assess_data.chart_labels | tojson }};
+  var chartDatasets = {{ assess_data.chart_datasets | tojson }};
+  var expStartIdx = {{ assess_data.exp_start_week_index }};
+
+  var lineDatasets = chartDatasets.map(function(ds) {
+    return {
+      label: ds.label,
+      data: ds.data,
+      borderColor: ds.color,
+      backgroundColor: ds.color,
+      tension: 0.3,
+      spanGaps: true,
+      pointRadius: 2,
+      pointHoverRadius: 4,
+      borderWidth: 2
+    };
+  });
+
+  new Chart(document.getElementById('assessTrendChart'), {
+    type: 'line',
+    data: {
+      labels: chartLabels,
+      datasets: lineDatasets
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { boxWidth: 10, padding: 8, font: { size: 10 } }
+        },
+        annotation: {
+          annotations: {
+            expStart: {
+              type: 'line',
+              xMin: expStartIdx,
+              xMax: expStartIdx,
+              borderColor: 'rgba(160,125,224,0.7)',
+              borderWidth: 2,
+              borderDash: [4, 4],
+              label: {
+                display: true,
+                content: 'Start',
+                position: 'start',
+                backgroundColor: 'rgba(26,26,36,0.9)',
+                color: '#a07de0',
+                font: { size: 10, weight: '600' },
+                padding: 4
+              }
+            }
+          }
+        }
+      },
+      scales: {
+        y: {
+          min: 0,
+          max: 10,
+          ticks: { stepSize: 2 },
+          grid: { color: 'rgba(46,46,62,0.5)' }
+        },
+        x: {
+          grid: { display: false },
+          ticks: { maxRotation: 45, font: { size: 10 } }
+        }
+      }
+    }
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}
