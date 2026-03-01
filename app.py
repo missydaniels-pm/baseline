@@ -37,53 +37,62 @@ bcrypt = Bcrypt(app)
 
 def run_migrations():
     """Add columns that may not exist in older DB files."""
+    from sqlalchemy import inspect as sa_inspect
+
+    inspector = sa_inspect(db.engine)
+
     migrations = [
-        'ALTER TABLE protocols ADD COLUMN available BOOLEAN NOT NULL DEFAULT 1',
-        'ALTER TABLE users ADD COLUMN onboarding_complete BOOLEAN NOT NULL DEFAULT 0',
-        'ALTER TABLE users ADD COLUMN baseline_episodes_per_month INTEGER',
-        'ALTER TABLE users ADD COLUMN ai_logging_enabled BOOLEAN NOT NULL DEFAULT 0',
-        'ALTER TABLE protocol_compliance ADD COLUMN took BOOLEAN NOT NULL DEFAULT 1',
-        'ALTER TABLE protocol_compliance ADD COLUMN notes TEXT',
-        'ALTER TABLE users ADD COLUMN email VARCHAR(255)',
-        'ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)',
-        'ALTER TABLE users ADD COLUMN invite_code_used VARCHAR(100)',
-        'ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1',
+        ('protocols',             'available',                 'ALTER TABLE protocols ADD COLUMN available BOOLEAN NOT NULL DEFAULT 1'),
+        ('users',                 'onboarding_complete',       'ALTER TABLE users ADD COLUMN onboarding_complete BOOLEAN NOT NULL DEFAULT 0'),
+        ('users',                 'baseline_episodes_per_month','ALTER TABLE users ADD COLUMN baseline_episodes_per_month INTEGER'),
+        ('users',                 'ai_logging_enabled',        'ALTER TABLE users ADD COLUMN ai_logging_enabled BOOLEAN NOT NULL DEFAULT 0'),
+        ('protocol_compliance',   'took',                      'ALTER TABLE protocol_compliance ADD COLUMN took BOOLEAN NOT NULL DEFAULT 1'),
+        ('protocol_compliance',   'notes',                     'ALTER TABLE protocol_compliance ADD COLUMN notes TEXT'),
+        ('users',                 'email',                     'ALTER TABLE users ADD COLUMN email VARCHAR(255)'),
+        ('users',                 'password_hash',             'ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)'),
+        ('users',                 'invite_code_used',          'ALTER TABLE users ADD COLUMN invite_code_used VARCHAR(100)'),
+        ('users',                 'is_active',                 'ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1'),
     ]
+
     with db.engine.connect() as conn:
-        for ddl in migrations:
-            try:
+        for table, column, ddl in migrations:
+            existing = [c['name'] for c in inspector.get_columns(table)]
+            if column not in existing:
                 conn.execute(text(ddl))
                 conn.commit()
-            except Exception:
-                pass  # column already exists
 
-        # Make episodes.peak_severity nullable.
-        # SQLite can't ALTER COLUMN, so we recreate the table when needed.
-        col_info = conn.execute(text('PRAGMA table_info(episodes)')).fetchall()
-        peak_col = next((r for r in col_info if r[1] == 'peak_severity'), None)
-        if peak_col and peak_col[3] == 1:  # notnull == 1
+        # Make episodes.peak_severity nullable if it isn't already.
+        peak_col = next(
+            (c for c in inspector.get_columns('episodes') if c['name'] == 'peak_severity'),
+            None,
+        )
+        if peak_col and peak_col.get('nullable') is False:
             print("Migrating episodes.peak_severity to nullable...")
-            conn.execute(text('PRAGMA foreign_keys=OFF'))
-            conn.execute(text('''
-                CREATE TABLE episodes_new (
-                    id INTEGER NOT NULL PRIMARY KEY,
-                    user_id INTEGER NOT NULL,
-                    onset DATETIME NOT NULL,
-                    peak_severity INTEGER,
-                    duration_hours FLOAT,
-                    functional_impairment VARCHAR(50),
-                    rescue_protocol TEXT,
-                    rescue_effectiveness INTEGER,
-                    time_to_relief_hours FLOAT,
-                    notes TEXT,
-                    created_at DATETIME,
-                    FOREIGN KEY(user_id) REFERENCES users(id)
-                )
-            '''))
-            conn.execute(text('INSERT INTO episodes_new SELECT * FROM episodes'))
-            conn.execute(text('DROP TABLE episodes'))
-            conn.execute(text('ALTER TABLE episodes_new RENAME TO episodes'))
-            conn.execute(text('PRAGMA foreign_keys=ON'))
+            is_sqlite = str(db.engine.url).startswith('sqlite')
+            if is_sqlite:
+                conn.execute(text('PRAGMA foreign_keys=OFF'))
+                conn.execute(text('''
+                    CREATE TABLE episodes_new (
+                        id INTEGER NOT NULL PRIMARY KEY,
+                        user_id INTEGER NOT NULL,
+                        onset DATETIME NOT NULL,
+                        peak_severity INTEGER,
+                        duration_hours FLOAT,
+                        functional_impairment VARCHAR(50),
+                        rescue_protocol TEXT,
+                        rescue_effectiveness INTEGER,
+                        time_to_relief_hours FLOAT,
+                        notes TEXT,
+                        created_at DATETIME,
+                        FOREIGN KEY(user_id) REFERENCES users(id)
+                    )
+                '''))
+                conn.execute(text('INSERT INTO episodes_new SELECT * FROM episodes'))
+                conn.execute(text('DROP TABLE episodes'))
+                conn.execute(text('ALTER TABLE episodes_new RENAME TO episodes'))
+                conn.execute(text('PRAGMA foreign_keys=ON'))
+            else:
+                conn.execute(text('ALTER TABLE episodes ALTER COLUMN peak_severity DROP NOT NULL'))
             conn.commit()
             print("Migration complete.")
 
