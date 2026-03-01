@@ -39,4 +39,51 @@
     <button type="submit" class="btn btn-primary">Save settings</button>
   </form>
 </div>
+
+<hr class="divider">
+
+<div class="settings-section">
+  <h2 class="section-title" style="margin-bottom:12px;">Account</h2>
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px;">
+    <div>
+      <div class="settings-row-label">{{ user.email }}</div>
+      <div class="settings-row-desc">Logged in</div>
+    </div>
+    <a href="{{ url_for('logout') }}" class="btn btn-secondary">Log out</a>
+  </div>
+
+  <div class="settings-sub-section">
+    <h3 class="settings-sub-title">Change email</h3>
+    <form method="POST" action="{{ url_for('change_email') }}">
+      <div class="form-group">
+        <label for="new_email">New email</label>
+        <input type="text" id="new_email" name="new_email" placeholder="you@example.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label for="current_password_email">Current password</label>
+        <input type="password" id="current_password_email" name="current_password_email" placeholder="Verify your identity" autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-secondary">Update email</button>
+    </form>
+  </div>
+
+  <div class="settings-sub-section">
+    <h3 class="settings-sub-title">Change password</h3>
+    <form method="POST" action="{{ url_for('change_password') }}">
+      <div class="form-group">
+        <label for="current_password">Current password</label>
+        <input type="password" id="current_password" name="current_password" placeholder="Your current password" autocomplete="current-password">
+      </div>
+      <div class="form-group">
+        <label for="new_password">New password</label>
+        <input type="password" id="new_password" name="new_password" placeholder="Minimum 8 characters" autocomplete="new-password">
+      </div>
+      <div class="form-group">
+        <label for="confirm_new_password">Confirm new password</label>
+        <input type="password" id="confirm_new_password" name="confirm_new_password" placeholder="Repeat new password" autocomplete="new-password">
+      </div>
+      <button type="submit" class="btn btn-secondary">Update password</button>
+    </form>
+  </div>
+</div>
 {% endblock %}

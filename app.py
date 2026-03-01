@@ -2,9 +2,11 @@ import os
 import json
 import re
 import random
-from flask import Flask, render_template, request, redirect, url_for, flash
+import secrets
+from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask_bcrypt import Bcrypt
 from sqlalchemy import text
-from database import db, User, Episode, Protocol, Symptom, SymptomScore, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent
+from database import db, User, Episode, Protocol, Symptom, SymptomScore, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode
 from collections import defaultdict
 from datetime import datetime, date, timedelta
 from dotenv import load_dotenv
@@ -17,9 +19,11 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'connect_args': {'check_same_thread': False, 'timeout': 20}
 }
-app.config['SECRET_KEY'] = 'baseline-secret-key'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'dev-only-' + secrets.token_hex(16)
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
 
 db.init_app(app)
+bcrypt = Bcrypt(app)
 
 
 def run_migrations():
@@ -31,6 +35,10 @@ def run_migrations():
         'ALTER TABLE users ADD COLUMN ai_logging_enabled BOOLEAN NOT NULL DEFAULT 0',
         'ALTER TABLE protocol_compliance ADD COLUMN took BOOLEAN NOT NULL DEFAULT 1',
         'ALTER TABLE protocol_compliance ADD COLUMN notes TEXT',
+        'ALTER TABLE users ADD COLUMN email VARCHAR(255)',
+        'ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)',
+        'ALTER TABLE users ADD COLUMN invite_code_used VARCHAR(100)',
+        'ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1',
     ]
     with db.engine.connect() as conn:
         for ddl in migrations:
@@ -73,40 +81,38 @@ def run_migrations():
 
 def run_data_migrations():
     """Migrate existing episode peak_severity values to SymptomScore records."""
-    user = get_user()
+    for user in User.query.all():
+        episodes_needing_migration = [
+            ep for ep in Episode.query.filter_by(user_id=user.id).all()
+            if ep.peak_severity is not None and not ep.symptom_scores
+        ]
 
-    episodes_needing_migration = [
-        ep for ep in Episode.query.filter_by(user_id=user.id).all()
-        if ep.peak_severity is not None and not ep.symptom_scores
-    ]
+        if not episodes_needing_migration:
+            continue
 
-    if not episodes_needing_migration:
-        return
+        print(f"Migrating {len(episodes_needing_migration)} episode(s) to symptom scores for user {user.id}...")
 
-    print(f"Migrating {len(episodes_needing_migration)} episode(s) to symptom scores...")
+        primary = Symptom.query.filter_by(user_id=user.id, name='Primary Symptom').first()
+        if not primary:
+            primary = Symptom(user_id=user.id, name='Primary Symptom', is_active=True)
+            db.session.add(primary)
+            db.session.flush()
 
-    primary = Symptom.query.filter_by(user_id=user.id, name='Primary Symptom').first()
-    if not primary:
-        primary = Symptom(user_id=user.id, name='Primary Symptom', is_active=True)
-        db.session.add(primary)
-        db.session.flush()
+        for ep in episodes_needing_migration:
+            db.session.add(SymptomScore(episode_id=ep.id, symptom_id=primary.id, score=ep.peak_severity))
 
-    for ep in episodes_needing_migration:
-        db.session.add(SymptomScore(episode_id=ep.id, symptom_id=primary.id, score=ep.peak_severity))
-
-    # Existing users with episodes skip the onboarding wizard
-    user.onboarding_complete = True
-    db.session.commit()
-    print("Migration complete.")
+        # Existing users with episodes skip the onboarding wizard
+        user.onboarding_complete = True
+        db.session.commit()
+        print("Migration complete.")
 
 
 def get_user():
-    user = User.query.first()
-    if not user:
-        user = User(name='Default User')
-        db.session.add(user)
-        db.session.commit()
-    return user
+    """Return the logged-in user from the session, or None."""
+    user_id = session.get('user_id')
+    if user_id:
+        return User.query.get(user_id)
+    return None
 
 
 def get_active_experiment(user_id):
@@ -115,18 +121,118 @@ def get_active_experiment(user_id):
 
 
 # ---------------------------------------------------------------------------
-# Onboarding gate
+# Authentication gate + onboarding gate
 # ---------------------------------------------------------------------------
 
+PUBLIC_ENDPOINTS = {'login', 'register', 'static'}
+
 @app.before_request
-def check_onboarding():
-    if request.endpoint in (None, 'static'):
-        return
-    if request.endpoint.startswith('onboarding_'):
+def require_auth():
+    if request.endpoint in (None,) or request.endpoint in PUBLIC_ENDPOINTS:
         return
     user = get_user()
+    if not user:
+        return redirect(url_for('login'))
+    if not user.is_active:
+        session.clear()
+        flash('Your account has been deactivated.', 'error')
+        return redirect(url_for('login'))
+    # Onboarding gate — let auth and onboarding endpoints through
+    if request.endpoint.startswith('onboarding_'):
+        return
     if not user.onboarding_complete:
         return redirect(url_for('onboarding_step1'))
+
+
+# ---------------------------------------------------------------------------
+# Authentication routes
+# ---------------------------------------------------------------------------
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if get_user():
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        password = request.form.get('password', '')
+        remember = 'remember' in request.form
+
+        user = User.query.filter_by(email=email).first()
+        if user and user.password_hash and bcrypt.check_password_hash(user.password_hash, password):
+            if not user.is_active:
+                flash('Your account has been deactivated.', 'error')
+                return render_template('login.html')
+            session.clear()
+            session['user_id'] = user.id
+            if remember:
+                session.permanent = True
+            else:
+                session.permanent = False
+            if not user.onboarding_complete:
+                return redirect(url_for('onboarding_step1'))
+            return redirect(url_for('index'))
+        else:
+            flash('Invalid email or password.', 'error')
+            return render_template('login.html', email=email)
+
+    return render_template('login.html')
+
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if get_user():
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        password = request.form.get('password', '')
+        confirm = request.form.get('confirm_password', '')
+        code_str = request.form.get('invite_code', '').strip()
+
+        errors = []
+        if not email or '@' not in email:
+            errors.append('A valid email is required.')
+        elif User.query.filter_by(email=email).first():
+            errors.append('An account with that email already exists.')
+        if len(password) < 8:
+            errors.append('Password must be at least 8 characters.')
+        if password != confirm:
+            errors.append('Passwords do not match.')
+
+        invite = InviteCode.query.filter_by(code=code_str).first() if code_str else None
+        if not invite:
+            errors.append('Invalid invite code.')
+        elif invite.used_at is not None:
+            errors.append('That invite code has already been used.')
+
+        if errors:
+            for e in errors:
+                flash(e, 'error')
+            return render_template('register.html', email=email, invite_code=code_str)
+
+        pw_hash = bcrypt.generate_password_hash(password).decode('utf-8')
+        user = User(name=email.split('@')[0], email=email, password_hash=pw_hash,
+                    invite_code_used=code_str)
+        db.session.add(user)
+        db.session.flush()
+
+        invite.used_at = datetime.utcnow()
+        invite.used_by_user_id = user.id
+        db.session.commit()
+
+        session.clear()
+        session['user_id'] = user.id
+        return redirect(url_for('onboarding_step1'))
+
+    return render_template('register.html')
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    flash('You have been logged out.', 'success')
+    return redirect(url_for('login'))
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +317,47 @@ def settings():
 
     api_key_set = bool(os.environ.get('ANTHROPIC_API_KEY'))
     return render_template('settings.html', user=user, api_key_set=api_key_set)
+
+
+@app.route('/settings/email', methods=['POST'])
+def change_email():
+    user = get_user()
+    new_email = request.form.get('new_email', '').strip().lower()
+    password = request.form.get('current_password_email', '')
+
+    if not new_email or '@' not in new_email:
+        flash('Please enter a valid email address.', 'error')
+    elif not bcrypt.check_password_hash(user.password_hash, password):
+        flash('Current password is incorrect.', 'error')
+    elif User.query.filter(User.email == new_email, User.id != user.id).first():
+        flash('That email is already in use.', 'error')
+    else:
+        user.email = new_email
+        db.session.commit()
+        flash('Email updated.', 'success')
+
+    return redirect(url_for('settings'))
+
+
+@app.route('/settings/password', methods=['POST'])
+def change_password():
+    user = get_user()
+    current = request.form.get('current_password', '')
+    new_pw = request.form.get('new_password', '')
+    confirm = request.form.get('confirm_new_password', '')
+
+    if not bcrypt.check_password_hash(user.password_hash, current):
+        flash('Current password is incorrect.', 'error')
+    elif len(new_pw) < 8:
+        flash('New password must be at least 8 characters.', 'error')
+    elif new_pw != confirm:
+        flash('New passwords do not match.', 'error')
+    else:
+        user.password_hash = bcrypt.generate_password_hash(new_pw).decode('utf-8')
+        db.session.commit()
+        flash('Password updated.', 'success')
+
+    return redirect(url_for('settings'))
 
 
 # ---------------------------------------------------------------------------
@@ -1286,10 +1433,43 @@ def dev_seed():
         </form></body></html>'''
 
 
+@app.route('/dev/create-invite')
+def dev_create_invite():
+    if not app.debug:
+        return 'Not available in production.', 403
+
+    code = secrets.token_urlsafe(12)
+    db.session.add(InviteCode(code=code))
+    db.session.commit()
+    return (
+        '<!doctype html><html><body style="font-family:sans-serif;max-width:500px;margin:60px auto;padding:20px;">'
+        f'<h2>Invite Code Created</h2>'
+        f'<p style="font-size:20px;font-weight:bold;background:#222;color:#7c5cbf;padding:16px;border-radius:8px;'
+        f'text-align:center;letter-spacing:1px;font-family:monospace;">{code}</p>'
+        f'<p style="color:#888;">Share this code with a new user. It can only be used once.</p>'
+        f'<a href="/">← Back to dashboard</a></body></html>'
+    )
+
+
+def migrate_existing_user():
+    """Give the existing legacy user an email/password so they can log in."""
+    user = User.query.first()
+    if user and not user.email:
+        user.email = 'admin@baseline.app'
+        user.password_hash = bcrypt.generate_password_hash('Baseline2026!').decode('utf-8')
+        db.session.commit()
+        print('=' * 60)
+        print('  EXISTING USER MIGRATED')
+        print(f'  Email:    admin@baseline.app')
+        print(f'  Password: Baseline2026!')
+        print('  ** Change this password immediately! **')
+        print('=' * 60)
+
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
         run_migrations()
-        get_user()
+        migrate_existing_user()
         run_data_migrations()
     app.run(host='0.0.0.0', port=5001, debug=True)

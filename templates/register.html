@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Register — Baseline</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-brand">Base<span>line</span></div>
+    <h1 class="auth-title">Create your account</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="flash flash-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST" class="auth-form">
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input type="text" id="email" name="email" value="{{ email or '' }}"
+               placeholder="you@example.com" autocomplete="email" autofocus>
+      </div>
+
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password"
+               placeholder="Minimum 8 characters" autocomplete="new-password">
+      </div>
+
+      <div class="form-group">
+        <label for="confirm_password">Confirm password</label>
+        <input type="password" id="confirm_password" name="confirm_password"
+               placeholder="Repeat your password" autocomplete="new-password">
+      </div>
+
+      <div class="form-group">
+        <label for="invite_code">Invite code</label>
+        <input type="text" id="invite_code" name="invite_code" value="{{ invite_code or '' }}"
+               placeholder="Enter your invite code" autocomplete="off">
+      </div>
+
+      <button type="submit" class="btn btn-primary auth-submit">Create account</button>
+    </form>
+
+    <div class="auth-footer">
+      Already have an account? <a href="{{ url_for('login') }}">Log in</a>
+    </div>
+  </div>
+</div>
+</body>
+</html>

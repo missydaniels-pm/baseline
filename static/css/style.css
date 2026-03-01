@@ -1622,6 +1622,20 @@ input[type="range"]::-moz-range-thumb {
   line-height: 1.5;
 }
 
+.settings-sub-section {
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  margin-bottom: 20px;
+}
+
+.settings-sub-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 14px;
+}
+
 /* ─── Protocol detail — log form ─────────────────────────────────── */
 
 .proto-log-option {
@@ -1998,5 +2012,80 @@ input[type="range"]::-moz-range-thumb {
   .rescue-table {
     display: block;
     overflow-x: auto;
+  }
+}
+
+/* ─── Auth pages (login / register) ──────────────────────────────── */
+
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg);
+}
+
+.auth-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 40px 36px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.auth-brand {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.3px;
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.auth-brand span {
+  color: var(--accent-light);
+}
+
+.auth-title {
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.auth-form .form-group {
+  margin-bottom: 16px;
+}
+
+.auth-submit {
+  width: 100%;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.auth-footer {
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 20px;
+}
+
+/* Logout nav link — subtle style */
+.nav-link-logout {
+  color: var(--text-muted);
+  opacity: 0.7;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.nav-link-logout:hover {
+  opacity: 1;
+}
+
+@media (max-width: 768px) {
+  .auth-card {
+    padding: 28px 20px;
   }
 }

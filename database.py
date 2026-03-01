@@ -230,3 +230,16 @@ class ProtocolEvent(db.Model):
 
     def __repr__(self):
         return f'<ProtocolEvent {self.event_type} {self.date}>'
+
+
+class InviteCode(db.Model):
+    __tablename__ = 'invite_codes'
+
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(100), unique=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    used_at = db.Column(db.DateTime, nullable=True)
+    used_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+    def __repr__(self):
+        return f'<InviteCode {self.code}>'
