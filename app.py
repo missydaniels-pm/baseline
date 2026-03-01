@@ -11,7 +11,7 @@ from collections import defaultdict
 from datetime import datetime, date, timedelta
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///migraine_tracker.db'
@@ -446,7 +446,7 @@ def parse_checkin(user, message_text, client_time=None):
     if not api_key:
         return None, 'ANTHROPIC_API_KEY is not set.'
 
-    from anthropic import Anthropic
+    from anthropic import Anthropic, AuthenticationError
     client = Anthropic(api_key=api_key)
 
     cutoff = datetime.utcnow() - timedelta(days=7)
@@ -458,12 +458,16 @@ def parse_checkin(user, message_text, client_time=None):
     messages = [{'role': ci.role, 'content': ci.content} for ci in history]
     messages.append({'role': 'user', 'content': message_text})
 
-    response = client.messages.create(
-        model='claude-sonnet-4-6',
-        max_tokens=1024,
-        system=build_system_prompt(user, client_time=client_time),
-        messages=messages,
-    )
+    try:
+        response = client.messages.create(
+            model='claude-sonnet-4-6',
+            max_tokens=1024,
+            system=build_system_prompt(user, client_time=client_time),
+            messages=messages,
+        )
+    except AuthenticationError:
+        return None, 'API authentication failed. Check your ANTHROPIC_API_KEY in .env and restart the server.'
+
     raw = response.content[0].text
 
     match = re.search(r'\{[\s\S]*\}', raw)
