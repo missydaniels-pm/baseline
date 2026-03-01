@@ -14,11 +14,20 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///migraine_tracker.db'
+
+database_url = os.environ.get('DATABASE_URL')
+if database_url:
+    # Railway provides postgres:// but SQLAlchemy requires postgresql://
+    if database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {}
+else:
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///migraine_tracker.db'
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'connect_args': {'check_same_thread': False, 'timeout': 20}
+    }
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    'connect_args': {'check_same_thread': False, 'timeout': 20}
-}
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'dev-only-' + secrets.token_hex(16)
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
 
@@ -1470,10 +1479,11 @@ def migrate_existing_user():
         print('=' * 60)
 
 
+with app.app_context():
+    db.create_all()
+    run_migrations()
+    migrate_existing_user()
+    run_data_migrations()
+
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-        run_migrations()
-        migrate_existing_user()
-        run_data_migrations()
     app.run(host='0.0.0.0', port=5001, debug=True)
