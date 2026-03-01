@@ -9,6 +9,10 @@ class User(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False, default='Default User')
+    email = db.Column(db.String(255), unique=True, nullable=True)
+    password_hash = db.Column(db.String(255), nullable=True)
+    invite_code_used = db.Column(db.String(100), nullable=True)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     onboarding_complete = db.Column(db.Boolean, default=False, nullable=False)
     baseline_episodes_per_month = db.Column(db.Integer, nullable=True)
