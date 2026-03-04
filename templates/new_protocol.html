@@ -28,7 +28,9 @@
   <form method="POST" id="protocolForm">
     <div class="form-group">
       <label for="name">Name</label>
-      <input type="text" id="name" name="name" required placeholder="e.g. Metformin, Vitamin D, Amitriptyline">
+      <input type="text" id="name" name="name" required placeholder="e.g. Metformin, Vitamin D, Amitriptyline"
+             data-charlimit="200">
+      <div class="char-counter"><span id="name_count">0</span>/200</div>
     </div>
 
     <div class="form-row">
@@ -56,7 +58,9 @@
 
     <div class="form-group">
       <label for="notes">Notes</label>
-      <textarea id="notes" name="notes" placeholder="Side effects, observations, prescribing info…"></textarea>
+      <textarea id="notes" name="notes" placeholder="Side effects, observations, prescribing info…"
+                data-charlimit="500"></textarea>
+      <div class="char-counter"><span id="notes_count">0</span>/500</div>
     </div>
 
     <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:8px;">

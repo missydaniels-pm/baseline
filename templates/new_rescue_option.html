@@ -11,12 +11,16 @@
   <form method="POST">
     <div class="form-group">
       <label for="name">Name</label>
-      <input type="text" id="name" name="name" required placeholder="e.g. Ibuprofen 400mg, Ondansetron, Prednisone">
+      <input type="text" id="name" name="name" required placeholder="e.g. Ibuprofen 400mg, Ondansetron, Prednisone"
+             data-charlimit="200">
+      <div class="char-counter"><span id="name_count">0</span>/200</div>
     </div>
 
     <div class="form-group">
       <label for="notes">Notes</label>
-      <textarea id="notes" name="notes" placeholder="Dose, instructions, side effects…"></textarea>
+      <textarea id="notes" name="notes" placeholder="Dose, instructions, side effects…"
+                data-charlimit="500"></textarea>
+      <div class="char-counter"><span id="notes_count">0</span>/500</div>
     </div>
 
     <div class="form-group">

@@ -96,7 +96,9 @@
 
     <div class="form-group">
       <label for="notes">Notes</label>
-      <textarea id="notes" name="notes" placeholder="Symptoms, context, observations…">{{ episode.notes or '' }}</textarea>
+      <textarea id="notes" name="notes" placeholder="Symptoms, context, observations…"
+                data-charlimit="500">{{ episode.notes or '' }}</textarea>
+      <div class="char-counter"><span id="notes_count">0</span>/500</div>
     </div>
 
   </form>
@@ -114,10 +116,16 @@
 </div>
 
 <script>
+  (function() {
+    var now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    document.getElementById('onset').max = now.toISOString().slice(0, 16);
+  })();
   document.getElementById('onsetNowBtn').addEventListener('click', function() {
     var now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     document.getElementById('onset').value = now.toISOString().slice(0, 16);
+    document.getElementById('onset').max = now.toISOString().slice(0, 16);
   });
 </script>
 {% endblock %}

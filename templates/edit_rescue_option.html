@@ -11,12 +11,16 @@
   <form method="POST" id="rescueOptionForm">
     <div class="form-group">
       <label for="name">Name</label>
-      <input type="text" id="name" name="name" required value="{{ option.name }}">
+      <input type="text" id="name" name="name" required value="{{ option.name }}"
+             data-charlimit="200">
+      <div class="char-counter"><span id="name_count">0</span>/200</div>
     </div>
 
     <div class="form-group">
       <label for="notes">Notes</label>
-      <textarea id="notes" name="notes">{{ option.notes or '' }}</textarea>
+      <textarea id="notes" name="notes"
+                data-charlimit="500">{{ option.notes or '' }}</textarea>
+      <div class="char-counter"><span id="notes_count">0</span>/500</div>
     </div>
 
     <div class="form-group">

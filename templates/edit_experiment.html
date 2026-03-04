@@ -11,7 +11,9 @@
   <form method="POST" id="experimentForm">
     <div class="form-group">
       <label for="name">Experiment name</label>
-      <input type="text" id="name" name="name" required autofocus value="{{ experiment.name }}">
+      <input type="text" id="name" name="name" required autofocus value="{{ experiment.name }}"
+             data-charlimit="200">
+      <div class="char-counter"><span id="name_count">0</span>/200</div>
     </div>
 
     <div class="form-group">
@@ -27,7 +29,9 @@
     <div class="form-group">
       <label for="hypothesis">Hypothesis <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
       <div class="field-hint">What outcome do you expect?</div>
-      <textarea id="hypothesis" name="hypothesis" placeholder="I expect…">{{ experiment.hypothesis or '' }}</textarea>
+      <textarea id="hypothesis" name="hypothesis" placeholder="I expect…"
+                data-charlimit="500">{{ experiment.hypothesis or '' }}</textarea>
+      <div class="char-counter"><span id="hypothesis_count">0</span>/500</div>
     </div>
 
     <div class="form-row">
@@ -65,7 +69,7 @@
 <script>
   function updateAssessDate() {
     var startVal = document.getElementById('start_date').value;
-    var weeks = parseInt(document.getElementById('stabilization_weeks').value) || 8;
+    var weeks = parseInt(document.getElementById('stabilization_weeks').value) || 3;
     var preview = document.getElementById('assess-date-preview');
     var dateText = document.getElementById('assess-date-text');
     if (startVal) {

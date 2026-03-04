@@ -28,7 +28,9 @@
   <form method="POST" id="protocolForm">
     <div class="form-group">
       <label for="name">Name</label>
-      <input type="text" id="name" name="name" required value="{{ protocol.name }}">
+      <input type="text" id="name" name="name" required value="{{ protocol.name }}"
+             data-charlimit="200">
+      <div class="char-counter"><span id="name_count">0</span>/200</div>
     </div>
 
     <div class="form-row">
@@ -58,7 +60,9 @@
 
     <div class="form-group">
       <label for="notes">Notes</label>
-      <textarea id="notes" name="notes">{{ protocol.notes or '' }}</textarea>
+      <textarea id="notes" name="notes"
+                data-charlimit="500">{{ protocol.notes or '' }}</textarea>
+      <div class="char-counter"><span id="notes_count">0</span>/500</div>
     </div>
 
   </form>

@@ -82,7 +82,9 @@
 
     <div class="form-group">
       <label for="notes">Notes</label>
-      <textarea id="notes" name="notes" placeholder="Symptoms, context, observations…"></textarea>
+      <textarea id="notes" name="notes" placeholder="Symptoms, context, observations…"
+                data-charlimit="500"></textarea>
+      <div class="char-counter"><span id="notes_count">0</span>/500</div>
     </div>
 
     <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:8px;">
@@ -98,8 +100,18 @@
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     document.getElementById('onset').value = now.toISOString().slice(0, 16);
   }
+  // Set max to current local time to prevent future dates
+  function updateOnsetMax() {
+    var now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    document.getElementById('onset').max = now.toISOString().slice(0, 16);
+  }
   var onset = document.getElementById('onset');
   if (!onset.value) { setOnsetNow(); }
-  document.getElementById('onsetNowBtn').addEventListener('click', setOnsetNow);
+  updateOnsetMax();
+  document.getElementById('onsetNowBtn').addEventListener('click', function() {
+    setOnsetNow();
+    updateOnsetMax();
+  });
 </script>
 {% endblock %}

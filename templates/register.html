@@ -33,12 +33,18 @@
         <label for="password">Password</label>
         <input type="password" id="password" name="password"
                placeholder="Minimum 8 characters" autocomplete="new-password">
+        <div class="field-hint" id="pw-requirements">At least 8 characters, one uppercase letter, one number</div>
+        <div class="pw-strength" id="pw-strength" style="display:none;">
+          <div class="pw-strength-bar"><div class="pw-strength-fill" id="pw-strength-fill"></div></div>
+          <span class="pw-strength-label" id="pw-strength-label"></span>
+        </div>
       </div>
 
       <div class="form-group">
         <label for="confirm_password">Confirm password</label>
         <input type="password" id="confirm_password" name="confirm_password"
                placeholder="Repeat your password" autocomplete="new-password">
+        <div class="inline-error" id="pw-match-error" style="display:none;">Passwords do not match</div>
       </div>
 
       <div class="form-group">
@@ -47,7 +53,7 @@
                placeholder="Enter your invite code" autocomplete="off">
       </div>
 
-      <button type="submit" class="btn btn-primary auth-submit">Create account</button>
+      <button type="submit" class="btn btn-primary auth-submit" id="register-btn" disabled>Create account</button>
     </form>
 
     <div class="auth-footer">
@@ -55,5 +61,63 @@
     </div>
   </div>
 </div>
+<script>
+(function() {
+  var pw = document.getElementById('password');
+  var confirm = document.getElementById('confirm_password');
+  var btn = document.getElementById('register-btn');
+  var strengthWrap = document.getElementById('pw-strength');
+  var strengthFill = document.getElementById('pw-strength-fill');
+  var strengthLabel = document.getElementById('pw-strength-label');
+  var matchError = document.getElementById('pw-match-error');
+
+  function getStrength(val) {
+    var score = 0;
+    if (val.length >= 8) score++;
+    if (/[A-Z]/.test(val)) score++;
+    if (/[0-9]/.test(val)) score++;
+    if (val.length >= 12) score++;
+    return score;
+  }
+
+  function meetsRequirements(val) {
+    return val.length >= 8 && /[A-Z]/.test(val) && /[0-9]/.test(val);
+  }
+
+  function validate() {
+    var val = pw.value;
+    var cval = confirm.value;
+
+    // Strength indicator
+    if (val.length > 0) {
+      strengthWrap.style.display = '';
+      var score = getStrength(val);
+      var pct, label, color;
+      if (score <= 1) { pct = '33%'; label = 'Weak'; color = 'var(--high)'; }
+      else if (score <= 2) { pct = '66%'; label = 'Fair'; color = 'var(--mid)'; }
+      else { pct = '100%'; label = 'Strong'; color = 'var(--low)'; }
+      strengthFill.style.width = pct;
+      strengthFill.style.background = color;
+      strengthLabel.textContent = label;
+      strengthLabel.style.color = color;
+    } else {
+      strengthWrap.style.display = 'none';
+    }
+
+    // Match check
+    if (cval.length > 0 && val !== cval) {
+      matchError.style.display = '';
+    } else {
+      matchError.style.display = 'none';
+    }
+
+    // Enable/disable submit
+    btn.disabled = !(meetsRequirements(val) && val === cval && cval.length > 0);
+  }
+
+  pw.addEventListener('input', validate);
+  confirm.addEventListener('input', validate);
+})();
+</script>
 </body>
 </html>

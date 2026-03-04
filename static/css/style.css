@@ -1815,6 +1815,14 @@ input[type="range"]::-moz-range-thumb {
   margin-bottom: 4px;
 }
 
+.chart-footnote {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: right;
+  margin-top: -12px;
+  margin-bottom: 16px;
+}
+
 /* ─── Rescue effectiveness table ─────────────────────────────────── */
 
 .rescue-table {
@@ -2080,8 +2088,77 @@ input[type="range"]::-moz-range-thumb {
   margin-top: 4px;
 }
 
+/* Disabled nav during onboarding */
+.nav-link.nav-disabled {
+  opacity: 0.3;
+  pointer-events: none;
+  cursor: default;
+}
+
+.nav-link.nav-disabled:hover {
+  background: none;
+  text-decoration: none;
+}
+
+/* Re-enable pointer events for tooltip to show */
+@supports (pointer-events: auto) {
+  .nav-link.nav-disabled {
+    pointer-events: auto;
+    cursor: not-allowed;
+  }
+}
+
 .nav-link-logout:hover {
   opacity: 1;
+}
+
+/* Password strength indicator */
+.pw-strength {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.pw-strength-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.pw-strength-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  transition: width 0.25s, background 0.25s;
+}
+
+.pw-strength-label {
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 44px;
+}
+
+/* Inline field error */
+.inline-error {
+  font-size: 12px;
+  color: var(--high);
+  margin-top: 4px;
+}
+
+/* Character counter */
+.char-counter {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: right;
+  margin-top: 3px;
+}
+
+.char-counter.over-limit {
+  color: var(--high);
+  font-weight: 600;
 }
 
 @media (max-width: 768px) {

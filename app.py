@@ -54,6 +54,16 @@ def run_migrations():
         ('users',                 'is_active',                 'ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1'),
     ]
 
+    # Widen symptoms.name from varchar(100) to varchar(200) on PostgreSQL
+    is_sqlite = str(db.engine.url).startswith('sqlite')
+    if not is_sqlite:
+        sym_cols = inspector.get_columns('symptoms')
+        name_col = next((c for c in sym_cols if c['name'] == 'name'), None)
+        if name_col and hasattr(name_col['type'], 'length') and name_col['type'].length and name_col['type'].length < 200:
+            with db.engine.connect() as conn2:
+                conn2.execute(text('ALTER TABLE symptoms ALTER COLUMN name TYPE VARCHAR(200)'))
+                conn2.commit()
+
     with db.engine.connect() as conn:
         for table, column, ddl in migrations:
             existing = [c['name'] for c in inspector.get_columns(table)]
@@ -144,6 +154,12 @@ def get_active_experiment(user_id):
 
 PUBLIC_ENDPOINTS = {'login', 'register', 'static', 'dev_bootstrap'}
 
+@app.context_processor
+def inject_onboarding_state():
+    user = get_user()
+    return {'onboarding_in_progress': user is not None and not user.onboarding_complete}
+
+
 @app.before_request
 def require_auth():
     if request.endpoint in (None,) or request.endpoint in PUBLIC_ENDPOINTS:
@@ -215,6 +231,10 @@ def register():
             errors.append('An account with that email already exists.')
         if len(password) < 8:
             errors.append('Password must be at least 8 characters.')
+        elif not re.search(r'[A-Z]', password):
+            errors.append('Password must contain at least one uppercase letter.')
+        elif not re.search(r'[0-9]', password):
+            errors.append('Password must contain at least one number.')
         if password != confirm:
             errors.append('Passwords do not match.')
 
@@ -373,6 +393,10 @@ def change_password():
         flash('Current password is incorrect.', 'error')
     elif len(new_pw) < 8:
         flash('New password must be at least 8 characters.', 'error')
+    elif not re.search(r'[A-Z]', new_pw):
+        flash('New password must contain at least one uppercase letter.', 'error')
+    elif not re.search(r'[0-9]', new_pw):
+        flash('New password must contain at least one number.', 'error')
     elif new_pw != confirm:
         flash('New passwords do not match.', 'error')
     else:
@@ -621,15 +645,25 @@ def new_symptom():
 
     if request.method == 'POST':
         name = request.form.get('name', '').strip()
-        if name:
-            symptom = Symptom(
-                user_id=user.id,
-                name=name,
-                description=request.form.get('description', '').strip() or None,
-            )
-            db.session.add(symptom)
-            db.session.commit()
-            flash(f'"{name}" added.', 'success')
+        description = request.form.get('description', '').strip() or None
+        if not name:
+            return redirect(url_for('symptoms'))
+        if len(name) > 200:
+            flash('Symptom name must be 200 characters or fewer.', 'error')
+            return render_template('new_symptom.html')
+        if description and len(description) > 500:
+            flash('Description must be 500 characters or fewer.', 'error')
+            return render_template('new_symptom.html')
+        # Case-insensitive duplicate check
+        existing = Symptom.query.filter(Symptom.user_id == user.id,
+                                        db.func.lower(Symptom.name) == name.lower()).first()
+        if existing:
+            flash(f'A symptom named "{existing.name}" already exists.', 'error')
+            return render_template('new_symptom.html')
+        symptom = Symptom(user_id=user.id, name=name, description=description)
+        db.session.add(symptom)
+        db.session.commit()
+        flash(f'"{name}" added.', 'success')
         return redirect(url_for('symptoms'))
 
     return render_template('new_symptom.html')
@@ -642,11 +676,26 @@ def edit_symptom(symptom_id):
 
     if request.method == 'POST':
         name = request.form.get('name', '').strip()
-        if name:
-            symptom.name = name
-            symptom.description = request.form.get('description', '').strip() or None
-            db.session.commit()
-            flash('Symptom updated.', 'success')
+        description = request.form.get('description', '').strip() or None
+        if not name:
+            return redirect(url_for('symptoms'))
+        if len(name) > 200:
+            flash('Symptom name must be 200 characters or fewer.', 'error')
+            return render_template('edit_symptom.html', symptom=symptom)
+        if description and len(description) > 500:
+            flash('Description must be 500 characters or fewer.', 'error')
+            return render_template('edit_symptom.html', symptom=symptom)
+        # Case-insensitive duplicate check (exclude this symptom)
+        existing = Symptom.query.filter(Symptom.user_id == user.id,
+                                        Symptom.id != symptom.id,
+                                        db.func.lower(Symptom.name) == name.lower()).first()
+        if existing:
+            flash(f'A symptom named "{existing.name}" already exists.', 'error')
+            return render_template('edit_symptom.html', symptom=symptom)
+        symptom.name = name
+        symptom.description = description
+        db.session.commit()
+        flash('Symptom updated.', 'success')
         return redirect(url_for('symptoms'))
 
     return render_template('edit_symptom.html', symptom=symptom)
@@ -692,15 +741,25 @@ def new_experiment():
     prefill_protocol_id = request.args.get('protocol_id', type=int)
 
     if request.method == 'POST':
+        exp_name = request.form.get('name', '').strip()
+        hypothesis_val = request.form.get('hypothesis', '').strip() or None
+        if exp_name and len(exp_name) > 200:
+            flash('Experiment name must be 200 characters or fewer.', 'error')
+            return render_template('new_experiment.html', preventatives=preventatives,
+                                   prefill_protocol_id=prefill_protocol_id, today=date.today())
+        if hypothesis_val and len(hypothesis_val) > 500:
+            flash('Hypothesis must be 500 characters or fewer.', 'error')
+            return render_template('new_experiment.html', preventatives=preventatives,
+                                   prefill_protocol_id=prefill_protocol_id, today=date.today())
         start_str = request.form.get('start_date', '').strip()
         start = datetime.strptime(start_str, '%Y-%m-%d').date() if start_str else date.today()
-        weeks = int(request.form.get('stabilization_weeks') or 8)
+        weeks = int(request.form.get('stabilization_weeks') or 3)
         protocol_id = int(p) if (p := request.form.get('protocol_id')) else None
 
         exp = Experiment(
             user_id=user.id,
-            name=request.form.get('name', '').strip(),
-            hypothesis=request.form.get('hypothesis', '').strip() or None,
+            name=exp_name,
+            hypothesis=hypothesis_val,
             protocol_id=protocol_id,
             start_date=start,
             stabilization_weeks=weeks,
@@ -837,9 +896,17 @@ def edit_experiment(exp_id):
     preventatives = Protocol.query.filter_by(user_id=user.id, type='preventative').all()
 
     if request.method == 'POST':
-        experiment.name = request.form.get('name', '').strip()
-        experiment.hypothesis = request.form.get('hypothesis', '').strip() or None
-        experiment.stabilization_weeks = int(request.form.get('stabilization_weeks') or 8)
+        exp_name = request.form.get('name', '').strip()
+        hypothesis_val = request.form.get('hypothesis', '').strip() or None
+        if exp_name and len(exp_name) > 200:
+            flash('Experiment name must be 200 characters or fewer.', 'error')
+            return render_template('edit_experiment.html', experiment=experiment, preventatives=preventatives)
+        if hypothesis_val and len(hypothesis_val) > 500:
+            flash('Hypothesis must be 500 characters or fewer.', 'error')
+            return render_template('edit_experiment.html', experiment=experiment, preventatives=preventatives)
+        experiment.name = exp_name
+        experiment.hypothesis = hypothesis_val
+        experiment.stabilization_weeks = int(request.form.get('stabilization_weeks') or 3)
         start_str = request.form.get('start_date', '').strip()
         if start_str:
             experiment.start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
@@ -902,7 +969,7 @@ def index():
             'trend': trend, 'pct_change': pct_change
         })
 
-    # ── Episode frequency: weekly counts for last 12 weeks ──
+    # ── Episode frequency: weekly counts for last 12 weeks + current partial week ──
     twelve_weeks_ago = today - timedelta(weeks=12)
     all_episodes_12w = (
         Episode.query.filter(Episode.user_id == user.id,
@@ -911,18 +978,24 @@ def index():
         .all()
     )
 
-    # Build week buckets (Monday-anchored)
+    # Build week buckets (Monday-anchored), including current partial week
     week_start = twelve_weeks_ago - timedelta(days=twelve_weeks_ago.weekday())  # Monday
+    current_week_monday = today - timedelta(days=today.weekday())
+    num_weeks = max(int((current_week_monday - week_start).days / 7) + 1, 12)
     week_labels = []
     episode_counts = []
-    for i in range(12):
+    for i in range(num_weeks):
         ws = week_start + timedelta(weeks=i)
         we = ws + timedelta(days=7)
-        week_labels.append(ws.strftime('%b %-d'))
+        is_current = ws <= today < we
+        label = ws.strftime('%b %-d')
+        if is_current:
+            label += ' *'
+        week_labels.append(label)
         count = sum(1 for ep in all_episodes_12w if ws <= ep.onset.date() < we)
         episode_counts.append(count)
 
-    # ── Symptom trend datasets: weekly avg per symptom for 12 weeks ──
+    # ── Symptom trend datasets: weekly avg per symptom ──
     symptom_colors = ['#a07de0', '#4caf78', '#e8a838', '#e05252', '#5c9dbf', '#bf5ca0']
     symptom_trend_datasets = []
     for idx, symptom in enumerate(active_symptoms):
@@ -934,7 +1007,7 @@ def index():
             .all()
         )
         weekly_data = []
-        for i in range(12):
+        for i in range(num_weeks):
             ws = week_start + timedelta(weeks=i)
             we = ws + timedelta(days=7)
             week_scores = [s[0] for s in scores_12w if ws <= s[1].date() < we]
@@ -951,7 +1024,7 @@ def index():
         if p.start_date and p.start_date >= twelve_weeks_ago:
             days_from_start = (p.start_date - week_start).days
             week_index = days_from_start / 7.0
-            if 0 <= week_index < 12:
+            if 0 <= week_index < num_weeks:
                 protocol_annotations.append({'name': p.name, 'week_index': round(week_index, 1)})
 
     # ── Rescue effectiveness stats ──
@@ -1021,6 +1094,15 @@ def new_episode():
         onset_str = request.form.get('onset')
         onset = datetime.strptime(onset_str, '%Y-%m-%dT%H:%M') if onset_str else datetime.utcnow()
 
+        if onset > datetime.now():
+            flash('Onset date cannot be in the future.', 'error')
+            return render_template('new_episode.html', rescue_options=rescue_options, symptoms=symptoms)
+
+        notes_val = request.form.get('notes', '').strip()
+        if notes_val and len(notes_val) > 500:
+            flash('Notes must be 500 characters or fewer.', 'error')
+            return render_template('new_episode.html', rescue_options=rescue_options, symptoms=symptoms)
+
         episode = Episode(
             user_id=user.id,
             onset=onset,
@@ -1056,13 +1138,28 @@ def edit_episode(episode_id):
 
     if request.method == 'POST':
         onset_str = request.form.get('onset')
-        episode.onset = datetime.strptime(onset_str, '%Y-%m-%dT%H:%M') if onset_str else episode.onset
+        new_onset = datetime.strptime(onset_str, '%Y-%m-%dT%H:%M') if onset_str else episode.onset
+
+        if new_onset > datetime.now():
+            flash('Onset date cannot be in the future.', 'error')
+            existing_scores = {ss.symptom_id: ss.score for ss in episode.symptom_scores}
+            return render_template('edit_episode.html', episode=episode, rescue_options=rescue_options,
+                                   symptoms=symptoms, existing_scores=existing_scores)
+
+        notes_val = request.form.get('notes', '').strip()
+        if notes_val and len(notes_val) > 500:
+            flash('Notes must be 500 characters or fewer.', 'error')
+            existing_scores = {ss.symptom_id: ss.score for ss in episode.symptom_scores}
+            return render_template('edit_episode.html', episode=episode, rescue_options=rescue_options,
+                                   symptoms=symptoms, existing_scores=existing_scores)
+
+        episode.onset = new_onset
         episode.duration_hours = float(v) if (v := request.form.get('duration_hours')) else None
         episode.functional_impairment = request.form.get('functional_impairment')
         episode.rescue_protocol = request.form.get('rescue_protocol') or None
         episode.rescue_effectiveness = int(request.form.get('rescue_effectiveness', 5)) if episode.rescue_protocol else None
         episode.time_to_relief_hours = float(v) if (v := request.form.get('time_to_relief_hours')) else None
-        episode.notes = request.form.get('notes') or None
+        episode.notes = notes_val or None
 
         # Replace symptom scores
         for ss in list(episode.symptom_scores):
@@ -1111,15 +1208,23 @@ def new_protocol():
     active_experiment = get_active_experiment(user.id)
 
     if request.method == 'POST':
+        name_val = request.form.get('name', '').strip()
+        notes_val = request.form.get('notes', '').strip()
+        if name_val and len(name_val) > 200:
+            flash('Name must be 200 characters or fewer.', 'error')
+            return render_template('new_protocol.html', active_experiment=active_experiment)
+        if notes_val and len(notes_val) > 500:
+            flash('Notes must be 500 characters or fewer.', 'error')
+            return render_template('new_protocol.html', active_experiment=active_experiment)
         start_date_str = request.form.get('start_date')
         protocol = Protocol(
             user_id=user.id,
-            name=request.form.get('name'),
+            name=name_val,
             type='preventative',
             start_date=datetime.strptime(start_date_str, '%Y-%m-%d').date() if start_date_str else None,
             dose_frequency=request.form.get('dose_frequency') or None,
             status=request.form.get('status', 'active'),
-            notes=request.form.get('notes') or None,
+            notes=notes_val or None,
         )
         db.session.add(protocol)
         db.session.flush()
@@ -1147,15 +1252,23 @@ def edit_protocol(protocol_id):
     active_experiment = get_active_experiment(user.id)
 
     if request.method == 'POST':
+        name_val = request.form.get('name', '').strip()
+        notes_val = request.form.get('notes', '').strip()
+        if name_val and len(name_val) > 200:
+            flash('Name must be 200 characters or fewer.', 'error')
+            return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment)
+        if notes_val and len(notes_val) > 500:
+            flash('Notes must be 500 characters or fewer.', 'error')
+            return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment)
         old_status = protocol.status
         old_dose = protocol.dose_frequency
 
         start_date_str = request.form.get('start_date')
-        protocol.name = request.form.get('name')
+        protocol.name = name_val
         protocol.start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date() if start_date_str else None
         protocol.dose_frequency = request.form.get('dose_frequency') or None
         protocol.status = request.form.get('status', protocol.status)
-        protocol.notes = request.form.get('notes') or None
+        protocol.notes = notes_val or None
 
         if old_status != protocol.status:
             event_type = {'active': 'reactivated', 'paused': 'paused', 'stopped': 'stopped'}.get(protocol.status, protocol.status)
@@ -1245,12 +1358,20 @@ def new_rescue_option():
     user = get_user()
 
     if request.method == 'POST':
+        name_val = request.form.get('name', '').strip()
+        notes_val = request.form.get('notes', '').strip()
+        if name_val and len(name_val) > 200:
+            flash('Name must be 200 characters or fewer.', 'error')
+            return render_template('new_rescue_option.html')
+        if notes_val and len(notes_val) > 500:
+            flash('Notes must be 500 characters or fewer.', 'error')
+            return render_template('new_rescue_option.html')
         option = Protocol(
             user_id=user.id,
-            name=request.form.get('name'),
+            name=name_val,
             type='rescue',
             available=bool(request.form.get('available')),
-            notes=request.form.get('notes') or None,
+            notes=notes_val or None,
         )
         db.session.add(option)
         db.session.commit()
@@ -1266,9 +1387,17 @@ def edit_rescue_option(option_id):
     option = Protocol.query.filter_by(id=option_id, user_id=user.id, type='rescue').first_or_404()
 
     if request.method == 'POST':
-        option.name = request.form.get('name')
+        name_val = request.form.get('name', '').strip()
+        notes_val = request.form.get('notes', '').strip()
+        if name_val and len(name_val) > 200:
+            flash('Name must be 200 characters or fewer.', 'error')
+            return render_template('edit_rescue_option.html', option=option)
+        if notes_val and len(notes_val) > 500:
+            flash('Notes must be 500 characters or fewer.', 'error')
+            return render_template('edit_rescue_option.html', option=option)
+        option.name = name_val
         option.available = bool(request.form.get('available'))
-        option.notes = request.form.get('notes') or None
+        option.notes = notes_val or None
         db.session.commit()
         flash('Rescue option updated.', 'success')
         return redirect(url_for('protocols'))

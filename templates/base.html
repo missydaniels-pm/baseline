@@ -23,14 +23,17 @@
 <div class="layout">
   <nav class="sidebar" id="sidebar">
     <div class="sidebar-brand">Base<span>line</span></div>
-    <a href="{{ url_for('checkin') }}" class="nav-link {% if request.endpoint == 'checkin' %}active{% endif %}">
+    {% set nav_disabled = onboarding_in_progress %}
+    <a href="{{ url_for('checkin') }}" class="nav-link {% if request.endpoint == 'checkin' %}active{% endif %}{% if nav_disabled %} nav-disabled{% endif %}"
+       {% if nav_disabled %}title="Complete setup to access this section"{% endif %}>
       <span class="nav-icon">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M13 2H3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h2v2.5L7.5 11H13a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1z"/>
         </svg>
       </span> Check-in
     </a>
-    <a href="{{ url_for('index') }}" class="nav-link {% if request.endpoint == 'index' %}active{% endif %}">
+    <a href="{{ url_for('index') }}" class="nav-link {% if request.endpoint == 'index' %}active{% endif %}{% if nav_disabled %} nav-disabled{% endif %}"
+       {% if nav_disabled %}title="Complete setup to access this section"{% endif %}>
       <span class="nav-icon">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M2 7.5L8 2l6 5.5"/>
@@ -38,14 +41,16 @@
         </svg>
       </span> Dashboard
     </a>
-    <a href="{{ url_for('episodes') }}" class="nav-link {% if 'episode' in request.endpoint %}active{% endif %}">
+    <a href="{{ url_for('episodes') }}" class="nav-link {% if 'episode' in request.endpoint %}active{% endif %}{% if nav_disabled %} nav-disabled{% endif %}"
+       {% if nav_disabled %}title="Complete setup to access this section"{% endif %}>
       <span class="nav-icon">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M8 2l1.4 4.6L14 8l-4.6 1.4L8 14l-1.4-4.6L2 8l4.6-1.4z"/>
         </svg>
       </span> Episodes
     </a>
-    <a href="{{ url_for('protocols') }}" class="nav-link {% if 'protocol' in request.endpoint %}active{% endif %}">
+    <a href="{{ url_for('protocols') }}" class="nav-link {% if 'protocol' in request.endpoint %}active{% endif %}{% if nav_disabled %} nav-disabled{% endif %}"
+       {% if nav_disabled %}title="Complete setup to access this section"{% endif %}>
       <span class="nav-icon">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="3.5" width="10" height="11" rx="1"/>
@@ -55,7 +60,8 @@
         </svg>
       </span> Protocols
     </a>
-    <a href="{{ url_for('experiments') }}" class="nav-link {% if 'experiment' in request.endpoint %}active{% endif %}">
+    <a href="{{ url_for('experiments') }}" class="nav-link {% if 'experiment' in request.endpoint %}active{% endif %}{% if nav_disabled %} nav-disabled{% endif %}"
+       {% if nav_disabled %}title="Complete setup to access this section"{% endif %}>
       <span class="nav-icon">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M6 1.5h4M6 1.5v4.5L2.5 13.5h11L10 6V1.5"/>
@@ -63,7 +69,8 @@
         </svg>
       </span> Experiments
     </a>
-    <a href="{{ url_for('symptoms') }}" class="nav-link {% if 'symptom' in request.endpoint %}active{% endif %}">
+    <a href="{{ url_for('symptoms') }}" class="nav-link {% if 'symptom' in request.endpoint %}active{% endif %}{% if nav_disabled %} nav-disabled{% endif %}"
+       {% if nav_disabled %}title="Complete setup to access this section"{% endif %}>
       <span class="nav-icon">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M8 13C5 11 1.5 9 1.5 5.5A3 3 0 0 1 8 4.5 3 3 0 0 1 14.5 5.5C14.5 9 11 11 8 13z"/>
@@ -71,7 +78,8 @@
       </span> Symptoms
     </a>
     <div class="nav-spacer"></div>
-    <a href="{{ url_for('settings') }}" class="nav-link {% if request.endpoint == 'settings' %}active{% endif %}">
+    <a href="{{ url_for('settings') }}" class="nav-link {% if request.endpoint == 'settings' %}active{% endif %}{% if nav_disabled %} nav-disabled{% endif %}"
+       {% if nav_disabled %}title="Complete setup to access this section"{% endif %}>
       <span class="nav-icon">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
           <circle cx="8" cy="8" r="2.5"/>
@@ -79,7 +87,8 @@
         </svg>
       </span> Settings
     </a>
-    <a href="{{ url_for('help_page') }}" class="nav-link {% if request.endpoint == 'help_page' %}active{% endif %}">
+    <a href="{{ url_for('help_page') }}" class="nav-link {% if request.endpoint == 'help_page' %}active{% endif %}{% if nav_disabled %} nav-disabled{% endif %}"
+       {% if nav_disabled %}title="Complete setup to access this section"{% endif %}>
       <span class="nav-icon">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="8" cy="8" r="6.5"/>
@@ -121,6 +130,53 @@
     if (display) {
       display.textContent = slider.value;
       slider.addEventListener('input', function() { display.textContent = this.value; });
+    }
+  });
+
+  // Character counters — auto-bind to any field with a data-charlimit and matching *_count span
+  // Blocks form submission when any counted field exceeds its limit
+  document.querySelectorAll('[data-charlimit]').forEach(function(field) {
+    var counter = document.getElementById(field.id + '_count');
+    if (counter) {
+      var form = field.closest('form');
+      var formId = form ? form.id : null;
+      // Create inline error element after the counter
+      var errorEl = document.createElement('div');
+      errorEl.className = 'inline-error';
+      errorEl.style.display = 'none';
+      counter.parentElement.after(errorEl);
+      function update() {
+        var limit = parseInt(field.getAttribute('data-charlimit'));
+        var over = field.value.length > limit;
+        counter.textContent = field.value.length;
+        counter.parentElement.classList.toggle('over-limit', over);
+        // Show/hide inline error for this field
+        if (over) {
+          var label = (field.closest('.form-group') || {}).querySelector('label');
+          var fieldName = label ? label.textContent.replace(/\(.*\)/, '').trim() : 'Field';
+          errorEl.textContent = fieldName + ' must be ' + limit + ' characters or fewer.';
+          errorEl.style.display = '';
+        } else {
+          errorEl.style.display = 'none';
+        }
+        // Find all submit buttons: inside the form OR linked via form="id"
+        var buttons = [];
+        if (form) {
+          form.querySelectorAll('[type="submit"]').forEach(function(b) { buttons.push(b); });
+          if (formId) {
+            document.querySelectorAll('[type="submit"][form="' + formId + '"]').forEach(function(b) { buttons.push(b); });
+          }
+          var anyOver = false;
+          form.querySelectorAll('[data-charlimit]').forEach(function(f) {
+            if (f.value.length > parseInt(f.getAttribute('data-charlimit'))) {
+              anyOver = true;
+            }
+          });
+          buttons.forEach(function(b) { b.disabled = anyOver; });
+        }
+      }
+      update();
+      field.addEventListener('input', update);
     }
   });
 

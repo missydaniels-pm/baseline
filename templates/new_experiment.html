@@ -13,7 +13,9 @@
       <label for="name">Experiment name</label>
       <div class="field-hint">Give it a clear, memorable name. e.g. "Magnesium 400mg trial"</div>
       <input type="text" id="name" name="name" required autofocus
-             placeholder="e.g. Magnesium 400mg trial">
+             placeholder="e.g. Magnesium 400mg trial"
+             data-charlimit="200">
+      <div class="char-counter"><span id="name_count">0</span>/200</div>
     </div>
 
     <div class="form-group">
@@ -29,7 +31,9 @@
     <div class="form-group">
       <label for="hypothesis">Hypothesis <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
       <div class="field-hint">What outcome do you expect? e.g. "I expect to have fewer than 4 bad days per month after 8 weeks."</div>
-      <textarea id="hypothesis" name="hypothesis" placeholder="I expect…"></textarea>
+      <textarea id="hypothesis" name="hypothesis" placeholder="I expect…"
+                data-charlimit="500"></textarea>
+      <div class="char-counter"><span id="hypothesis_count">0</span>/500</div>
     </div>
 
     <div class="form-row">
@@ -43,9 +47,9 @@
       </div>
       <div class="form-group">
         <label for="stabilization_weeks">Stabilization period (weeks)</label>
-        <div class="field-hint">How long before assessing? Most protocols need 8–12 weeks.</div>
+        <div class="field-hint">How long before assessing? Default is 3 weeks.</div>
         <input type="number" id="stabilization_weeks" name="stabilization_weeks"
-               min="1" max="52" value="8">
+               min="1" max="52" value="3">
       </div>
     </div>
 
@@ -63,7 +67,7 @@
 <script>
   function updateAssessDate() {
     var startVal = document.getElementById('start_date').value;
-    var weeks = parseInt(document.getElementById('stabilization_weeks').value) || 8;
+    var weeks = parseInt(document.getElementById('stabilization_weeks').value) || 3;
     var preview = document.getElementById('assess-date-preview');
     var dateText = document.getElementById('assess-date-text');
     if (startVal) {
