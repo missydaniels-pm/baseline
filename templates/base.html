@@ -7,6 +7,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+  <meta name="theme-color" content="#0f0f13">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
   {% block head_extra %}{% endblock %}
 </head>
 <body>
@@ -197,6 +202,51 @@
       document.body.classList.remove('nav-open');
     });
   });
+</script>
+
+<!-- PWA: Service Worker registration + install prompt -->
+<div id="installBanner" class="install-banner" style="display:none;">
+  <img src="{{ url_for('static', filename='icons/icon-192.png') }}" alt="" class="install-banner-icon">
+  <span class="install-banner-text">Add Baseline to Home Screen</span>
+  <button id="installBtn" class="install-banner-btn">Install</button>
+  <button id="installDismiss" class="install-banner-close" aria-label="Dismiss">&times;</button>
+</div>
+<script>
+  // Register service worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(function() {});
+  }
+
+  // Install prompt (Chrome/Edge)
+  (function() {
+    var deferredPrompt;
+    var banner = document.getElementById('installBanner');
+    var installBtn = document.getElementById('installBtn');
+    var dismissBtn = document.getElementById('installDismiss');
+
+    // Don't show if already standalone or recently dismissed
+    if (window.matchMedia('(display-mode: standalone)').matches) return;
+    var dismissed = localStorage.getItem('installDismissed');
+    if (dismissed && Date.now() - parseInt(dismissed) < 7 * 24 * 60 * 60 * 1000) return;
+
+    window.addEventListener('beforeinstallprompt', function(e) {
+      e.preventDefault();
+      deferredPrompt = e;
+      banner.style.display = '';
+    });
+
+    installBtn.addEventListener('click', function() {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then(function() { banner.style.display = 'none'; });
+      deferredPrompt = null;
+    });
+
+    dismissBtn.addEventListener('click', function() {
+      banner.style.display = 'none';
+      localStorage.setItem('installDismissed', Date.now().toString());
+    });
+  })();
 </script>
 </body>
 </html>

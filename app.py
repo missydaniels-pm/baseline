@@ -152,7 +152,7 @@ def get_active_experiment(user_id):
 # Authentication gate + onboarding gate
 # ---------------------------------------------------------------------------
 
-PUBLIC_ENDPOINTS = {'login', 'register', 'static', 'dev_bootstrap'}
+PUBLIC_ENDPOINTS = {'login', 'register', 'static', 'dev_bootstrap', 'serve_sw', 'offline'}
 
 @app.context_processor
 def inject_onboarding_state():
@@ -176,6 +176,19 @@ def require_auth():
         return
     if not user.onboarding_complete:
         return redirect(url_for('onboarding_step1'))
+
+
+# ---------------------------------------------------------------------------
+# PWA routes
+# ---------------------------------------------------------------------------
+
+@app.route('/sw.js')
+def serve_sw():
+    return app.send_static_file('sw.js'), 200, {'Content-Type': 'application/javascript', 'Service-Worker-Allowed': '/'}
+
+@app.route('/offline')
+def offline():
+    return render_template('offline.html')
 
 
 # ---------------------------------------------------------------------------
