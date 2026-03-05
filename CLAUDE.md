@@ -146,15 +146,37 @@ Required in .env locally and in Railway variables in production:
 
 ## Documentation Files
 
-When you make changes, update the relevant documentation in `Baseline Files/`:
+Two markdown files live in `Baseline Files/` and must be updated directly as part of every commit that affects them. Do not wait for a separate documentation step — update them in the same session and include them in the same commit as the code changes.
 
-- **baseline-technical-readme.docx** — update when: new routes added, dependencies change, data models change, environment variables change, deployment process changes
-- **baseline-user-guide.docx** — update when: user-facing features added or changed, onboarding flow changes, new sections needed
-- **baseline-vision-roadmap.docx** — update when: significant product decisions are made, roadmap priorities shift
-- **baseline-privacy-policy.docx** — update only when: data collection practices change, new third parties added, contact info changes. Flag any privacy policy changes to Missy for review before committing.
-- **baseline-backlog.docx** — update when: new bugs or features are identified during a build session, items are completed
+### Files you update directly (markdown):
 
-To update a .docx file, note the changes needed at the end of your session summary so Missy can have the docs updated. Do not attempt to edit .docx files directly.
+**`Baseline Files/TECHNICAL_README.md`** — update when:
+- New routes added or removed
+- Data models change
+- Dependencies change
+- Environment variables change
+- Deployment process changes
+- Security notes need updating
+
+**`Baseline Files/BACKLOG.md`** — update when:
+- Items are completed (mark ✅ Complete with date)
+- New bugs or features are identified during a build session
+- Priorities change
+- New decisions are made (add to Decision Log)
+
+### Files you do NOT edit directly (.docx):
+
+**`Baseline Files/baseline-user-guide.docx`** — At the end of your session, describe what changed for users and which section needs updating. Missy will update this separately.
+
+**`Baseline Files/baseline-privacy-policy.docx`** — Flag any changes needed to Missy for review. Never suggest committing privacy policy changes without her explicit approval.
+
+**`Baseline Files/baseline-vision-roadmap.docx`** — Note significant product direction changes for Missy to update.
+
+### Session end checklist:
+1. Update TECHNICAL_README.md and BACKLOG.md directly
+2. Include both in the commit with the code changes
+3. Note what needs updating in the .docx files for Missy
+4. Confirm git push completed
 
 ---
 

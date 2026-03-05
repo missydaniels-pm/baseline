@@ -93,6 +93,78 @@
   </div>
 </div>
 
+<hr class="divider">
+
+<div class="settings-section">
+  <h2 class="section-title" style="margin-bottom:12px; color:var(--high);">Delete Account</h2>
+  <p class="settings-row-desc" style="margin-bottom:16px;">
+    Permanently delete your account and all associated health data.
+    This action is required to be available under the
+    <strong>Washington My Health My Data Act</strong>.
+  </p>
+  <button type="button" class="btn" id="delete-account-btn"
+    style="background:var(--high); color:#fff; border:none;">Delete Account</button>
+</div>
+
+<!-- Delete confirmation modal -->
+<div id="delete-modal" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,.6); align-items:center; justify-content:center;">
+  <div style="background:var(--surface); border-radius:12px; padding:28px 24px; max-width:420px; width:90%; margin:auto;">
+    <h3 style="margin:0 0 12px; color:var(--high);">Delete your account?</h3>
+    <p style="font-size:14px; color:var(--text-muted); margin-bottom:16px;">
+      This will permanently delete your account and all health data including
+      episodes, protocols, experiments, and check-in history. This cannot be undone.
+    </p>
+    <form method="POST" action="{{ url_for('delete_account') }}">
+      <label for="delete-confirm-input" style="font-size:13px; font-weight:600; display:block; margin-bottom:6px;">
+        Type <span style="color:var(--high);">DELETE</span> to confirm
+      </label>
+      <input type="text" id="delete-confirm-input" name="confirmation" autocomplete="off"
+        style="width:100%; margin-bottom:16px;" placeholder="DELETE">
+      <div style="display:flex; gap:10px; justify-content:flex-end;">
+        <button type="button" class="btn btn-secondary" id="delete-cancel-btn">Cancel</button>
+        <button type="submit" class="btn" id="delete-confirm-btn" disabled
+          style="background:var(--high); color:#fff; border:none; opacity:.5; cursor:not-allowed;">
+          Permanently Delete
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function() {
+  var modal = document.getElementById('delete-modal');
+  var openBtn = document.getElementById('delete-account-btn');
+  var cancelBtn = document.getElementById('delete-cancel-btn');
+  var confirmInput = document.getElementById('delete-confirm-input');
+  var confirmBtn = document.getElementById('delete-confirm-btn');
+
+  openBtn.addEventListener('click', function() {
+    modal.style.display = 'flex';
+    confirmInput.value = '';
+    confirmBtn.disabled = true;
+    confirmBtn.style.opacity = '.5';
+    confirmBtn.style.cursor = 'not-allowed';
+    confirmInput.focus();
+  });
+
+  cancelBtn.addEventListener('click', function() {
+    modal.style.display = 'none';
+  });
+
+  modal.addEventListener('click', function(e) {
+    if (e.target === modal) modal.style.display = 'none';
+  });
+
+  confirmInput.addEventListener('input', function() {
+    var match = confirmInput.value.trim() === 'DELETE';
+    confirmBtn.disabled = !match;
+    confirmBtn.style.opacity = match ? '1' : '.5';
+    confirmBtn.style.cursor = match ? 'pointer' : 'not-allowed';
+  });
+})();
+</script>
+
 <script>
 (function() {
   var pw = document.getElementById('new_password');

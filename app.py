@@ -421,6 +421,41 @@ def change_password():
     return redirect(url_for('settings'))
 
 
+@app.route('/settings/delete-account', methods=['POST'])
+def delete_account():
+    user = get_user()
+    if not user:
+        return redirect(url_for('login'))
+
+    confirmation = request.form.get('confirmation', '').strip()
+    if confirmation != 'DELETE':
+        flash('Account deletion cancelled — confirmation text did not match.', 'error')
+        return redirect(url_for('settings'))
+
+    user_id = user.id
+
+    # Delete in FK-safe order
+    SymptomScore.query.filter(
+        SymptomScore.episode_id.in_(
+            db.session.query(Episode.id).filter_by(user_id=user_id)
+        )
+    ).delete(synchronize_session=False)
+    CheckIn.query.filter_by(user_id=user_id).delete()
+    Episode.query.filter_by(user_id=user_id).delete()
+    ProtocolCompliance.query.filter_by(user_id=user_id).delete()
+    ProtocolEvent.query.filter_by(user_id=user_id).delete()
+    Experiment.query.filter_by(user_id=user_id).delete()
+    Protocol.query.filter_by(user_id=user_id).delete()
+    Symptom.query.filter_by(user_id=user_id).delete()
+    InviteCode.query.filter_by(used_by_user_id=user_id).update({'used_by_user_id': None, 'used_at': None})
+    User.query.filter_by(id=user_id).delete()
+    db.session.commit()
+
+    session.clear()
+    flash('Your account has been deleted.', 'success')
+    return redirect(url_for('login'))
+
+
 # ---------------------------------------------------------------------------
 # AI Check-in
 # ---------------------------------------------------------------------------
