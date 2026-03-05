@@ -1,6 +1,6 @@
 # Baseline — Product Backlog
 
-Last updated: March 4, 2026 | 4 active users
+Last updated: March 5, 2026 | 4 active users
 
 **Priority:** P0 = fix now, P1 = next sprint, P2 = soon, P3 = later
 **Size:** S = small (<2hrs), M = medium (half day), L = large (1+ days)
@@ -38,7 +38,7 @@ High-value improvements targeting user satisfaction, retention, and portfolio re
 | Dashboard | Chart time range selector (days / weeks / months) | Mackenzie/Missy | M | Users should control the time window |
 | Reporting | Neurologist insurance report — auto-generated PDF matching standard migraine calendar form. Day, category (M/H/P), pain score 0-10, medication codes, monthly totals. Required for insurance approval of triptans/gepants. Baseline already captures all needed data. | Missy | L | Reference form photographed 3/4/26 |
 | Analytics | Internal event logging to PostgreSQL (privacy-safe instrumentation) | Internal | M | No third-party tools until privacy policy live + MHMD review |
-| Portfolio | Prepare repo for public GitHub launch — clean dev routes, write README | Internal | M | Tie to job search timeline |
+| Portfolio | Prepare repo for public GitHub launch — clean dev routes, write README | Internal | M | In progress — dev routes cleaned up 3/5/26 |
 
 ---
 

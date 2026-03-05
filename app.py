@@ -1463,10 +1463,14 @@ def delete_protocol(protocol_id):
     return redirect(url_for('protocols'))
 
 
-# ---------------------------------------------------------------------------
-# Dev utilities
-# ---------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# DEV / DEBUG ROUTES
+# These routes are only accessible when DEBUG=True (local development).
+# They are automatically blocked in production (Railway, DEBUG=False).
+# They exist to support local testing and database bootstrapping only.
+# ─────────────────────────────────────────────────────────────────────────────
 
+# /dev/reset — clears all user data, resets onboarding for testing
 @app.route('/dev/reset', methods=['GET', 'POST'])
 def dev_reset():
     if not app.debug:
@@ -1503,6 +1507,7 @@ def dev_reset():
         </form></body></html>'''
 
 
+# /dev/seed — populates 12 weeks of realistic test data
 @app.route('/dev/seed', methods=['GET', 'POST'])
 def dev_seed():
     if not app.debug:
@@ -1639,8 +1644,12 @@ def dev_seed():
         </form></body></html>'''
 
 
+# /dev/bootstrap — creates admin account on fresh empty database
 @app.route('/dev/bootstrap')
 def dev_bootstrap():
+    if not app.debug:
+        return 'Not available in production.', 403
+
     if User.query.count() > 0:
         return (
             '<!doctype html><html><body style="font-family:sans-serif;max-width:500px;margin:60px auto;padding:20px;">'
@@ -1674,6 +1683,7 @@ def dev_bootstrap():
     )
 
 
+# /dev/create-invite — generates a new invite code
 @app.route('/dev/create-invite')
 def dev_create_invite():
     if not app.debug:

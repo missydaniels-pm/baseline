@@ -1,6 +1,6 @@
 # Baseline — Technical README
 
-Last updated: March 4, 2026
+Last updated: March 5, 2026
 
 ---
 
@@ -155,12 +155,15 @@ claude --resume                         # resume previous session
 | `/help` | GET | Help and documentation |
 
 ### Dev Only (DEBUG=true)
+
+All dev routes are grouped in a clearly marked section at the bottom of `app.py`. Every route has an explicit `if not app.debug: return 403` guard so they are automatically blocked in production (Railway, DEBUG=false).
+
 | Route | Description |
 |---|---|
-| `/dev/reset` | Clear all user data, reset onboarding |
-| `/dev/seed` | Populate 12 weeks of test data (only if <20 episodes) |
+| `/dev/reset` | Clear all user data, reset onboarding for testing |
+| `/dev/seed` | Populate 12 weeks of realistic test data (only if <20 episodes) |
 | `/dev/create-invite` | Generate a new invite code |
-| `/dev/bootstrap` | Create admin account on empty database (zero-user check) |
+| `/dev/bootstrap` | Create admin account on fresh empty database |
 
 ---
 
@@ -204,7 +207,7 @@ python generate_icons.py
 - Passwords hashed with bcrypt, never stored in plain text
 - Sessions encrypted with SECRET_KEY
 - All production traffic over HTTPS (Railway provides SSL)
-- Dev routes blocked in production (DEBUG=false)
+- Dev routes grouped in a dedicated section with explicit `if not app.debug` guards — blocked in production (DEBUG=false)
 - Account deletion removes all data in FK-safe order: SymptomScores → CheckIns → Episodes → ProtocolCompliance → ProtocolEvents → Experiments → Protocols → Symptoms → InviteCode reference → User
 - Data deletion satisfies Washington State My Health MY Data Act (MHMD) requirements
 
