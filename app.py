@@ -152,7 +152,7 @@ def get_active_experiment(user_id):
 # Authentication gate + onboarding gate
 # ---------------------------------------------------------------------------
 
-PUBLIC_ENDPOINTS = {'login', 'register', 'static', 'dev_bootstrap', 'serve_sw', 'offline'}
+PUBLIC_ENDPOINTS = {'login', 'register', 'static', 'dev_bootstrap', 'serve_sw', 'offline', 'privacy'}
 
 @app.context_processor
 def inject_onboarding_state():
@@ -359,6 +359,11 @@ def onboarding_step3():
 @app.route('/help')
 def help_page():
     return render_template('help.html')
+
+
+@app.route('/privacy')
+def privacy():
+    return render_template('privacy.html')
 
 
 @app.route('/settings', methods=['GET', 'POST'])
