@@ -1103,11 +1103,18 @@ def index():
     rescue_stats.sort(key=lambda r: r['times_used'], reverse=True)
 
     # ── Chart data availability ──
+    total_episode_count = Episode.query.filter_by(user_id=user.id).count()
+    has_symptom_data = any(
+        any(d is not None for d in ds['data'])
+        for ds in symptom_trend_datasets
+    )
     if all_episodes_12w:
         earliest = all_episodes_12w[0].onset.date()
-        has_chart_data = (today - earliest).days >= 14
+        has_enough_span = (today - earliest).days >= 14
     else:
-        has_chart_data = False
+        has_enough_span = False
+    # Load Chart.js if either chart will render
+    has_chart_data = has_enough_span and (total_episode_count >= 3 or has_symptom_data)
 
     experiments_ready = [
         e for e in Experiment.query.filter_by(user_id=user.id, status='active').all()
@@ -1123,7 +1130,9 @@ def index():
                            symptom_trend_datasets=symptom_trend_datasets,
                            protocol_annotations=protocol_annotations,
                            rescue_stats=rescue_stats,
-                           has_chart_data=has_chart_data)
+                           has_chart_data=has_chart_data,
+                           total_episode_count=total_episode_count,
+                           has_symptom_data=has_symptom_data)
 
 
 # ---------------------------------------------------------------------------

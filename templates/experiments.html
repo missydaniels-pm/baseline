@@ -150,12 +150,103 @@
 {% endif %}
 
 {% if not active and not completed and not abandoned %}
-<div class="empty-state">
-  <p>No experiments yet.</p>
-  <p style="font-size:13px; max-width:400px; margin:0 auto 20px;">
-    Experiments help you isolate what's actually working by tracking a single protocol change over a defined period.
-  </p>
-  <a href="{{ url_for('new_experiment') }}" class="btn btn-primary">Start your first experiment</a>
+<div class="empty-state experiment-empty-state">
+  <p class="empty-state-text experiment-empty-text">Start an experiment to see your data tell a story. Baseline will show you exactly how your frequency and symptom scores changed — so your decision is based on evidence, not guesswork.</p>
+
+  {# ── Muted assessment preview — mirrors assess_experiment.html layout ── #}
+  <div class="experiment-preview">
+    <div class="experiment-preview-header">What you'll see at assessment</div>
+
+    <div class="assess-layout">
+      {# ── Left: Data Panel ── #}
+      <div class="assess-data-panel">
+        <div class="card">
+          <div class="assess-panel-title">Your Data</div>
+
+          <div class="assess-stat-row">
+            <span class="assess-stat-label">Duration</span>
+            <span class="assess-stat-value">3 weeks</span>
+          </div>
+
+          <div style="font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:8px;">
+            Episodes / Week
+          </div>
+          <div class="assess-compare-row">
+            <div class="assess-compare-box">
+              <div class="assess-compare-label">Before</div>
+              <div class="assess-compare-value before">2.1</div>
+            </div>
+            <div class="assess-arrow">→</div>
+            <div class="assess-compare-box">
+              <div class="assess-compare-label">During</div>
+              <div class="assess-compare-value during">0.8</div>
+            </div>
+          </div>
+
+          <div style="font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:8px;">
+            Avg Symptom Scores
+          </div>
+          <div class="assess-symptom-list">
+            <div class="assess-symptom-row">
+              <span class="assess-symptom-name">Headache</span>
+              <span class="assess-symptom-scores">
+                <span class="assess-score-before">6.2</span>
+                <span style="color:var(--text-muted);">→</span>
+                <span class="assess-score-during">3.1</span>
+              </span>
+            </div>
+            <div class="assess-symptom-row">
+              <span class="assess-symptom-name">Nausea</span>
+              <span class="assess-symptom-scores">
+                <span class="assess-score-before">4.8</span>
+                <span style="color:var(--text-muted);">→</span>
+                <span class="assess-score-during">2.4</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# ── Right: Decision Panel ── #}
+      <div>
+        <div class="card" style="padding:20px;">
+          <div style="font-size:15px; font-weight:700; margin-bottom:4px;">Your Decision</div>
+          <div style="font-size:13px; color:var(--text-muted); margin-bottom:16px;">What will you do with this protocol?</div>
+          <div class="decision-options">
+            <div class="decision-option">
+              <span class="decision-label" style="border-color:var(--accent); background:rgba(124,92,191,0.1); cursor:default;">
+                <span class="decision-icon">✓</span>
+                <span>
+                  <strong>Continue</strong>
+                  <span class="decision-desc">It's working — keep going</span>
+                </span>
+              </span>
+            </div>
+            <div class="decision-option">
+              <span class="decision-label" style="cursor:default;">
+                <span class="decision-icon">⏸</span>
+                <span>
+                  <strong>Pause</strong>
+                  <span class="decision-desc">Inconclusive — try again later</span>
+                </span>
+              </span>
+            </div>
+            <div class="decision-option">
+              <span class="decision-label" style="cursor:default;">
+                <span class="decision-icon">✕</span>
+                <span>
+                  <strong>Stop</strong>
+                  <span class="decision-desc">Not working or not worth it</span>
+                </span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <a href="{{ url_for('new_experiment') }}" class="empty-state-action">Start your first experiment →</a>
 </div>
 {% endif %}
 {% endblock %}

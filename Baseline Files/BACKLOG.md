@@ -1,6 +1,6 @@
 # Baseline — Product Backlog
 
-Last updated: March 5, 2026 | 4 active users
+Last updated: March 18, 2026 | 4 active users
 
 **Priority:** P0 = fix now, P1 = next sprint, P2 = soon, P3 = later
 **Size:** S = small (<2hrs), M = medium (half day), L = large (1+ days)
@@ -35,6 +35,8 @@ High-value improvements targeting user satisfaction, retention, and portfolio re
 | Episode Logging | Allow multiple rescue options per episode | Mackenzie | M | Current model allows only one rescue per episode |
 | Protocol Tracking | Manual compliance logging without AI check-in | Mackenzie | S | For users who opted out of AI |
 | Help & Onboarding | Full Help page with Dashboard explanation | Internal | M | Include check-in tutorial per Mackenzie |
+| UX | Dashboard empty states for new users | Internal | M | ✅ Complete 3/18/26 — per-section empty states with SVG placeholders and action links |
+| UX | Experiments page empty state with assessment preview | Internal | S | ✅ Complete 3/18/26 — full two-column assessment preview using real assess-*/decision-* classes at 50% opacity |
 | Dashboard | Chart time range selector (days / weeks / months) | Mackenzie/Missy | M | Users should control the time window |
 | Reporting | Neurologist insurance report — auto-generated PDF matching standard migraine calendar form. Day, category (M/H/P), pain score 0-10, medication codes, monthly totals. Required for insurance approval of triptans/gepants. Baseline already captures all needed data. | Missy | L | Reference form photographed 3/4/26 |
 | Analytics | Internal event logging to PostgreSQL (privacy-safe instrumentation) | Internal | M | No third-party tools until privacy policy live + MHMD review |

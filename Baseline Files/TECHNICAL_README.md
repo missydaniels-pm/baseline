@@ -1,6 +1,6 @@
 # Baseline — Technical README
 
-Last updated: March 5, 2026
+Last updated: March 18, 2026
 
 ---
 
@@ -210,6 +210,26 @@ python generate_icons.py
 - Dev routes grouped in a dedicated section with explicit `if not app.debug` guards — blocked in production (DEBUG=false)
 - Account deletion removes all data in FK-safe order: SymptomScores → CheckIns → Episodes → ProtocolCompliance → ProtocolEvents → Experiments → Protocols → Symptoms → InviteCode reference → User
 - Data deletion satisfies Washington State My Health MY Data Act (MHMD) requirements
+
+---
+
+## Dashboard Empty States
+
+The dashboard renders informative empty states for new users who have no data yet, rather than hiding sections entirely. Each section checks for actual data before deciding which state to render:
+
+| Section | Empty Condition | Action Link |
+|---|---|---|
+| Symptom Baseline Cards | No active symptoms | Set up your symptoms → |
+| Episode Frequency Chart | Fewer than 3 episodes or <14 days of data | Log your first episode → |
+| Symptom Trends Chart | No episodes with severity scores or <14 days of data | Log an episode → |
+| Protocol Impact Markers | No active preventative protocols | Add a protocol → |
+| Rescue Effectiveness | No episodes with rescue data | Log an episode → |
+
+Empty states include greyed-out SVG chart placeholders, encouraging copy, and action links to the relevant section. Template variables `total_episode_count` and `has_symptom_data` are passed from the `index()` route to support per-section conditional rendering.
+
+### Experiments Page Empty State
+
+The experiments page (`experiments.html`) shows a muted preview of the full assessment screen when the user has no experiments. The preview reuses the actual `assess-layout` two-column grid, `assess-*` data panel classes, and `decision-*` option classes from `assess_experiment.html` — wrapped in an `.experiment-preview` container at 50% opacity with `pointer-events: none`. This ensures the preview is a pixel-accurate muted replica of the real assessment experience, showing mock before/during episode frequency comparison (2.1→0.8), symptom score improvements (Headache 6.2→3.1, Nausea 4.8→2.4), and the Continue/Pause/Stop decision cards. Condition: `not active and not completed and not abandoned`.
 
 ---
 
