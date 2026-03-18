@@ -28,7 +28,7 @@ Currently in use by 5 people managing chronic migraine, mold toxicity, and MS.
 
 I've had chronic migraine for 20 years. In that time I've kept paper diaries, used tracking apps, and filled out the same insurance forms for neurologists by hand every quarter. I've tried elimination diets, preventatives, rescue medications, and a dozen protocols — usually with no real way to know if anything was working, or why.
 
-The frustrating part isn't the migraine. It's the data problem. Every potential trigger, every medication trial, every pattern — held in my head or scattered across notes with no structure to evaluate it against. Doctors have 15 minutes and no longitudinal picture. Insurance requires documented frequency to approve the medications that actually help. And most tracking apps just make the logging problem slightly more digital without solving the analysis problem at all.
+The frustrating part isn't only the pain from the migraine. It's the data problem. Every potential trigger, every medication trial, every pattern — held in my head or scattered across notes with no structure to evaluate it against. Doctors have 15 minutes and no longitudinal picture. Insurance requires documented frequency to approve the medications that actually help. And most tracking apps just make the logging problem slightly more digital without solving the analysis problem at all.
 
 I built Baseline because I needed it. The experiment framework, the protocol compliance model, the 3-week default — these aren't product decisions from user research. They're from two decades of being the patient.
 
