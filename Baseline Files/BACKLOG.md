@@ -34,14 +34,15 @@ High-value improvements targeting user satisfaction, retention, and portfolio re
 |---|---|---|---|---|
 | Episode Logging | Allow multiple rescue options per episode | Mackenzie | M | Current model allows only one rescue per episode |
 | Protocol Tracking | Manual compliance logging without AI check-in | Mackenzie | S | For users who opted out of AI |
-| Help & Onboarding | Full Help page with Dashboard explanation + check-in tutorial | Internal | M | ✅ Complete 3/21/26 — 8 subsections: how it works, getting to check-in, what to include, example messages, auto-logging, corrections, check-in vs manual, privacy |
-| Help & Onboarding | Welcome email for new users | Internal | S | ✅ Complete 3/21/26 — HTML+plain text via smtplib, Gmail App Password, fails silently if no credentials |
-| Help & Onboarding | Welcome modal (guided walkthrough) for new users | Internal | S | ✅ Complete 3/21/26 — 5-step tour on first dashboard visit, replayable from Help page |
+| Help & Onboarding | Full Help page with Dashboard explanation + check-in tutorial | Internal | M | ✅ Complete 3/21/26 |
+| Help & Onboarding | Welcome email for new users | Internal | S | ✅ Complete 3/21/26 — uses Gmail SMTP, requires MAIL_USERNAME and MAIL_PASSWORD env vars in Railway |
+| Help & Onboarding | Welcome tour modal | Internal | S | ✅ Complete 3/21/26 — has_seen_tour boolean on User model, 5-step slideshow on first login |
 | UX | Dashboard check-in shortcut | Internal | S | ✅ Complete 3/21/26 — "Start Check-in →" button in dashboard header next to Log Episode |
 | UX | Update contact email to baselinehealthapp@gmail.com | Internal | S | ✅ Complete 3/21/26 — updated in help page and welcome email |
 | UX | Remove invite code reference from help page | Internal | S | ✅ Complete 3/21/26 — registration flow may change |
 | UX | Dashboard empty states for new users | Internal | M | ✅ Complete 3/18/26 — per-section empty states with SVG placeholders and action links |
 | UX | Experiments page empty state with assessment preview | Internal | S | ✅ Complete 3/18/26 — full two-column assessment preview using real assess-*/decision-* classes at 50% opacity |
+| UX | App-wide naming overhaul — rename "Symptoms" to "What I Track", rename "Rescue Medications" to "Interventions", update Protocols description from medication-centric copy to "Ongoing practices, medications, supplements, and routines that support your health". Impacts: nav labels, page headers, onboarding flow, help page, welcome modal, empty states, dashboard headers, CLAUDE.md, README, backlog. | Kiersten/Missy | M | Do as dedicated session — touches every part of the app. Broader market positioning goal: inclusive of chronic illness AND health optimization users (Huberman audience, perimenopausal women, biohackers). |
 | Dashboard | Chart time range selector (days / weeks / months) | Mackenzie/Missy | M | Users should control the time window |
 | Reporting | Neurologist insurance report — auto-generated PDF matching standard migraine calendar form. Day, category (M/H/P), pain score 0-10, medication codes, monthly totals. Required for insurance approval of triptans/gepants. Baseline already captures all needed data. | Missy | L | Reference form photographed 3/4/26 |
 | Analytics | Internal event logging to PostgreSQL (privacy-safe instrumentation) | Internal | M | No third-party tools until privacy policy live + MHMD review |
@@ -127,6 +128,9 @@ Longer-term vision. Architecture decision point: React rebuild is the gateway to
 
 ### Welcome Modal — Guided Tour
 **March 2026:** Added 5-step guided walkthrough modal on first dashboard visit after onboarding. `has_seen_tour` boolean on User model. Auto-marks as seen via JS fetch to `/tour/complete`. Replayable from Help page via `/tour/restart`. No external dependencies — pure CSS/JS modal.
+
+### Naming & Market Positioning
+**March 2026:** Deliberately positioning Baseline beyond medication management to include health optimization protocols (morning routines, cold plunge, sleep hygiene, dietary approaches). Influenced by Huberman Protocol cultural momentum and user feedback from Kiersten (perimenopausal tracking doesn't fit "symptoms" or "preventative medication" framing). Final naming decisions: Symptoms → "What I Track", Rescue Medications → "Interventions", Protocols description updated to be lifestyle-inclusive. "Episodes" retained — works for both communities.
 
 ### Pre-LinkedIn Launch Requirements
 **March 2026:** Identified minimum viable requirements before posting on LinkedIn to 1000+ connections: privacy policy in app (✅ complete), in-app help/tutorial, welcome email, Baseline email address (✅ baselinehealthapp@gmail.com). Invite-only registration maintained during this phase. Self-serve access request deferred until support infrastructure is ready.
