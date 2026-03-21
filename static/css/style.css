@@ -109,6 +109,12 @@ a:hover { text-decoration: underline; }
   margin-bottom: 28px;
 }
 
+.page-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .page-title {
   font-size: 24px;
   font-weight: 700;

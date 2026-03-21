@@ -221,7 +221,11 @@ python generate_icons.py
 
 ---
 
-## Dashboard Empty States
+## Dashboard
+
+The dashboard header contains two primary action buttons: "Start Check-in →" (links to `/checkin`) and "+ Log Episode" (links to `/episodes/new`), giving users immediate access to the two main logging paths without navigating the sidebar.
+
+### Empty States
 
 The dashboard renders informative empty states for new users who have no data yet, rather than hiding sections entirely. Each section checks for actual data before deciding which state to render:
 

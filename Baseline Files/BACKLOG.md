@@ -37,6 +37,9 @@ High-value improvements targeting user satisfaction, retention, and portfolio re
 | Help & Onboarding | Full Help page with Dashboard explanation + check-in tutorial | Internal | M | ✅ Complete 3/21/26 — 8 subsections: how it works, getting to check-in, what to include, example messages, auto-logging, corrections, check-in vs manual, privacy |
 | Help & Onboarding | Welcome email for new users | Internal | S | ✅ Complete 3/21/26 — HTML+plain text via smtplib, Gmail App Password, fails silently if no credentials |
 | Help & Onboarding | Welcome modal (guided walkthrough) for new users | Internal | S | ✅ Complete 3/21/26 — 5-step tour on first dashboard visit, replayable from Help page |
+| UX | Dashboard check-in shortcut | Internal | S | ✅ Complete 3/21/26 — "Start Check-in →" button in dashboard header next to Log Episode |
+| UX | Update contact email to baselinehealthapp@gmail.com | Internal | S | ✅ Complete 3/21/26 — updated in help page and welcome email |
+| UX | Remove invite code reference from help page | Internal | S | ✅ Complete 3/21/26 — registration flow may change |
 | UX | Dashboard empty states for new users | Internal | M | ✅ Complete 3/18/26 — per-section empty states with SVG placeholders and action links |
 | UX | Experiments page empty state with assessment preview | Internal | S | ✅ Complete 3/18/26 — full two-column assessment preview using real assess-*/decision-* classes at 50% opacity |
 | Dashboard | Chart time range selector (days / weeks / months) | Mackenzie/Missy | M | Users should control the time window |

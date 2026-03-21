@@ -74,7 +74,7 @@ YOUR FIRST STEPS
 NEED HELP?
 Visit the Help page for a full guide: {app_url}/help
 
-Questions or feedback? Reply to this email or reach out at daniels.missy@gmail.com.
+Questions or feedback? Reply to this email or reach out at baselinehealthapp@gmail.com.
 
 — The Baseline Team
 """
@@ -112,7 +112,7 @@ Questions or feedback? Reply to this email or reach out at daniels.missy@gmail.c
   </div>
 
   <h2 style="font-size:15px; font-weight:600; color:#e8e6f0; margin:0 0 8px;">Need help?</h2>
-  <p style="font-size:14px; color:#888899; line-height:1.7; margin:0 0 20px;">Visit the <a href="{app_url}/help" style="color:#a07de0; text-decoration:none;">Help page</a> for a full guide including a check-in tutorial. Questions or feedback? Reply to this email or reach out at <a href="mailto:daniels.missy@gmail.com" style="color:#a07de0; text-decoration:none;">daniels.missy@gmail.com</a>.</p>
+  <p style="font-size:14px; color:#888899; line-height:1.7; margin:0 0 20px;">Visit the <a href="{app_url}/help" style="color:#a07de0; text-decoration:none;">Help page</a> for a full guide including a check-in tutorial. Questions or feedback? Reply to this email or reach out at <a href="mailto:baselinehealthapp@gmail.com" style="color:#a07de0; text-decoration:none;">baselinehealthapp@gmail.com</a>.</p>
 
   <div style="border-top:1px solid #2e2e3e; padding-top:16px; margin-top:8px; font-size:12px; color:#888899;">
     You're receiving this because you created a Baseline account. <a href="{app_url}/privacy" style="color:#a07de0; text-decoration:none;">Privacy Policy</a>
