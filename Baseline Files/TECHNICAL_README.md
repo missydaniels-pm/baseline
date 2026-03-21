@@ -1,6 +1,6 @@
 # Baseline — Technical README
 
-Last updated: March 18, 2026
+Last updated: March 21, 2026
 
 ---
 
@@ -70,7 +70,7 @@ Baseline Files/
 
 | Model | Description |
 |---|---|
-| User | email, password_hash, invite_code_used, is_active, onboarding_complete, baseline data, ai_logging_enabled |
+| User | email, password_hash, invite_code_used, is_active, onboarding_complete, baseline data, ai_logging_enabled, has_seen_tour |
 | InviteCode | code, created_at, used_at, used_by_user_id |
 | Symptom | user-defined trackable symptoms (name, description, is_active). No hard post-onboarding limit. |
 | Episode | onset timestamp, duration, functional_impairment, notes |
@@ -91,6 +91,9 @@ Baseline Files/
 | `SECRET_KEY` | Yes | Flask session secret key |
 | `DEBUG` | No | `true` locally only, `false` in production |
 | `DATABASE_URL` | Production only | Set automatically by Railway PostgreSQL reference |
+| `MAIL_USERNAME` | No | Gmail address for welcome emails (e.g. `baselinehealthapp@gmail.com`) |
+| `MAIL_PASSWORD` | No | Gmail App Password for SMTP auth |
+| `APP_URL` | No | Base URL for email links (defaults to `https://baseline-health.up.railway.app`) |
 
 Local `.env` file uses `load_dotenv(override=True)` to ensure `.env` always wins over shell environment.
 
@@ -153,6 +156,8 @@ claude --resume                         # resume previous session
 | `/settings/change-email` | POST | Change email |
 | `/settings/delete-account` | POST | Delete account and all data (MHMD compliance) |
 | `/help` | GET | Help and documentation |
+| `/tour/complete` | POST | Mark welcome tour as seen (JSON response) |
+| `/tour/restart` | GET | Reset tour flag and redirect to dashboard |
 
 ### Dev Only (DEBUG=true)
 
@@ -210,6 +215,8 @@ python generate_icons.py
 - Dev routes grouped in a dedicated section with explicit `if not app.debug` guards — blocked in production (DEBUG=false)
 - Account deletion removes all data in FK-safe order: SymptomScores → CheckIns → Episodes → ProtocolCompliance → ProtocolEvents → Experiments → Protocols → Symptoms → InviteCode reference → User
 - Data deletion satisfies Washington State My Health MY Data Act (MHMD) requirements
+- Welcome email sent on registration via Gmail SMTP (smtplib). Fails silently if credentials not configured. HTML + plain text.
+- Welcome tour modal shown on first dashboard visit after onboarding (`has_seen_tour` flag on User model). Replayable from Help page via `/tour/restart`.
 
 ---
 

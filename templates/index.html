@@ -355,4 +355,111 @@
 })();
 </script>
 {% endif %}
+
+{# ── Welcome Tour Modal ──────────────────────────────────────── #}
+{% if show_tour %}
+<div class="tour-overlay" id="tourOverlay">
+  <div class="tour-modal">
+    <div class="tour-step" data-step="1">
+      <h2 class="tour-title">Welcome to Baseline!</h2>
+      <p>Baseline helps you track your symptoms, run structured experiments, and build real evidence for your health decisions.</p>
+      <p>Instead of guessing what works, you'll have data — your own personal record of what you've tried and what the results were.</p>
+      <p>This quick tour will show you the key features.</p>
+    </div>
+    <div class="tour-step" data-step="2" style="display:none;">
+      <h2 class="tour-title">Your Dashboard</h2>
+      <p>The dashboard is your home base. As you log, you'll see:</p>
+      <ul class="tour-list">
+        <li><strong>Symptom cards</strong> — your average scores this month vs. your baseline</li>
+        <li><strong>Trend charts</strong> — episode frequency and symptom severity over 12 weeks</li>
+        <li><strong>Rescue effectiveness</strong> — which rescue options work best for you</li>
+      </ul>
+      <p>Charts appear after about two weeks of logging.</p>
+    </div>
+    <div class="tour-step" data-step="3" style="display:none;">
+      <h2 class="tour-title">The Daily Check-in</h2>
+      <p>If you've enabled AI logging, the check-in is the easiest way to log. Just describe your day in plain language:</p>
+      <p class="tour-example">"Rough morning, headache around a 6, took my Sumatriptan at 10am, feeling better by noon."</p>
+      <p>Baseline extracts the data and confirms what it logged. If it gets something wrong, just correct it in the next message.</p>
+    </div>
+    <div class="tour-step" data-step="4" style="display:none;">
+      <h2 class="tour-title">Experiments</h2>
+      <p>This is what makes Baseline different. When you start a new protocol, track it as an experiment:</p>
+      <ul class="tour-list">
+        <li>Define your hypothesis and timeframe</li>
+        <li>Keep logging as normal during the experiment</li>
+        <li>When it's time, assess the outcome with your actual data</li>
+      </ul>
+      <p>Over time, you build an evidence base — a real record of what you've tried and what worked.</p>
+    </div>
+    <div class="tour-step" data-step="5" style="display:none;">
+      <h2 class="tour-title">Get started</h2>
+      <p>Here are a few things you can do right now:</p>
+      <ul class="tour-list">
+        <li><a href="{{ url_for('new_episode') }}">Log your first episode</a> — record a recent symptom event</li>
+        <li><a href="{{ url_for('checkin') }}">Try the daily check-in</a> — describe your day and let AI handle the rest</li>
+        <li><a href="{{ url_for('protocols') }}">Add a protocol</a> — track a medication or supplement you're currently taking</li>
+      </ul>
+      <p>You can replay this tour anytime from the <a href="{{ url_for('help_page') }}">Help</a> page.</p>
+    </div>
+    <div class="tour-footer">
+      <div class="tour-dots">
+        <span class="tour-dot active" data-dot="1"></span>
+        <span class="tour-dot" data-dot="2"></span>
+        <span class="tour-dot" data-dot="3"></span>
+        <span class="tour-dot" data-dot="4"></span>
+        <span class="tour-dot" data-dot="5"></span>
+      </div>
+      <div class="tour-nav">
+        <span class="tour-counter">1 of 5</span>
+        <div class="tour-buttons">
+          <button class="tour-skip" id="tourSkip">Skip</button>
+          <button class="btn btn-secondary btn-sm tour-back" id="tourBack" style="display:none;">Back</button>
+          <button class="btn btn-primary btn-sm" id="tourNext">Next</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function() {
+  var overlay = document.getElementById('tourOverlay');
+  var steps = overlay.querySelectorAll('.tour-step');
+  var dots = overlay.querySelectorAll('.tour-dot');
+  var counter = overlay.querySelector('.tour-counter');
+  var btnBack = document.getElementById('tourBack');
+  var btnNext = document.getElementById('tourNext');
+  var btnSkip = document.getElementById('tourSkip');
+  var current = 1;
+  var total = steps.length;
+
+  function show(n) {
+    steps.forEach(function(s) { s.style.display = 'none'; });
+    dots.forEach(function(d) { d.classList.remove('active'); });
+    overlay.querySelector('[data-step="' + n + '"]').style.display = 'block';
+    overlay.querySelector('[data-dot="' + n + '"]').classList.add('active');
+    counter.textContent = n + ' of ' + total;
+    btnBack.style.display = n === 1 ? 'none' : '';
+    btnNext.textContent = n === total ? 'Get started' : 'Next';
+  }
+
+  function close() {
+    overlay.style.display = 'none';
+    fetch('{{ url_for("tour_complete") }}', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+  }
+
+  btnNext.addEventListener('click', function() {
+    if (current < total) { current++; show(current); }
+    else { close(); }
+  });
+  btnBack.addEventListener('click', function() {
+    if (current > 1) { current--; show(current); }
+  });
+  btnSkip.addEventListener('click', close);
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) close();
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

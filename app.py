@@ -3,6 +3,9 @@ import json
 import re
 import random
 import secrets
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_bcrypt import Bcrypt
 from sqlalchemy import text
@@ -35,6 +38,104 @@ db.init_app(app)
 bcrypt = Bcrypt(app)
 
 
+def send_welcome_email(user_email, user_name):
+    """Send a welcome/orientation email to a newly registered user.
+    Fails silently — never blocks registration."""
+    mail_user = os.environ.get('MAIL_USERNAME')
+    mail_pass = os.environ.get('MAIL_PASSWORD')
+    if not mail_user or not mail_pass:
+        return
+
+    app_url = os.environ.get('APP_URL', 'https://baseline-health.up.railway.app')
+
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = 'Welcome to Baseline'
+    msg['From'] = f'Baseline <{mail_user}>'
+    msg['To'] = user_email
+
+    plain = f"""Welcome to Baseline, {user_name}!
+
+You're in. Here's a quick orientation to help you get started.
+
+WHAT TO EXPECT
+You just completed onboarding — you've set up your symptoms and baseline scores. Now you're ready to start tracking.
+
+TWO WAYS TO LOG
+1. Daily Check-in (if you enabled AI logging): Describe your day in plain language and Baseline logs the details automatically.
+2. Manual logging: Use the Episodes and Protocols pages to log structured data directly.
+
+Both create the same records — use whichever feels easier.
+
+YOUR FIRST STEPS
+- Log your first episode or try the Daily Check-in
+- Add any medications or supplements you're currently taking as protocols
+- When you're ready, start your first experiment to test a protocol change
+
+NEED HELP?
+Visit the Help page for a full guide: {app_url}/help
+
+Questions or feedback? Reply to this email or reach out at daniels.missy@gmail.com.
+
+— The Baseline Team
+"""
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0; padding:0; background:#0f0f13; font-family:'Inter',system-ui,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#0f0f13; padding:32px 16px;">
+<tr><td align="center">
+<table width="480" cellpadding="0" cellspacing="0" style="background:#1a1a24; border:1px solid #2e2e3e; border-radius:10px; padding:36px 32px;">
+<tr><td>
+  <div style="font-size:20px; font-weight:700; color:#e8e6f0; margin-bottom:24px;">
+    <span style="color:#a07de0;">B</span>aseline
+  </div>
+  <h1 style="font-size:22px; font-weight:700; color:#e8e6f0; margin:0 0 8px;">Welcome, {user_name}!</h1>
+  <p style="font-size:14px; color:#888899; line-height:1.7; margin:0 0 20px;">You're in. Here's a quick orientation to help you get started.</p>
+
+  <h2 style="font-size:15px; font-weight:600; color:#e8e6f0; margin:0 0 8px;">What to expect</h2>
+  <p style="font-size:14px; color:#888899; line-height:1.7; margin:0 0 20px;">You've set up your symptoms and baseline scores during onboarding. Now you're ready to start tracking and building your evidence base.</p>
+
+  <h2 style="font-size:15px; font-weight:600; color:#e8e6f0; margin:0 0 8px;">Two ways to log</h2>
+  <p style="font-size:14px; color:#888899; line-height:1.7; margin:0 0 6px;"><strong style="color:#e8e6f0;">Daily Check-in</strong> — if you enabled AI logging, just describe your day in plain language and Baseline logs the details automatically.</p>
+  <p style="font-size:14px; color:#888899; line-height:1.7; margin:0 0 20px;"><strong style="color:#e8e6f0;">Manual logging</strong> — use the Episodes and Protocols pages to enter structured data directly.</p>
+
+  <h2 style="font-size:15px; font-weight:600; color:#e8e6f0; margin:0 0 8px;">Your first steps</h2>
+  <ul style="font-size:14px; color:#888899; line-height:1.7; margin:0 0 24px; padding-left:20px;">
+    <li style="margin-bottom:4px;">Log your first episode or try the Daily Check-in</li>
+    <li style="margin-bottom:4px;">Add any current medications or supplements as protocols</li>
+    <li>When you're ready, start your first experiment to test a protocol change</li>
+  </ul>
+
+  <div style="text-align:center; margin:24px 0;">
+    <a href="{app_url}" style="display:inline-block; background:#7c5cbf; color:#fff; text-decoration:none; padding:12px 28px; border-radius:8px; font-size:14px; font-weight:600;">Open Baseline</a>
+  </div>
+
+  <h2 style="font-size:15px; font-weight:600; color:#e8e6f0; margin:0 0 8px;">Need help?</h2>
+  <p style="font-size:14px; color:#888899; line-height:1.7; margin:0 0 20px;">Visit the <a href="{app_url}/help" style="color:#a07de0; text-decoration:none;">Help page</a> for a full guide including a check-in tutorial. Questions or feedback? Reply to this email or reach out at <a href="mailto:daniels.missy@gmail.com" style="color:#a07de0; text-decoration:none;">daniels.missy@gmail.com</a>.</p>
+
+  <div style="border-top:1px solid #2e2e3e; padding-top:16px; margin-top:8px; font-size:12px; color:#888899;">
+    You're receiving this because you created a Baseline account. <a href="{app_url}/privacy" style="color:#a07de0; text-decoration:none;">Privacy Policy</a>
+  </div>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>"""
+
+    msg.attach(MIMEText(plain, 'plain'))
+    msg.attach(MIMEText(html, 'html'))
+
+    try:
+        with smtplib.SMTP('smtp.gmail.com', 587, timeout=10) as server:
+            server.starttls()
+            server.login(mail_user, mail_pass)
+            server.sendmail(mail_user, user_email, msg.as_string())
+    except Exception:
+        pass  # Never block registration
+
+
 def run_migrations():
     """Add columns that may not exist in older DB files."""
     from sqlalchemy import inspect as sa_inspect
@@ -52,6 +153,7 @@ def run_migrations():
         ('users',                 'password_hash',             'ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)'),
         ('users',                 'invite_code_used',          'ALTER TABLE users ADD COLUMN invite_code_used VARCHAR(100)'),
         ('users',                 'is_active',                 'ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1'),
+        ('users',                 'has_seen_tour',             'ALTER TABLE users ADD COLUMN has_seen_tour BOOLEAN NOT NULL DEFAULT 0'),
     ]
 
     # Widen symptoms.name from varchar(100) to varchar(200) on PostgreSQL
@@ -272,6 +374,8 @@ def register():
         invite.used_by_user_id = user.id
         db.session.commit()
 
+        send_welcome_email(user.email, user.name)
+
         session.clear()
         session['user_id'] = user.id
         return redirect(url_for('onboarding_step1'))
@@ -359,6 +463,24 @@ def onboarding_step3():
 @app.route('/help')
 def help_page():
     return render_template('help.html')
+
+
+@app.route('/tour/complete', methods=['POST'])
+def tour_complete():
+    user = get_user()
+    if user:
+        user.has_seen_tour = True
+        db.session.commit()
+    return {'ok': True}
+
+
+@app.route('/tour/restart')
+def tour_restart():
+    user = get_user()
+    if user:
+        user.has_seen_tour = False
+        db.session.commit()
+    return redirect(url_for('index'))
 
 
 @app.route('/privacy')
@@ -1121,6 +1243,8 @@ def index():
         if e.ready_to_assess
     ]
 
+    show_tour = not user.has_seen_tour
+
     return render_template('index.html',
                            protocols=active_preventatives,
                            symptom_stats=symptom_stats,
@@ -1132,7 +1256,8 @@ def index():
                            rescue_stats=rescue_stats,
                            has_chart_data=has_chart_data,
                            total_episode_count=total_episode_count,
-                           has_symptom_data=has_symptom_data)
+                           has_symptom_data=has_symptom_data,
+                           show_tour=show_tour)
 
 
 # ---------------------------------------------------------------------------
@@ -1506,6 +1631,7 @@ def dev_reset():
         user.onboarding_complete = False
         user.ai_logging_enabled = False
         user.baseline_episodes_per_month = None
+        user.has_seen_tour = False
         db.session.commit()
         flash('Dev reset complete. Onboarding restarted.', 'success')
         return redirect(url_for('onboarding_step1'))

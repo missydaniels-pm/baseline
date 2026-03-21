@@ -18,6 +18,7 @@ class User(db.Model):
     baseline_episodes_per_month = db.Column(db.Integer, nullable=True)
 
     ai_logging_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    has_seen_tour = db.Column(db.Boolean, default=False, nullable=False)
 
     episodes = db.relationship('Episode', backref='user', lazy=True, cascade='all, delete-orphan')
     protocols = db.relationship('Protocol', backref='user', lazy=True, cascade='all, delete-orphan')

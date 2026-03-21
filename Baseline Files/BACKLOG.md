@@ -1,6 +1,6 @@
 # Baseline — Product Backlog
 
-Last updated: March 18, 2026 | 5 active users
+Last updated: March 21, 2026 | 5 active users
 
 **Priority:** P0 = fix now, P1 = next sprint, P2 = soon, P3 = later
 **Size:** S = small (<2hrs), M = medium (half day), L = large (1+ days)
@@ -34,8 +34,9 @@ High-value improvements targeting user satisfaction, retention, and portfolio re
 |---|---|---|---|---|
 | Episode Logging | Allow multiple rescue options per episode | Mackenzie | M | Current model allows only one rescue per episode |
 | Protocol Tracking | Manual compliance logging without AI check-in | Mackenzie | S | For users who opted out of AI |
-| Help & Onboarding | Full Help page with Dashboard explanation + check-in tutorial | Internal | M | Mackenzie requested check-in tutorial specifically |
-| Help & Onboarding | Welcome email for new users | Internal | S | Required before LinkedIn launch — new users need orientation without Missy explaining it manually |
+| Help & Onboarding | Full Help page with Dashboard explanation + check-in tutorial | Internal | M | ✅ Complete 3/21/26 — 8 subsections: how it works, getting to check-in, what to include, example messages, auto-logging, corrections, check-in vs manual, privacy |
+| Help & Onboarding | Welcome email for new users | Internal | S | ✅ Complete 3/21/26 — HTML+plain text via smtplib, Gmail App Password, fails silently if no credentials |
+| Help & Onboarding | Welcome modal (guided walkthrough) for new users | Internal | S | ✅ Complete 3/21/26 — 5-step tour on first dashboard visit, replayable from Help page |
 | UX | Dashboard empty states for new users | Internal | M | ✅ Complete 3/18/26 — per-section empty states with SVG placeholders and action links |
 | UX | Experiments page empty state with assessment preview | Internal | S | ✅ Complete 3/18/26 — full two-column assessment preview using real assess-*/decision-* classes at 50% opacity |
 | Dashboard | Chart time range selector (days / weeks / months) | Mackenzie/Missy | M | Users should control the time window |
@@ -114,6 +115,12 @@ Longer-term vision. Architecture decision point: React rebuild is the gateway to
 
 ### Data Deletion
 **March 2026:** Account deletion implemented (/settings/delete-account). Satisfies Washington MHMD right to delete. Requires typing "DELETE" to confirm. Deletes all data in FK-safe order: SymptomScores → CheckIns → Episodes → ProtocolCompliance → ProtocolEvents → Experiments → Protocols → Symptoms → InviteCode reference → User.
+
+### Welcome Email — smtplib over Flask-Mail
+**March 2026:** Chose Python stdlib `smtplib` over Flask-Mail for welcome emails. No new dependency. Gmail App Password for auth, `smtp.gmail.com:587` with TLS, 10-second timeout. Fails silently if `MAIL_USERNAME`/`MAIL_PASSWORD` not set (local dev). HTML email with plain text fallback, dark theme matching app. Sent on registration after `db.session.commit()`.
+
+### Welcome Modal — Guided Tour
+**March 2026:** Added 5-step guided walkthrough modal on first dashboard visit after onboarding. `has_seen_tour` boolean on User model. Auto-marks as seen via JS fetch to `/tour/complete`. Replayable from Help page via `/tour/restart`. No external dependencies — pure CSS/JS modal.
 
 ### Pre-LinkedIn Launch Requirements
 **March 2026:** Identified minimum viable requirements before posting on LinkedIn to 1000+ connections: privacy policy in app (✅ complete), in-app help/tutorial, welcome email, Baseline email address (✅ baselinehealthapp@gmail.com). Invite-only registration maintained during this phase. Self-serve access request deferred until support infrastructure is ready.

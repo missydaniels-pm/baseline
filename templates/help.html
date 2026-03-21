@@ -40,19 +40,77 @@
   <h3 class="help-subheading">Enable AI logging</h3>
   <p>Baseline can use AI to make logging as easy as sending a text message. Instead of filling out forms, you describe your day in plain language and Baseline figures out what to record.</p>
   <p>This is optional. If you prefer the structured forms, skip it and turn it on later in <a href="{{ url_for('settings') }}">Settings</a>. If you enable it, your messages are processed by Anthropic's API.</p>
+
+  <h3 class="help-subheading">Take the tour</h3>
+  <p>Want a quick walkthrough of how Baseline works? <a href="{{ url_for('tour_restart') }}">Take the tour again</a> to see the welcome guide that appears when you first log in.</p>
 </section>
 
 <hr class="divider">
 
 <section class="help-section" id="daily-checkin">
   <h2 class="help-heading">The Daily Check-in</h2>
-  <p>If you've enabled AI logging, the <a href="{{ url_for('checkin') }}">Daily Check-in</a> is your main way to log how you're doing. Just describe your day the way you'd tell a friend:</p>
+
+  <h3 class="help-subheading">How it works</h3>
+  <p>If you've enabled AI logging, the <a href="{{ url_for('checkin') }}">Daily Check-in</a> is your main way to log how you're doing. Instead of filling out forms, you type naturally — describe your day the way you'd tell a friend. Baseline's AI reads your message, extracts the relevant health data, and creates the right records automatically. It then confirms exactly what it logged so you can verify or correct anything.</p>
+
+  <h3 class="help-subheading">Getting to your check-in</h3>
+  <p>Tap <strong>Check-in</strong> in the sidebar to open the check-in page. If you've chatted before, you'll see your recent conversation history. If it's your first time, you'll see an empty chat ready for your first message.</p>
+
+  <h3 class="help-subheading">What to include</h3>
+  <p>You don't need to follow a specific format. Just mention whatever feels relevant:</p>
   <ul class="help-list">
-    <li>"Pretty rough today, fatigue around a 7, took my rescue option around noon, felt better by 3"</li>
-    <li>"Good day, did all my protocols, no symptoms worth noting"</li>
-    <li>"Forgot my magnesium this morning, slight headache in the afternoon, managed to work through it"</li>
+    <li>Which symptoms you're experiencing and how severe they are (a rough number out of 10 helps)</li>
+    <li>Any medications or protocols you took — or missed</li>
+    <li>When things started and how long they lasted</li>
+    <li>How much it affected your ability to function</li>
+    <li>Whether you used a rescue option and if it helped</li>
+    <li>Any context — triggers, sleep, stress, weather, whatever seems connected</li>
   </ul>
-  <p>Baseline will extract what it needs and confirm what it logged. If it gets something wrong, just correct it in the chat.</p>
+  <p>You don't need all of this every time. A quick "good day, nothing to report" is a perfectly valid check-in.</p>
+
+  <h3 class="help-subheading">Example messages</h3>
+  <p>Here are some examples of what you might say:</p>
+  <ul class="help-list">
+    <li>"Pretty rough today, headache around a 7, fatigue at 5, took my Sumatriptan around noon and felt better by 3pm"</li>
+    <li>"Good day, did all my protocols, no symptoms worth noting"</li>
+    <li>"Forgot my magnesium this morning, slight headache in the afternoon around a 3, managed to work through it"</li>
+    <li>"Woke up at a 6, been building all morning, now at an 8. Can't work. Haven't taken anything yet"</li>
+    <li>"Actually yesterday's headache was more like a 5, not a 7 — I think I overestimated"</li>
+    <li>"Took my riboflavin and CoQ10 today. No episodes. Energy was decent, maybe a 4"</li>
+    <li>"Bad flare since 2am, nausea at 8, completely out of commission. Used Zofran and ice pack, slightly better after 2 hours"</li>
+    <li>"Same as yesterday basically — low-grade headache around a 3, functioning fine"</li>
+  </ul>
+
+  <h3 class="help-subheading">What gets logged automatically</h3>
+  <p>Based on your message, Baseline will create the appropriate records:</p>
+  <ul class="help-list">
+    <li><strong>Episodes</strong> — if you describe a significant symptom event, an episode is created with onset time, duration, and functional impairment</li>
+    <li><strong>Symptom scores</strong> — severity ratings are attached to the episode for each symptom you mention</li>
+    <li><strong>Protocol compliance</strong> — if you mention taking or missing a medication/supplement, a compliance record is logged for that protocol</li>
+    <li><strong>Rescue use</strong> — if you used a rescue option, it's recorded on the episode along with effectiveness and time to relief</li>
+  </ul>
+  <p>After processing, the AI confirms exactly what it logged. Review the confirmation — if everything looks right, you're done.</p>
+
+  <h3 class="help-subheading">Correcting mistakes</h3>
+  <p>If the AI gets something wrong, just say so in your next message. It will update the record:</p>
+  <ul class="help-list">
+    <li>"Actually that headache was a 5, not a 7"</li>
+    <li>"I did take my magnesium today, I just forgot to mention it"</li>
+    <li>"That episode started yesterday evening, not today"</li>
+  </ul>
+
+  <h3 class="help-subheading">Check-in vs. manual logging</h3>
+  <p>The check-in and the manual episode form both create the same data — episodes, symptom scores, and compliance records. Use whichever feels easier in the moment:</p>
+  <ul class="help-list">
+    <li><strong>Check-in</strong> is fastest for quick daily updates and when you want to describe things in your own words</li>
+    <li><strong>Manual logging</strong> (via <a href="{{ url_for('new_episode') }}">Log Episode</a>) is useful when you want precise control over every field, or if you haven't enabled AI logging</li>
+  </ul>
+  <p>You can mix and match — there's no wrong approach.</p>
+
+  <h3 class="help-subheading">Privacy and AI logging</h3>
+  <p>When you use the Daily Check-in, your messages are sent to Anthropic's API for processing. Anthropic does not use your data to train models. You can read their full policy at <a href="https://www.anthropic.com/privacy" target="_blank" rel="noopener">anthropic.com/privacy</a>.</p>
+  <p>Baseline's own privacy policy is available at <a href="{{ url_for('privacy') }}">Privacy Policy</a>.</p>
+  <p>AI logging is entirely optional. You can enable or disable it at any time in <a href="{{ url_for('settings') }}">Settings</a>. If you turn it off, you can still log everything manually through the episode and protocol forms.</p>
 </section>
 
 <hr class="divider">
