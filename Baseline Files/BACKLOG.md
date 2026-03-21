@@ -32,8 +32,10 @@ High-value improvements targeting user satisfaction, retention, and portfolio re
 
 | Area | Item | Source | Size | Notes |
 |---|---|---|---|---|
-| Episode Logging | Allow multiple rescue options per episode | Mackenzie | M | Current model allows only one rescue per episode |
+| UX | App-wide naming overhaul — rename "Symptoms" to "What I Track", rename "Rescue Medications" to "Interventions", update Protocols description from medication-centric copy to "Ongoing practices, medications, supplements, and routines that support your health". Impacts: nav labels, page headers, onboarding flow, help page, welcome modal, empty states, dashboard headers, CLAUDE.md, README, backlog. | Kiersten/Missy | M | BUILD FIRST — all subsequent features should use correct naming. Building on old naming creates throwaway work. |
+| Episode Logging | Allow multiple rescue options per episode | Mackenzie | M | Build before React rebuild — touches data model, better to get right in monolith. |
 | Protocol Tracking | Manual compliance logging without AI check-in | Mackenzie | S | For users who opted out of AI |
+| Dashboard | Chart time range selector (days / weeks / months) | Mackenzie/Missy | M | Build before React rebuild — understand the requirement fully before rebuilding frontend. |
 | Help & Onboarding | Full Help page with Dashboard explanation + check-in tutorial | Internal | M | ✅ Complete 3/21/26 |
 | Help & Onboarding | Welcome email for new users | Internal | S | ✅ Complete 3/21/26 — uses Gmail SMTP, requires MAIL_USERNAME and MAIL_PASSWORD env vars in Railway |
 | Help & Onboarding | Welcome tour modal | Internal | S | ✅ Complete 3/21/26 — has_seen_tour boolean on User model, 5-step slideshow on first login |
@@ -42,11 +44,21 @@ High-value improvements targeting user satisfaction, retention, and portfolio re
 | UX | Remove invite code reference from help page | Internal | S | ✅ Complete 3/21/26 — registration flow may change |
 | UX | Dashboard empty states for new users | Internal | M | ✅ Complete 3/18/26 — per-section empty states with SVG placeholders and action links |
 | UX | Experiments page empty state with assessment preview | Internal | S | ✅ Complete 3/18/26 — full two-column assessment preview using real assess-*/decision-* classes at 50% opacity |
-| UX | App-wide naming overhaul — rename "Symptoms" to "What I Track", rename "Rescue Medications" to "Interventions", update Protocols description from medication-centric copy to "Ongoing practices, medications, supplements, and routines that support your health". Impacts: nav labels, page headers, onboarding flow, help page, welcome modal, empty states, dashboard headers, CLAUDE.md, README, backlog. | Kiersten/Missy | M | Do as dedicated session — touches every part of the app. Broader market positioning goal: inclusive of chronic illness AND health optimization users (Huberman audience, perimenopausal women, biohackers). |
-| Dashboard | Chart time range selector (days / weeks / months) | Mackenzie/Missy | M | Users should control the time window |
-| Reporting | Neurologist insurance report — auto-generated PDF matching standard migraine calendar form. Day, category (M/H/P), pain score 0-10, medication codes, monthly totals. Required for insurance approval of triptans/gepants. Baseline already captures all needed data. | Missy | L | Reference form photographed 3/4/26 |
-| Analytics | Internal event logging to PostgreSQL (privacy-safe instrumentation) | Internal | M | No third-party tools until privacy policy live + MHMD review |
+| Analytics | Internal event logging to PostgreSQL (privacy-safe instrumentation) | Internal | M | Consider building into React architecture from the start rather than retrofitting monolith. |
 | Portfolio | Prepare repo for public GitHub launch — clean dev routes, write README | Internal | M | ✅ Complete — dev routes cleaned 3/5/26, README written, repo public 3/4/26 |
+| Reporting | Neurologist insurance report — auto-generated PDF matching standard migraine calendar form. Day, category (M/H/P), pain score 0-10, medication codes, monthly totals. Required for insurance approval of triptans/gepants. Baseline already captures all needed data. | Missy | L | DEFER TO POST-REACT REBUILD — backend logic transfers cleanly, but PDF generation layer will be cleaner in API-first architecture. Spec the backend now, build properly during React rebuild. |
+
+---
+
+## Deferred to React Rebuild
+
+Items that would create throwaway frontend work if built in the monolith. Build during or after React/React Native rebuild.
+
+| Area | Item | Source | Size | Notes |
+|---|---|---|---|---|
+| UX | Configurable check-in reminders | Internal | M | Defer — push notification infrastructure is cleaner in React Native with proper notification APIs |
+| UX | Light mode | Internal | M | Defer — easier to implement properly in React with CSS variables than retrofit Jinja2 templates |
+| Episode Logging | Photo logging | Mackenzie | L | Defer — React Native territory. Do not build in monolith. |
 
 ---
 
@@ -57,10 +69,7 @@ Important but not urgent. Build once P0 and P1 are clear.
 | Area | Item | Source | Size | Notes |
 |---|---|---|---|---|
 | Dashboard | Include current partial week in trend charts | Lizz | S | ✅ Resolved — current week now shows with asterisk label |
-| UX | Configurable check-in reminders — push notification or in-app prompt at user-set time(s) | Internal | M | Retention driver. PWA supports web push notifications without native app. |
-| UX | Light mode — user-selectable theme toggle stored in user preferences | Internal | M | Currently dark-only. Accessibility and user preference. |
 | AI Features | Trigger analysis: AI surfaces patterns from episode notes on dashboard | Mackenzie | L | Episode notes already capture trigger text |
-| Episode Logging | Photo logging — low-friction capture when too unwell to type. Snap photo of possible trigger as placeholder to review later. Future: AI analysis to suggest trigger. | Mackenzie | L | Must be minimum taps. Fastest possible interaction. |
 | Analytics | PostHog self-hosted session recording | Internal | M | After privacy policy live and MHMD review complete |
 | Infrastructure | Staging environment on Railway | Internal | M | Separate branch, deploy before main |
 | Infrastructure | GitHub Actions: automated doc updates on deploy | Internal | M | Phase 1 of automated documentation pipeline |
@@ -128,6 +137,9 @@ Longer-term vision. Architecture decision point: React rebuild is the gateway to
 
 ### Welcome Modal — Guided Tour
 **March 2026:** Added 5-step guided walkthrough modal on first dashboard visit after onboarding. `has_seen_tour` boolean on User model. Auto-marks as seen via JS fetch to `/tour/complete`. Replayable from Help page via `/tour/restart`. No external dependencies — pure CSS/JS modal.
+
+### Build Sequencing — Monolith vs React Rebuild
+**March 2026:** Reordered P1 build sequence based on throwaway work risk and data model stability. Key decisions: (1) Naming overhaul must happen first — every feature built on old naming creates rework. (2) Data model changes (multiple rescues, compliance logging) should happen in monolith before React rebuild to avoid mid-migration complexity. (3) Neurologist PDF deferred to post-React rebuild — PDF generation layer will be significantly cleaner in API-first architecture. (4) Reminders, light mode, and photo logging deferred to React/React Native — building these in the monolith creates throwaway frontend work.
 
 ### Naming & Market Positioning
 **March 2026:** Deliberately positioning Baseline beyond medication management to include health optimization protocols (morning routines, cold plunge, sleep hygiene, dietary approaches). Influenced by Huberman Protocol cultural momentum and user feedback from Kiersten (perimenopausal tracking doesn't fit "symptoms" or "preventative medication" framing). Final naming decisions: Symptoms → "What I Track", Rescue Medications → "Interventions", Protocols description updated to be lifestyle-inclusive. "Episodes" retained — works for both communities.
