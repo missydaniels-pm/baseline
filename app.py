@@ -143,17 +143,17 @@ def run_migrations():
     inspector = sa_inspect(db.engine)
 
     migrations = [
-        ('protocols',             'available',                 'ALTER TABLE protocols ADD COLUMN available BOOLEAN NOT NULL DEFAULT 1'),
-        ('users',                 'onboarding_complete',       'ALTER TABLE users ADD COLUMN onboarding_complete BOOLEAN NOT NULL DEFAULT 0'),
+        ('protocols',             'available',                 'ALTER TABLE protocols ADD COLUMN available BOOLEAN NOT NULL DEFAULT TRUE'),
+        ('users',                 'onboarding_complete',       'ALTER TABLE users ADD COLUMN onboarding_complete BOOLEAN NOT NULL DEFAULT FALSE'),
         ('users',                 'baseline_episodes_per_month','ALTER TABLE users ADD COLUMN baseline_episodes_per_month INTEGER'),
-        ('users',                 'ai_logging_enabled',        'ALTER TABLE users ADD COLUMN ai_logging_enabled BOOLEAN NOT NULL DEFAULT 0'),
-        ('protocol_compliance',   'took',                      'ALTER TABLE protocol_compliance ADD COLUMN took BOOLEAN NOT NULL DEFAULT 1'),
+        ('users',                 'ai_logging_enabled',        'ALTER TABLE users ADD COLUMN ai_logging_enabled BOOLEAN NOT NULL DEFAULT FALSE'),
+        ('protocol_compliance',   'took',                      'ALTER TABLE protocol_compliance ADD COLUMN took BOOLEAN NOT NULL DEFAULT TRUE'),
         ('protocol_compliance',   'notes',                     'ALTER TABLE protocol_compliance ADD COLUMN notes TEXT'),
         ('users',                 'email',                     'ALTER TABLE users ADD COLUMN email VARCHAR(255)'),
         ('users',                 'password_hash',             'ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)'),
         ('users',                 'invite_code_used',          'ALTER TABLE users ADD COLUMN invite_code_used VARCHAR(100)'),
-        ('users',                 'is_active',                 'ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1'),
-        ('users',                 'has_seen_tour',             'ALTER TABLE users ADD COLUMN has_seen_tour BOOLEAN NOT NULL DEFAULT 0'),
+        ('users',                 'is_active',                 'ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE'),
+        ('users',                 'has_seen_tour',             'ALTER TABLE users ADD COLUMN has_seen_tour BOOLEAN NOT NULL DEFAULT FALSE'),
     ]
 
     # Widen symptoms.name from varchar(100) to varchar(200) on PostgreSQL

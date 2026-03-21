@@ -191,6 +191,7 @@ All dev routes are grouped in a clearly marked section at the bottom of `app.py`
 - Local: SQLite at default path
 - `postgres://` URLs are rewritten to `postgresql://` for SQLAlchemy compatibility
 - `db.create_all()` runs outside `__name__ == '__main__'` block so gunicorn triggers table creation on first deploy
+- Boolean column migrations must use `DEFAULT TRUE` / `DEFAULT FALSE` (not `0`/`1`) for PostgreSQL compatibility
 
 ---
 
