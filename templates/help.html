@@ -148,7 +148,9 @@
   <p>This is the core of Baseline. An experiment lets you test one protocol change in a structured way.</p>
 
   <h3 class="help-subheading">Starting an experiment</h3>
-  <p>When you add a new preventative protocol, Baseline will ask if you want to track it as an experiment. You can also start one manually from the <a href="{{ url_for('experiments') }}">Experiments</a> section. For each experiment you define which protocol you're testing, your hypothesis, and how long you'll give it before assessing (default is 3 weeks).</p>
+  <p>Go to the <a href="{{ url_for('experiments') }}">Experiments</a> section and tap <strong>Start Experiment</strong>. Pick the protocol you want to test from the dropdown — or select <strong>+ Add new protocol</strong> to create one right there without leaving the form. When you pick or create a protocol, Baseline suggests a name for the experiment based on the protocol name, but you can edit it to whatever you like.</p>
+  <p>You can also start an experiment the other way around: when you add a new preventative protocol from the <a href="{{ url_for('protocols') }}">Protocols</a> section, Baseline will ask if you want to track it as an experiment.</p>
+  <p>For each experiment you define which protocol you're testing, your hypothesis, and how long you'll give it before assessing (default is 3 weeks).</p>
 
   <h3 class="help-subheading">During an experiment</h3>
   <p>Keep logging as normal. The Experiments page shows your progress and how many weeks remain.</p>
