@@ -23,6 +23,7 @@ Privacy/legal foundation items and active bugs. Complete before adding users bey
 | Data Integrity | Prevent future episode dates (frontend + backend) | Lizz | S | ✅ Complete |
 | UX | Grey out sidebar nav during onboarding with tooltip | Lizz | S | ✅ Complete |
 | Experiments | Lower default experiment duration to 3 weeks | Mackenzie | S | ✅ Complete |
+| Experiments | Fix protocol/experiment workflow — allow inline protocol creation from experiment form, auto-suggest experiment name from protocol name | Missy | S | ✅ Complete 4/6/26 |
 
 ---
 
