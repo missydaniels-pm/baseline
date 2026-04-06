@@ -1,6 +1,6 @@
 # Baseline — Technical README
 
-Last updated: March 21, 2026
+Last updated: April 6, 2026
 
 ---
 
@@ -238,6 +238,14 @@ The dashboard renders informative empty states for new users who have no data ye
 | Rescue Effectiveness | No episodes with rescue data | Log an episode → |
 
 Empty states include greyed-out SVG chart placeholders, encouraging copy, and action links to the relevant section. Template variables `total_episode_count` and `has_symptom_data` are passed from the `index()` route to support per-section conditional rendering.
+
+### Experiment Creation Flow
+
+Two entry points for creating experiments:
+
+1. **Experiment-first** (`/experiments/new`): User starts from Experiments page. Protocol dropdown includes all active preventatives plus "+ Add new protocol" which reveals inline fields (name, dose/frequency). Selecting or creating a protocol auto-suggests the experiment name as `<protocol name> trial` (editable). If an active experiment exists, a warning modal fires on submit showing the current experiment name and weeks elapsed — user can go back or continue.
+
+2. **Protocol-first** (`/protocols/new` → `/experiments/offer/<id>`): After adding an active protocol, user is redirected to an offer page asking if they want to track it as an experiment. Clicking "Yes" redirects to `/experiments/new?protocol_id=<id>` with the protocol pre-selected.
 
 ### Experiments Page Empty State
 
