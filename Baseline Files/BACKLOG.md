@@ -1,6 +1,6 @@
 # Baseline — Product Backlog
 
-Last updated: March 21, 2026 | 5 active users
+Last updated: April 6, 2026 | 5 active users
 
 **Priority:** P0 = fix now, P1 = next sprint, P2 = soon, P3 = later
 **Size:** S = small (<2hrs), M = medium (half day), L = large (1+ days)
@@ -23,7 +23,7 @@ Privacy/legal foundation items and active bugs. Complete before adding users bey
 | Data Integrity | Prevent future episode dates (frontend + backend) | Lizz | S | ✅ Complete |
 | UX | Grey out sidebar nav during onboarding with tooltip | Lizz | S | ✅ Complete |
 | Experiments | Lower default experiment duration to 3 weeks | Mackenzie | S | ✅ Complete |
-| Experiments | Fix protocol/experiment workflow — allow inline protocol creation from experiment form, auto-suggest experiment name from protocol name | Missy | S | ✅ Complete 4/6/26 |
+| Experiments | Fix protocol/experiment workflow — inline protocol creation from experiment form, auto-suggest experiment name, active experiment warning modal before submit | Missy | S | ✅ Complete 4/6/26 |
 
 ---
 
@@ -144,6 +144,9 @@ Longer-term vision. Architecture decision point: React rebuild is the gateway to
 
 ### Naming & Market Positioning
 **March 2026:** Deliberately positioning Baseline beyond medication management to include health optimization protocols (morning routines, cold plunge, sleep hygiene, dietary approaches). Influenced by Huberman Protocol cultural momentum and user feedback from Kiersten (perimenopausal tracking doesn't fit "symptoms" or "preventative medication" framing). Final naming decisions: Symptoms → "What I Track", Rescue Medications → "Interventions", Protocols description updated to be lifestyle-inclusive. "Episodes" retained — works for both communities.
+
+### Experiment/Protocol Workflow Redesign
+**April 2026:** Resolved circular dependency in protocol/experiment creation. Previously, starting an experiment required an existing protocol, but creating a protocol immediately redirected to experiment setup — confusing flow. Fix: (1) Added "+ Add new protocol" option directly in the experiment form's protocol dropdown, with inline fields for protocol name and dose/frequency. (2) Experiment name auto-suggests from protocol name (e.g. "Magnesium 400mg trial") but remains editable. (3) Added active experiment warning modal on the experiment form — fires before submit, matching the existing pattern on the protocol form. Help page updated to lead with experiment-first flow.
 
 ### Pre-LinkedIn Launch Requirements
 **March 2026:** Identified minimum viable requirements before posting on LinkedIn to 1000+ connections: privacy policy in app (✅ complete), in-app help/tutorial, welcome email, Baseline email address (✅ baselinehealthapp@gmail.com). Invite-only registration maintained during this phase. Self-serve access request deferred until support infrastructure is ready.
