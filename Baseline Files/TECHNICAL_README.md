@@ -149,7 +149,7 @@ claude --resume                         # resume previous session
 | `/episodes` | GET, POST | Episode log |
 | `/symptoms` | GET, POST | Symptom management |
 | `/protocols` | GET, POST | Protocol management |
-| `/experiments` | GET, POST | Experiment tracking |
+| `/experiments` | GET, POST | Experiment tracking (supports inline protocol creation) |
 | `/assess_experiment/<id>` | GET, POST | Experiment assessment |
 | `/settings` | GET, POST | User settings |
 | `/settings/change-password` | POST | Change password |

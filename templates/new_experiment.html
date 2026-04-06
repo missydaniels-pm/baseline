@@ -20,12 +20,28 @@
 
     <div class="form-group">
       <label for="protocol_id">Protocol being tested</label>
-      <select id="protocol_id" name="protocol_id">
+      <select id="protocol_id" name="protocol_id" onchange="handleProtocolChange()">
         <option value="">— select a protocol —</option>
         {% for p in preventatives %}
-        <option value="{{ p.id }}" {% if p.id == prefill_protocol_id %}selected{% endif %}>{{ p.name }}</option>
+        <option value="{{ p.id }}" {% if p.id == prefill_protocol_id %}selected{% endif %} data-name="{{ p.name }}">{{ p.name }}</option>
         {% endfor %}
+        <option value="__new__">+ Add new protocol</option>
       </select>
+    </div>
+
+    <div id="new-protocol-fields" style="display:none; border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:16px;">
+      <div class="form-group">
+        <label for="new_protocol_name">Protocol name</label>
+        <input type="text" id="new_protocol_name" name="new_protocol_name"
+               placeholder="e.g. Magnesium 400mg" data-charlimit="200"
+               oninput="suggestExperimentName()">
+        <div class="char-counter"><span id="new_protocol_name_count">0</span>/200</div>
+      </div>
+      <div class="form-group">
+        <label for="new_protocol_dose">Dose / frequency <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+        <input type="text" id="new_protocol_dose" name="new_protocol_dose"
+               placeholder="e.g. 400mg daily">
+      </div>
     </div>
 
     <div class="form-group">
@@ -65,6 +81,49 @@
 </div>
 
 <script>
+  var nameManuallyEdited = false;
+  var nameSuggesting = false;
+  var nameInput = document.getElementById('name');
+  nameInput.addEventListener('input', function() {
+    if (!nameSuggesting) nameManuallyEdited = true;
+  });
+
+  function handleProtocolChange() {
+    var sel = document.getElementById('protocol_id');
+    var newFields = document.getElementById('new-protocol-fields');
+    var newNameInput = document.getElementById('new_protocol_name');
+    if (sel.value === '__new__') {
+      newFields.style.display = 'block';
+      newNameInput.required = true;
+      newNameInput.focus();
+    } else {
+      newFields.style.display = 'none';
+      newNameInput.required = false;
+      // Suggest protocol name as experiment name when selecting existing protocol
+      if (sel.value && !nameManuallyEdited) {
+        var opt = sel.options[sel.selectedIndex];
+        var pName = opt.getAttribute('data-name');
+        if (pName) {
+          nameSuggesting = true;
+          nameInput.value = pName + ' trial';
+          nameInput.dispatchEvent(new Event('input', {bubbles: true}));
+          nameSuggesting = false;
+        }
+      }
+    }
+  }
+
+  function suggestExperimentName() {
+    if (nameManuallyEdited) return;
+    var protoName = document.getElementById('new_protocol_name').value.trim();
+    if (protoName) {
+      nameSuggesting = true;
+      nameInput.value = protoName + ' trial';
+      nameInput.dispatchEvent(new Event('input', {bubbles: true}));
+      nameSuggesting = false;
+    }
+  }
+
   function updateAssessDate() {
     var startVal = document.getElementById('start_date').value;
     var weeks = parseInt(document.getElementById('stabilization_weeks').value) || 3;
@@ -83,5 +142,10 @@
   document.getElementById('start_date').addEventListener('change', updateAssessDate);
   document.getElementById('stabilization_weeks').addEventListener('input', updateAssessDate);
   updateAssessDate();
+
+  // If protocol is prefilled, suggest name on load
+  {% if prefill_protocol_id %}
+  handleProtocolChange();
+  {% endif %}
 </script>
 {% endblock %}
