@@ -914,6 +914,7 @@ def new_experiment():
     user = get_user()
     preventatives = Protocol.query.filter_by(user_id=user.id, type='preventative', status='active').all()
     prefill_protocol_id = request.args.get('protocol_id', type=int)
+    active_experiment = get_active_experiment(user.id)
 
     if request.method == 'POST':
         exp_name = request.form.get('name', '').strip()
@@ -921,11 +922,13 @@ def new_experiment():
         if exp_name and len(exp_name) > 200:
             flash('Experiment name must be 200 characters or fewer.', 'error')
             return render_template('new_experiment.html', preventatives=preventatives,
-                                   prefill_protocol_id=prefill_protocol_id, today=date.today())
+                                   prefill_protocol_id=prefill_protocol_id, today=date.today(),
+                                   active_experiment=active_experiment)
         if hypothesis_val and len(hypothesis_val) > 500:
             flash('Hypothesis must be 500 characters or fewer.', 'error')
             return render_template('new_experiment.html', preventatives=preventatives,
-                                   prefill_protocol_id=prefill_protocol_id, today=date.today())
+                                   prefill_protocol_id=prefill_protocol_id, today=date.today(),
+                                   active_experiment=active_experiment)
         start_str = request.form.get('start_date', '').strip()
         start = datetime.strptime(start_str, '%Y-%m-%d').date() if start_str else date.today()
         weeks = int(request.form.get('stabilization_weeks') or 3)
@@ -937,11 +940,13 @@ def new_experiment():
             if not new_proto_name:
                 flash('Protocol name is required.', 'error')
                 return render_template('new_experiment.html', preventatives=preventatives,
-                                       prefill_protocol_id=prefill_protocol_id, today=date.today())
+                                       prefill_protocol_id=prefill_protocol_id, today=date.today(),
+                                       active_experiment=active_experiment)
             if len(new_proto_name) > 200:
                 flash('Protocol name must be 200 characters or fewer.', 'error')
                 return render_template('new_experiment.html', preventatives=preventatives,
-                                       prefill_protocol_id=prefill_protocol_id, today=date.today())
+                                       prefill_protocol_id=prefill_protocol_id, today=date.today(),
+                                       active_experiment=active_experiment)
             protocol = Protocol(
                 user_id=user.id,
                 name=new_proto_name,
@@ -979,7 +984,8 @@ def new_experiment():
         return redirect(url_for('experiments'))
 
     return render_template('new_experiment.html', preventatives=preventatives,
-                           prefill_protocol_id=prefill_protocol_id, today=date.today())
+                           prefill_protocol_id=prefill_protocol_id, today=date.today(),
+                           active_experiment=active_experiment)
 
 
 @app.route('/experiments/offer/<int:protocol_id>')
