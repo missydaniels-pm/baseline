@@ -285,6 +285,19 @@ def migrate_episode_interventions():
     print("EpisodeIntervention migration complete.")
 
 
+def _safe_float(val, default=None, min_val=None):
+    """Safely convert a form value to float, returning default on failure."""
+    if not val:
+        return default
+    try:
+        result = float(val)
+        if min_val is not None and result < min_val:
+            result = min_val
+        return result
+    except (ValueError, TypeError):
+        return default
+
+
 def get_user():
     """Return the logged-in user from the session, or None."""
     user_id = session.get('user_id')
@@ -447,17 +460,27 @@ def onboarding_step1():
     user = get_user()
 
     if request.method == 'POST':
+        # Collect submitted names first
+        new_names = []
+        for i in range(1, 4):
+            name = request.form.get(f'name_{i}', '').strip()[:200]
+            if name:
+                desc = request.form.get(f'description_{i}', '').strip()[:500] or None
+                new_names.append((name, desc))
+
+        if not new_names:
+            flash('Add at least one thing to track.', 'error')
+            symptoms = Symptom.query.filter_by(user_id=user.id).all()
+            return render_template('onboarding_step1.html', symptoms=symptoms)
+
         # Remove stale onboarding symptoms not yet tied to any episode
         for sym in Symptom.query.filter_by(user_id=user.id).all():
             if not SymptomScore.query.filter_by(symptom_id=sym.id).first():
                 db.session.delete(sym)
         db.session.flush()
 
-        for i in range(1, 4):
-            name = request.form.get(f'name_{i}', '').strip()
-            if name:
-                desc = request.form.get(f'description_{i}', '').strip() or None
-                db.session.add(Symptom(user_id=user.id, name=name, description=desc))
+        for name, desc in new_names:
+            db.session.add(Symptom(user_id=user.id, name=name, description=desc))
 
         db.session.commit()
         return redirect(url_for('onboarding_step2'))
@@ -476,12 +499,18 @@ def onboarding_step2():
 
     if request.method == 'POST':
         baseline_str = request.form.get('baseline_episodes_per_month', '').strip()
-        user.baseline_episodes_per_month = int(baseline_str) if baseline_str else None
+        try:
+            user.baseline_episodes_per_month = int(baseline_str) if baseline_str else None
+        except ValueError:
+            user.baseline_episodes_per_month = None
 
         for symptom in symptoms:
             score_str = request.form.get(f'score_{symptom.id}', '').strip()
             if score_str:
-                symptom.baseline_score = int(score_str)
+                try:
+                    symptom.baseline_score = max(1, min(10, int(score_str)))
+                except ValueError:
+                    pass
 
         db.session.commit()
         return redirect(url_for('onboarding_step3'))
@@ -804,18 +833,26 @@ def checkin():
                     user_id=user.id,
                     onset=onset,
                     peak_severity=None,
-                    functional_impairment=ep_data.get('functional_impairment') or None,
+                    functional_impairment=ep_data.get('functional_impairment') if ep_data.get('functional_impairment') in ('working_normally', 'working_reduced', 'cannot_work', 'completely_incapacitated') else None,
                     notes=ep_data.get('notes') or None,
                 )
                 db.session.add(episode)
                 db.session.flush()
                 episode_id = episode.id
 
+                user_symptom_ids = {s.id for s in Symptom.query.filter_by(user_id=user.id).all()}
                 for sym_id_str, score in (ep_data.get('symptom_scores') or {}).items():
+                    try:
+                        sid = int(sym_id_str)
+                        sc = int(score)
+                    except (ValueError, TypeError):
+                        continue
+                    if sid not in user_symptom_ids or not (1 <= sc <= 10):
+                        continue
                     db.session.add(SymptomScore(
                         episode_id=episode.id,
-                        symptom_id=int(sym_id_str),
-                        score=int(score),
+                        symptom_id=sid,
+                        score=sc,
                     ))
 
                 # Handle interventions — new array format
@@ -852,11 +889,21 @@ def checkin():
 
                     eff = intervention.get('effectiveness')
                     relief = intervention.get('time_to_relief_hours')
+                    try:
+                        eff_val = int(eff) if eff is not None else None
+                        relief_val = float(relief) if relief is not None else None
+                    except (ValueError, TypeError):
+                        eff_val = None
+                        relief_val = None
+                    if eff_val is not None and not (1 <= eff_val <= 10):
+                        eff_val = None
+                    if relief_val is not None and relief_val < 0:
+                        relief_val = None
                     db.session.add(EpisodeIntervention(
                         episode_id=episode.id,
                         protocol_id=protocol.id,
-                        effectiveness=int(eff) if eff is not None else None,
-                        time_to_relief_hours=float(relief) if relief is not None else None,
+                        effectiveness=eff_val,
+                        time_to_relief_hours=relief_val,
                     ))
 
                 if new_intervention_names:
@@ -867,16 +914,23 @@ def checkin():
 
             # Log protocol compliance (deduplicate)
             today_date = date.today()
+            user_protocol_ids = {p.id for p in Protocol.query.filter_by(user_id=user.id).all()}
             for proto_id in (parsed.get('protocol_compliance') or []):
+                try:
+                    pid = int(proto_id)
+                except (ValueError, TypeError):
+                    continue
+                if pid not in user_protocol_ids:
+                    continue
                 exists = ProtocolCompliance.query.filter_by(
                     user_id=user.id,
-                    protocol_id=int(proto_id),
+                    protocol_id=pid,
                     date=today_date,
                 ).first()
                 if not exists:
                     db.session.add(ProtocolCompliance(
                         user_id=user.id,
-                        protocol_id=int(proto_id),
+                        protocol_id=pid,
                         date=today_date,
                     ))
 
@@ -1031,8 +1085,14 @@ def new_experiment():
                                    prefill_protocol_id=prefill_protocol_id, today=date.today(),
                                    active_experiment=active_experiment)
         start_str = request.form.get('start_date', '').strip()
-        start = datetime.strptime(start_str, '%Y-%m-%d').date() if start_str else date.today()
-        weeks = int(request.form.get('stabilization_weeks') or 3)
+        try:
+            start = datetime.strptime(start_str, '%Y-%m-%d').date() if start_str else date.today()
+        except ValueError:
+            start = date.today()
+        try:
+            weeks = max(1, int(request.form.get('stabilization_weeks') or 3))
+        except (ValueError, TypeError):
+            weeks = 3
 
         # Handle inline protocol creation
         raw_protocol_id = request.form.get('protocol_id', '')
@@ -1066,7 +1126,15 @@ def new_experiment():
             ))
             protocol_id = protocol.id
         else:
-            protocol_id = int(raw_protocol_id) if raw_protocol_id else None
+            try:
+                protocol_id = int(raw_protocol_id) if raw_protocol_id else None
+            except (ValueError, TypeError):
+                protocol_id = None
+            if protocol_id:
+                owned = Protocol.query.filter_by(id=protocol_id, user_id=user.id, type='preventative').first()
+                if not owned:
+                    flash('Invalid protocol.', 'error')
+                    return redirect(url_for('new_experiment'))
 
         exp = Experiment(
             user_id=user.id,
@@ -1102,7 +1170,10 @@ def assess_experiment(exp_id):
     experiment = Experiment.query.filter_by(id=exp_id, user_id=user.id).first_or_404()
 
     if request.method == 'POST':
-        experiment.outcome_rating = int(request.form.get('outcome_rating', 5))
+        try:
+            experiment.outcome_rating = max(1, min(10, int(request.form.get('outcome_rating', 5))))
+        except (ValueError, TypeError):
+            experiment.outcome_rating = 5
         experiment.outcome_notes = request.form.get('outcome_notes', '').strip() or None
         experiment.decision = request.form.get('decision')
         experiment.status = 'completed'
@@ -1219,12 +1290,25 @@ def edit_experiment(exp_id):
             return render_template('edit_experiment.html', experiment=experiment, preventatives=preventatives)
         experiment.name = exp_name
         experiment.hypothesis = hypothesis_val
-        experiment.stabilization_weeks = int(request.form.get('stabilization_weeks') or 3)
+        try:
+            experiment.stabilization_weeks = max(1, int(request.form.get('stabilization_weeks') or 3))
+        except (ValueError, TypeError):
+            experiment.stabilization_weeks = 3
         start_str = request.form.get('start_date', '').strip()
         if start_str:
-            experiment.start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+            try:
+                experiment.start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+            except ValueError:
+                pass
         protocol_id = request.form.get('protocol_id')
-        experiment.protocol_id = int(protocol_id) if protocol_id else None
+        if protocol_id:
+            try:
+                owned = Protocol.query.filter_by(id=int(protocol_id), user_id=user.id, type='preventative').first()
+            except (ValueError, TypeError):
+                owned = None
+            experiment.protocol_id = owned.id if owned else None
+        else:
+            experiment.protocol_id = None
         db.session.commit()
         flash(f'"{experiment.name}" updated.', 'success')
         return redirect(url_for('experiments'))
@@ -1433,7 +1517,7 @@ def new_episode():
             user_id=user.id,
             onset=onset,
             peak_severity=None,
-            duration_hours=float(request.form.get('duration_hours') or 0) or None,
+            duration_hours=_safe_float(request.form.get('duration_hours'), min_val=0),
             functional_impairment=request.form.get('functional_impairment'),
             notes=request.form.get('notes') or None,
         )
@@ -1443,24 +1527,39 @@ def new_episode():
         for symptom in symptoms:
             score_str = request.form.get(f'score_{symptom.id}', '').strip()
             if score_str:
-                db.session.add(SymptomScore(episode_id=episode.id, symptom_id=symptom.id, score=int(score_str)))
+                try:
+                    db.session.add(SymptomScore(episode_id=episode.id, symptom_id=symptom.id, score=max(1, min(10, int(score_str)))))
+                except ValueError:
+                    pass
 
         # Save interventions from repeatable form fields
         for i in range(5):
             proto_id = request.form.get(f'intervention_protocol_{i}', '').strip()
             if not proto_id:
                 continue
+            try:
+                proto_id_int = int(proto_id)
+            except ValueError:
+                continue
             # Validate protocol belongs to current user
-            protocol = Protocol.query.filter_by(id=int(proto_id), user_id=user.id, type='rescue').first()
+            protocol = Protocol.query.filter_by(id=proto_id_int, user_id=user.id, type='rescue').first()
             if not protocol:
                 continue
             eff_str = request.form.get(f'intervention_effectiveness_{i}', '').strip()
             relief_str = request.form.get(f'intervention_relief_{i}', '').strip()
+            try:
+                eff_val = max(1, min(10, int(eff_str))) if eff_str else None
+            except ValueError:
+                eff_val = None
+            try:
+                relief_val = max(0, float(relief_str)) if relief_str else None
+            except ValueError:
+                relief_val = None
             db.session.add(EpisodeIntervention(
                 episode_id=episode.id,
                 protocol_id=protocol.id,
-                effectiveness=int(eff_str) if eff_str else None,
-                time_to_relief_hours=float(relief_str) if relief_str else None,
+                effectiveness=eff_val,
+                time_to_relief_hours=relief_val,
             ))
 
         db.session.commit()
@@ -1495,7 +1594,7 @@ def edit_episode(episode_id):
                                    symptoms=symptoms, existing_scores=existing_scores)
 
         episode.onset = new_onset
-        episode.duration_hours = float(v) if (v := request.form.get('duration_hours')) else None
+        episode.duration_hours = _safe_float(request.form.get('duration_hours'), min_val=0)
         episode.functional_impairment = request.form.get('functional_impairment')
         episode.notes = notes_val or None
 
@@ -1507,7 +1606,10 @@ def edit_episode(episode_id):
         for symptom in symptoms:
             score_str = request.form.get(f'score_{symptom.id}', '').strip()
             if score_str:
-                db.session.add(SymptomScore(episode_id=episode.id, symptom_id=symptom.id, score=int(score_str)))
+                try:
+                    db.session.add(SymptomScore(episode_id=episode.id, symptom_id=symptom.id, score=max(1, min(10, int(score_str)))))
+                except ValueError:
+                    pass
 
         # Replace interventions
         for ei in list(episode.interventions):
@@ -1518,17 +1620,29 @@ def edit_episode(episode_id):
             proto_id = request.form.get(f'intervention_protocol_{i}', '').strip()
             if not proto_id:
                 continue
+            try:
+                proto_id_int = int(proto_id)
+            except ValueError:
+                continue
             # Validate protocol belongs to current user
-            protocol = Protocol.query.filter_by(id=int(proto_id), user_id=user.id, type='rescue').first()
+            protocol = Protocol.query.filter_by(id=proto_id_int, user_id=user.id, type='rescue').first()
             if not protocol:
                 continue
             eff_str = request.form.get(f'intervention_effectiveness_{i}', '').strip()
             relief_str = request.form.get(f'intervention_relief_{i}', '').strip()
+            try:
+                eff_val = max(1, min(10, int(eff_str))) if eff_str else None
+            except ValueError:
+                eff_val = None
+            try:
+                relief_val = max(0, float(relief_str)) if relief_str else None
+            except ValueError:
+                relief_val = None
             db.session.add(EpisodeIntervention(
                 episode_id=episode.id,
                 protocol_id=protocol.id,
-                effectiveness=int(eff_str) if eff_str else None,
-                time_to_relief_hours=float(relief_str) if relief_str else None,
+                effectiveness=eff_val,
+                time_to_relief_hours=relief_val,
             ))
 
         db.session.commit()

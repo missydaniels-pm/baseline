@@ -957,7 +957,7 @@ input[type="range"]::-moz-range-thumb {
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.03em;
-  background: var(--surface-raised);
+  background: var(--surface2);
   color: var(--text-muted);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -967,7 +967,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .btn-today:hover {
-  background: var(--surface-active);
+  background: var(--border);
   color: var(--text);
 }
 
