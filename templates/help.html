@@ -21,7 +21,7 @@
 <section class="help-section" id="what-is-baseline">
   <h2 class="help-heading">What is Baseline?</h2>
   <p>Baseline is a tool for people managing chronic health conditions who want real data on what is and isn't working.</p>
-  <p>Most health trackers just log symptoms. Baseline helps you run structured experiments — introduce one change at a time, track the results, and build an evidence base for your own health decisions. Think of it as giving you the tools to be a scientist of your own health.</p>
+  <p>Most health trackers just log data. Baseline helps you run structured experiments — introduce one change at a time, track the results, and build an evidence base for your own health decisions. Think of it as giving you the tools to be a scientist of your own health.</p>
 </section>
 
 <hr class="divider">
@@ -30,11 +30,11 @@
   <h2 class="help-heading">Getting Started</h2>
 
   <h3 class="help-subheading">Set up what you're tracking</h3>
-  <p>When you first create your account, you'll go through a short setup where you define the 1–3 symptoms you most want to track. Keep it focused — you can always add more later, but starting with your most important symptoms gives you the clearest signal.</p>
+  <p>When you first create your account, you'll go through a short setup where you define the 1–3 things you most want to track. Keep it focused — you can always add more later, but starting with what matters most gives you the clearest signal.</p>
   <p class="help-examples">Examples: Pain, Fatigue, Cognitive fog, Energy, Mood, Nausea, Mobility.</p>
 
   <h3 class="help-subheading">Establish your baseline</h3>
-  <p>Before you start tracking, Baseline asks you to estimate where you are right now. How many bad days have you had in the last 4 weeks? On your worst days, how would you rate each symptom?</p>
+  <p>Before you start tracking, Baseline asks you to estimate where you are right now. How many bad days have you had in the last 4 weeks? On your worst days, how would you rate each thing you're tracking?</p>
   <p>This gives you a starting point to measure against. It doesn't need to be perfect — a rough honest estimate is enough.</p>
 
   <h3 class="help-subheading">Enable AI logging</h3>
@@ -59,11 +59,11 @@
   <h3 class="help-subheading">What to include</h3>
   <p>You don't need to follow a specific format. Just mention whatever feels relevant:</p>
   <ul class="help-list">
-    <li>Which symptoms you're experiencing and how severe they are (a rough number out of 10 helps)</li>
+    <li>What you're experiencing and how severe it is (a rough number out of 10 helps)</li>
     <li>Any medications or protocols you took — or missed</li>
     <li>When things started and how long they lasted</li>
     <li>How much it affected your ability to function</li>
-    <li>Whether you used a rescue option and if it helped</li>
+    <li>Whether you used an intervention and if it helped</li>
     <li>Any context — triggers, sleep, stress, weather, whatever seems connected</li>
   </ul>
   <p>You don't need all of this every time. A quick "good day, nothing to report" is a perfectly valid check-in.</p>
@@ -84,10 +84,10 @@
   <h3 class="help-subheading">What gets logged automatically</h3>
   <p>Based on your message, Baseline will create the appropriate records:</p>
   <ul class="help-list">
-    <li><strong>Episodes</strong> — if you describe a significant symptom event, an episode is created with onset time, duration, and functional impairment</li>
-    <li><strong>Symptom scores</strong> — severity ratings are attached to the episode for each symptom you mention</li>
+    <li><strong>Episodes</strong> — if you describe a significant health event, an episode is created with onset time, duration, and functional impairment</li>
+    <li><strong>Severity scores</strong> — ratings are attached to the episode for each thing you're tracking</li>
     <li><strong>Protocol compliance</strong> — if you mention taking or missing a medication/supplement, a compliance record is logged for that protocol</li>
-    <li><strong>Rescue use</strong> — if you used a rescue option, it's recorded on the episode along with effectiveness and time to relief</li>
+    <li><strong>Intervention use</strong> — if you used an intervention, it's recorded on the episode along with effectiveness and time to relief</li>
   </ul>
   <p>After processing, the AI confirms exactly what it logged. Review the confirmation — if everything looks right, you're done.</p>
 
@@ -121,9 +121,9 @@
   <p>For each episode you can record:</p>
   <ul class="help-list">
     <li>When it started and how long it lasted</li>
-    <li>Severity for each of your tracked symptoms</li>
+    <li>Severity for each thing you're tracking</li>
     <li>How much it affected your ability to function</li>
-    <li>What rescue option you used (if any) and how well it worked</li>
+    <li>What intervention you used (if any) and how well it worked</li>
     <li>Notes, context, or anything else worth remembering</li>
   </ul>
 </section>
@@ -137,8 +137,8 @@
   <p>These are the ongoing interventions you're using to manage your condition — medications, supplements, lifestyle changes, dietary protocols. Add them in the <a href="{{ url_for('protocols') }}">Protocols</a> section with a start date and notes.</p>
   <p>Each protocol has a detail page where you can log daily compliance and see a full history timeline showing every taken and missed entry alongside status changes.</p>
 
-  <h3 class="help-subheading">Rescue options</h3>
-  <p>These are the things you reach for when you're in the middle of a bad episode — medications, specific interventions, rest protocols. When you log an episode, you can record which rescue option you used and how effective it was.</p>
+  <h3 class="help-subheading">Interventions</h3>
+  <p>These are the things you reach for when you're in the middle of a bad episode — medications, techniques, or remedies. When you log an episode, you can record which intervention you used and how effective it was.</p>
 </section>
 
 <hr class="divider">
@@ -167,20 +167,20 @@
   <h2 class="help-heading">Your Dashboard</h2>
   <p>The <a href="{{ url_for('index') }}">Dashboard</a> is where your logging pays off. The more consistently you track, the more meaningful the data becomes. Charts and insights appear once you have at least two weeks of episodes logged.</p>
 
-  <h3 class="help-subheading">Symptom cards</h3>
-  <p>At the top of the dashboard, you'll see a card for each tracked symptom showing your average score this month. Each card also shows the percentage change from your starting baseline — so you can see at a glance if things are improving, worsening, or holding steady.</p>
+  <h3 class="help-subheading">Tracking cards</h3>
+  <p>At the top of the dashboard, you'll see a card for each thing you're tracking, showing your average score this month. Each card also shows the percentage change from your starting baseline — so you can see at a glance if things are improving, worsening, or holding steady.</p>
 
   <h3 class="help-subheading">Episode frequency chart</h3>
   <p>The bar chart shows how many episodes you've had each week across the last 12 weeks. Vertical lines mark when you started each preventative protocol. This makes it easy to see whether your episode pattern changed after starting a new treatment.</p>
 
-  <h3 class="help-subheading">Symptom trend chart</h3>
-  <p>The line chart tracks how each symptom score has moved week by week over the same 12-week period. Protocol start dates are marked here too, so you can visually connect treatment changes with symptom trends.</p>
+  <h3 class="help-subheading">Trend chart</h3>
+  <p>The line chart tracks how each score has moved week by week over the same 12-week period. Protocol start dates are marked here too, so you can visually connect treatment changes with trends.</p>
 
   <h3 class="help-subheading">Protocol impact markers</h3>
   <p>The vertical lines on both charts mark the start date of each preventative protocol. These matter because they let you visually answer the most important question: did things get better after I started this? Look for changes in the pattern after each marker.</p>
 
-  <h3 class="help-subheading">Rescue effectiveness table</h3>
-  <p>Below the charts, the rescue table summarises each rescue option you've used: how many times, your average effectiveness rating, and average time to relief. This helps you decide which rescue option to reach for first when you need it.</p>
+  <h3 class="help-subheading">Intervention effectiveness table</h3>
+  <p>Below the charts, the intervention table summarises each intervention you've used: how many times, your average effectiveness rating, and average time to relief. This helps you decide which intervention to reach for first when you need it.</p>
 
   <h3 class="help-subheading">When will my charts appear?</h3>
   <p>The dashboard shows an empty state message until you have at least two weeks of data. This is intentional — the charts need enough data points to be meaningful. Keep logging consistently and the insights will build up.</p>

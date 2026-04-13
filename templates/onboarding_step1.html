@@ -13,7 +13,7 @@
 
   <h1 class="page-title" style="margin-bottom:8px;">What do you want to track?</h1>
   <p style="color:var(--text-muted); margin-bottom:6px;">
-    What are the 1–3 symptoms or outcomes you most want to track?
+    What are the 1–3 things you most want to track?
   </p>
   <p class="field-hint" style="margin-bottom:28px;">
     Focus on what matters most to you. Examples: Pain, Fatigue, Cognitive fog, Energy, Mood, Nausea, Mobility
@@ -26,7 +26,7 @@
       <div class="symptom-row" id="row-1">
         <div class="symptom-row-fields">
           <div class="form-group" style="flex:1;">
-            <label for="name_1">Symptom name</label>
+            <label for="name_1">Name</label>
             <input type="text" id="name_1" name="name_1" placeholder="e.g. Pain"
                    value="{{ symptoms[0].name if symptoms|length > 0 else '' }}" required>
           </div>
@@ -41,7 +41,7 @@
       <div class="symptom-row" id="row-2" {% if symptoms|length < 2 %}style="display:none;"{% endif %}>
         <div class="symptom-row-fields">
           <div class="form-group" style="flex:1;">
-            <label for="name_2">Symptom name</label>
+            <label for="name_2">Name</label>
             <input type="text" id="name_2" name="name_2" placeholder="e.g. Fatigue"
                    value="{{ symptoms[1].name if symptoms|length > 1 else '' }}">
           </div>
@@ -56,7 +56,7 @@
       <div class="symptom-row" id="row-3" {% if symptoms|length < 3 %}style="display:none;"{% endif %}>
         <div class="symptom-row-fields">
           <div class="form-group" style="flex:1;">
-            <label for="name_3">Symptom name</label>
+            <label for="name_3">Name</label>
             <input type="text" id="name_3" name="name_3" placeholder="e.g. Nausea"
                    value="{{ symptoms[2].name if symptoms|length > 2 else '' }}">
           </div>
@@ -73,7 +73,7 @@
     <button type="button" class="btn btn-secondary" id="add-row-btn"
             {% if symptoms|length >= 3 %}style="display:none;"{% endif %}
             style="margin-bottom:28px;">
-      + Add another symptom
+      + Add another
     </button>
 
     <div style="display:flex; justify-content:flex-end; margin-top:8px;">

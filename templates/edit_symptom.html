@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Edit Symptom — Baseline{% endblock %}
+{% block title %}Edit Tracked Item — Baseline{% endblock %}
 
 {% block content %}
 <div class="page-header">
-  <h1 class="page-title">Edit Symptom</h1>
+  <h1 class="page-title">Edit Tracked Item</h1>
   <a href="{{ url_for('symptoms') }}" class="btn btn-secondary">Cancel</a>
 </div>
 
@@ -32,12 +32,12 @@
     <div>
       {% if symptom.is_active %}
       <form method="POST" action="{{ url_for('deactivate_symptom', symptom_id=symptom.id) }}"
-            onsubmit="return confirm('Deactivate {{ symptom.name }}? It will stop appearing on the episode form, but all historical data is kept.')">
-        <button type="submit" class="btn btn-danger">Deactivate</button>
+            onsubmit="return confirm('Pause tracking for {{ symptom.name }}? It will stop appearing on the episode form, but all historical data is kept.')">
+        <button type="submit" class="btn btn-danger">Pause Tracking</button>
       </form>
       {% else %}
       <form method="POST" action="{{ url_for('reactivate_symptom', symptom_id=symptom.id) }}">
-        <button type="submit" class="btn btn-reactivate">Reactivate</button>
+        <button type="submit" class="btn btn-reactivate">Resume Tracking</button>
       </form>
       {% endif %}
     </div>

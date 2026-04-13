@@ -14,11 +14,11 @@ The core idea: chronic illness is complex and poorly understood, even by doctors
 
 Baseline gives users the structure to do that:
 
-- **Symptom tracking** — define what you're measuring
+- **Health tracking** — define what you're measuring
 - **Protocol management** — track preventative medications, supplements, and lifestyle changes
 - **Episode logging** — record what happens and when, via natural language check-in or manual entry
 - **Experiment framework** — form a hypothesis, run a protocol for a defined period, assess the outcome with your own data
-- **Dashboard** — visualize patterns, protocol impact markers, rescue effectiveness, and symptom trends over time
+- **Dashboard** — visualize patterns, protocol impact markers, intervention effectiveness, and trends over time
 
 Currently in use by 5 people managing chronic migraine, mold toxicity, and MS.
 
@@ -26,7 +26,7 @@ Currently in use by 5 people managing chronic migraine, mold toxicity, and MS.
 
 ## Why I built it
 
-I've had chronic migraine for 20 years. In that time I've kept paper diaries, used tracking apps, and filled out the same insurance forms for neurologists by hand every quarter. I've tried elimination diets, preventatives, rescue medications, and a dozen protocols — usually with no real way to know if anything was working, or why.
+I've had chronic migraine for 20 years. In that time I've kept paper diaries, used tracking apps, and filled out the same insurance forms for neurologists by hand every quarter. I've tried elimination diets, preventatives, interventions, and a dozen protocols — usually with no real way to know if anything was working, or why.
 
 The frustrating part isn't only the pain from the migraine. It's the data problem. Every potential trigger, every medication trial, every pattern — held in my head or scattered across notes with no structure to evaluate it against. Doctors have 15 minutes and no longitudinal picture. Insurance requires documented frequency to approve the medications that actually help. And most tracking apps just make the logging problem slightly more digital without solving the analysis problem at all.
 
@@ -56,7 +56,7 @@ The experience shaped how I think about AI-assisted development — not as autoc
 
 A few places where I made deliberate product calls rather than just technical ones:
 
-**Condition-agnostic by design.** No condition field. Users define their own symptoms and protocols. The same experiment framework works for migraine, autoimmune conditions, or anything else — the structure is the value, not the taxonomy.
+**Condition-agnostic by design.** No condition field. Users define what they track and their own protocols. The same experiment framework works for migraine, autoimmune conditions, or anything else — the structure is the value, not the taxonomy.
 
 **Assumed compliance, exception capture.** The app doesn't ask users to log every pill every day. It assumes they're following their protocols and captures exceptions through the daily check-in. Reduces friction for sick people who have limited energy.
 
@@ -78,7 +78,7 @@ The planned next chapter is a React frontend rebuild with an API-first Flask bac
 
 ## What's next
 
-Current focus: retention features for the existing user base — multiple rescues per episode, chart time range controls, neurologist report export (auto-generated PDF for insurance documentation).
+Current focus: retention features for the existing user base — multiple interventions per episode, chart time range controls, neurologist report export (auto-generated PDF for insurance documentation).
 
 Longer term: React rebuild, native mobile, HealthKit integration.
 

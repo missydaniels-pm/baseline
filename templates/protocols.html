@@ -10,7 +10,7 @@
 <div class="section-header">
   <div>
     <h2 class="section-title">Preventatives</h2>
-    <p class="section-sub">Ongoing medications and supplements to reduce frequency or severity.</p>
+    <p class="section-sub">Ongoing practices, medications, supplements, and routines that support your health.</p>
   </div>
   <a href="{{ url_for('new_protocol') }}" class="btn btn-primary btn-sm">+ Add</a>
 </div>
@@ -75,11 +75,11 @@
 
 <hr class="divider">
 
-{# ── Rescue Options ─────────────────────────────────────────────────── #}
+{# ── Interventions ──────────────────────────────────────────────────── #}
 <div class="section-header">
   <div>
-    <h2 class="section-title">Rescue Options</h2>
-    <p class="section-sub">Medications available when an episode strikes. Toggle availability to reflect what's on hand.</p>
+    <h2 class="section-title">Interventions</h2>
+    <p class="section-sub">What you reach for during an episode — medications, techniques, or remedies. Toggle availability to reflect what's on hand.</p>
   </div>
   <a href="{{ url_for('new_rescue_option') }}" class="btn btn-primary btn-sm">+ Add</a>
 </div>
@@ -103,8 +103,8 @@
 </div>
 {% else %}
   <div class="empty-state" style="padding:28px 0;">
-    <p>No rescue options added yet.</p>
-    <a href="{{ url_for('new_rescue_option') }}" class="btn btn-primary">Add first rescue option</a>
+    <p>No interventions added yet.</p>
+    <a href="{{ url_for('new_rescue_option') }}" class="btn btn-primary">Add first intervention</a>
   </div>
 {% endif %}
 

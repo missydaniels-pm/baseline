@@ -34,8 +34,8 @@
 {# ── Symptom Baseline Cards ────────────────────────────────────── #}
 <div class="section-header">
   <div>
-    <div class="section-title">Your Symptoms</div>
-    <div class="section-sub">{% if symptom_stats %}Average scores this month vs baseline{% else %}Track your symptoms over time{% endif %}</div>
+    <div class="section-title">What You're Tracking</div>
+    <div class="section-sub">{% if symptom_stats %}Average scores this month vs baseline{% else %}Track your health over time{% endif %}</div>
   </div>
 </div>
 {% if symptom_stats %}
@@ -78,8 +78,8 @@
       <rect x="28" y="28" width="8" height="3" rx="1" fill="#3e3e50"/>
     </svg>
   </div>
-  <p class="empty-state-text">Your symptom baseline cards will appear here once you've completed enough logging to establish a baseline.</p>
-  <a href="{{ url_for('symptoms') }}" class="empty-state-action">Set up your symptoms →</a>
+  <p class="empty-state-text">Your baseline cards will appear here once you've completed enough logging to establish a baseline.</p>
+  <a href="{{ url_for('symptoms') }}" class="empty-state-action">Set up what you track →</a>
 </div>
 {% endif %}
 <hr class="divider" style="margin-top:8px;">
@@ -115,7 +115,7 @@
   </div>
   <div class="chart-container">
     {% if show_symptom_chart %}
-    <div class="chart-card-title">Symptom Trends</div>
+    <div class="chart-card-title">Severity by Week</div>
     <canvas id="symptomTrendChart"></canvas>
     {% else %}
     <div class="empty-state empty-state-chart">
@@ -131,7 +131,7 @@
           <line x1="4" y1="58" x2="116" y2="58" stroke="#2e2e3e" stroke-width="1"/>
         </svg>
       </div>
-      <p class="empty-state-text">Your symptom trends will appear here as you log episodes with severity scores. You'll start seeing patterns within a few weeks of consistent logging.</p>
+      <p class="empty-state-text">Your trends will appear here as you log episodes with severity scores. You'll start seeing patterns within a few weeks of consistent logging.</p>
       <a href="{{ url_for('new_episode') }}" class="empty-state-action">Log an episode →</a>
     </div>
     {% endif %}
@@ -160,7 +160,7 @@
 {# ── Rescue Effectiveness ──────────────────────────────────────── #}
 <div class="section-header">
   <div>
-    <div class="section-title">Rescue Effectiveness</div>
+    <div class="section-title">Intervention Effectiveness</div>
     <div class="section-sub">{% if rescue_stats %}All-time usage stats{% else %}Track what works{% endif %}</div>
   </div>
 </div>
@@ -169,7 +169,7 @@
   <table class="rescue-table">
     <thead>
       <tr>
-        <th>Rescue</th>
+        <th>Intervention</th>
         <th>Times Used</th>
         <th>Avg Effectiveness</th>
         <th>Avg Relief Time</th>
@@ -204,7 +204,7 @@
       <line x1="24" y1="14" x2="24" y2="26" stroke="#2e2e3e" stroke-width="2"/>
     </svg>
   </div>
-  <p class="empty-state-text">Your rescue medication effectiveness will appear here after you've logged episodes where you used a rescue option.</p>
+  <p class="empty-state-text">Your intervention effectiveness will appear here after you've logged episodes where you used an intervention.</p>
   <a href="{{ url_for('new_episode') }}" class="empty-state-action">Log an episode →</a>
 </div>
 {% endif %}
@@ -365,7 +365,7 @@
   <div class="tour-modal">
     <div class="tour-step" data-step="1">
       <h2 class="tour-title">Welcome to Baseline!</h2>
-      <p>Baseline helps you track your symptoms, run structured experiments, and build real evidence for your health decisions.</p>
+      <p>Baseline helps you track your health, run structured experiments, and build real evidence for your health decisions.</p>
       <p>Instead of guessing what works, you'll have data — your own personal record of what you've tried and what the results were.</p>
       <p>This quick tour will show you the key features.</p>
     </div>
@@ -373,9 +373,9 @@
       <h2 class="tour-title">Your Dashboard</h2>
       <p>The dashboard is your home base. As you log, you'll see:</p>
       <ul class="tour-list">
-        <li><strong>Symptom cards</strong> — your average scores this month vs. your baseline</li>
-        <li><strong>Trend charts</strong> — episode frequency and symptom severity over 12 weeks</li>
-        <li><strong>Rescue effectiveness</strong> — which rescue options work best for you</li>
+        <li><strong>Tracking cards</strong> — your average scores this month vs. your baseline</li>
+        <li><strong>Trend charts</strong> — episode frequency and severity over 12 weeks</li>
+        <li><strong>Intervention effectiveness</strong> — which interventions work best for you</li>
       </ul>
       <p>Charts appear after about two weeks of logging.</p>
     </div>
@@ -399,9 +399,9 @@
       <h2 class="tour-title">Get started</h2>
       <p>Here are a few things you can do right now:</p>
       <ul class="tour-list">
-        <li><a href="{{ url_for('new_episode') }}">Log your first episode</a> — record a recent symptom event</li>
+        <li><a href="{{ url_for('new_episode') }}">Log your first episode</a> — record a recent health event</li>
         <li><a href="{{ url_for('checkin') }}">Try the daily check-in</a> — describe your day and let AI handle the rest</li>
-        <li><a href="{{ url_for('protocols') }}">Add a protocol</a> — track a medication or supplement you're currently taking</li>
+        <li><a href="{{ url_for('protocols') }}">Add a protocol</a> — track a medication, supplement, or routine you're currently following</li>
       </ul>
       <p>You can replay this tour anytime from the <a href="{{ url_for('help_page') }}">Help</a> page.</p>
     </div>

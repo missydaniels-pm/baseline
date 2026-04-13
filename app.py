@@ -58,7 +58,7 @@ def send_welcome_email(user_email, user_name):
 You're in. Here's a quick orientation to help you get started.
 
 WHAT TO EXPECT
-You just completed onboarding — you've set up your symptoms and baseline scores. Now you're ready to start tracking.
+You just completed onboarding — you've set up what you're tracking and your baseline scores. Now you're ready to start tracking.
 
 TWO WAYS TO LOG
 1. Daily Check-in (if you enabled AI logging): Describe your day in plain language and Baseline logs the details automatically.
@@ -68,7 +68,7 @@ Both create the same records — use whichever feels easier.
 
 YOUR FIRST STEPS
 - Log your first episode or try the Daily Check-in
-- Add any medications or supplements you're currently taking as protocols
+- Add any medications, supplements, or routines you're currently following as protocols
 - When you're ready, start your first experiment to test a protocol change
 
 NEED HELP?
@@ -94,7 +94,7 @@ Questions or feedback? Reply to this email or reach out at baselinehealthapp@gma
   <p style="font-size:14px; color:#888899; line-height:1.7; margin:0 0 20px;">You're in. Here's a quick orientation to help you get started.</p>
 
   <h2 style="font-size:15px; font-weight:600; color:#e8e6f0; margin:0 0 8px;">What to expect</h2>
-  <p style="font-size:14px; color:#888899; line-height:1.7; margin:0 0 20px;">You've set up your symptoms and baseline scores during onboarding. Now you're ready to start tracking and building your evidence base.</p>
+  <p style="font-size:14px; color:#888899; line-height:1.7; margin:0 0 20px;">You've set up what you're tracking and your baseline scores during onboarding. Now you're ready to start tracking and building your evidence base.</p>
 
   <h2 style="font-size:15px; font-weight:600; color:#e8e6f0; margin:0 0 8px;">Two ways to log</h2>
   <p style="font-size:14px; color:#888899; line-height:1.7; margin:0 0 6px;"><strong style="color:#e8e6f0;">Daily Check-in</strong> — if you enabled AI logging, just describe your day in plain language and Baseline logs the details automatically.</p>
@@ -103,7 +103,7 @@ Questions or feedback? Reply to this email or reach out at baselinehealthapp@gma
   <h2 style="font-size:15px; font-weight:600; color:#e8e6f0; margin:0 0 8px;">Your first steps</h2>
   <ul style="font-size:14px; color:#888899; line-height:1.7; margin:0 0 24px; padding-left:20px;">
     <li style="margin-bottom:4px;">Log your first episode or try the Daily Check-in</li>
-    <li style="margin-bottom:4px;">Add any current medications or supplements as protocols</li>
+    <li style="margin-bottom:4px;">Add any current medications, supplements, or routines as protocols</li>
     <li>When you're ready, start your first experiment to test a protocol change</li>
   </ul>
 
@@ -824,7 +824,7 @@ def new_symptom():
         if not name:
             return redirect(url_for('symptoms'))
         if len(name) > 200:
-            flash('Symptom name must be 200 characters or fewer.', 'error')
+            flash('Name must be 200 characters or fewer.', 'error')
             return render_template('new_symptom.html')
         if description and len(description) > 500:
             flash('Description must be 500 characters or fewer.', 'error')
@@ -833,7 +833,7 @@ def new_symptom():
         existing = Symptom.query.filter(Symptom.user_id == user.id,
                                         db.func.lower(Symptom.name) == name.lower()).first()
         if existing:
-            flash(f'A symptom named "{existing.name}" already exists.', 'error')
+            flash(f'"{existing.name}" already exists.', 'error')
             return render_template('new_symptom.html')
         symptom = Symptom(user_id=user.id, name=name, description=description)
         db.session.add(symptom)
@@ -855,7 +855,7 @@ def edit_symptom(symptom_id):
         if not name:
             return redirect(url_for('symptoms'))
         if len(name) > 200:
-            flash('Symptom name must be 200 characters or fewer.', 'error')
+            flash('Name must be 200 characters or fewer.', 'error')
             return render_template('edit_symptom.html', symptom=symptom)
         if description and len(description) > 500:
             flash('Description must be 500 characters or fewer.', 'error')
@@ -865,12 +865,12 @@ def edit_symptom(symptom_id):
                                         Symptom.id != symptom.id,
                                         db.func.lower(Symptom.name) == name.lower()).first()
         if existing:
-            flash(f'A symptom named "{existing.name}" already exists.', 'error')
+            flash(f'"{existing.name}" already exists.', 'error')
             return render_template('edit_symptom.html', symptom=symptom)
         symptom.name = name
         symptom.description = description
         db.session.commit()
-        flash('Symptom updated.', 'success')
+        flash('Updated.', 'success')
         return redirect(url_for('symptoms'))
 
     return render_template('edit_symptom.html', symptom=symptom)
@@ -882,7 +882,7 @@ def deactivate_symptom(symptom_id):
     symptom = Symptom.query.filter_by(id=symptom_id, user_id=user.id).first_or_404()
     symptom.is_active = False
     db.session.commit()
-    flash(f'"{symptom.name}" deactivated. Historical data preserved.', 'success')
+    flash(f'Tracking paused for "{symptom.name}". Historical data preserved.', 'success')
     return redirect(url_for('symptoms'))
 
 
@@ -892,7 +892,7 @@ def reactivate_symptom(symptom_id):
     symptom = Symptom.query.filter_by(id=symptom_id, user_id=user.id).first_or_404()
     symptom.is_active = True
     db.session.commit()
-    flash(f'"{symptom.name}" reactivated.', 'success')
+    flash(f'"{symptom.name}" resumed.', 'success')
     return redirect(url_for('symptoms'))
 
 
@@ -1599,7 +1599,7 @@ def new_rescue_option():
         )
         db.session.add(option)
         db.session.commit()
-        flash('Rescue option added.', 'success')
+        flash('Intervention added.', 'success')
         return redirect(url_for('protocols'))
 
     return render_template('new_rescue_option.html')
@@ -1623,7 +1623,7 @@ def edit_rescue_option(option_id):
         option.available = bool(request.form.get('available'))
         option.notes = notes_val or None
         db.session.commit()
-        flash('Rescue option updated.', 'success')
+        flash('Intervention updated.', 'success')
         return redirect(url_for('protocols'))
 
     return render_template('edit_rescue_option.html', option=option)
@@ -1809,7 +1809,7 @@ def dev_seed():
         <ul style="line-height:1.8;">
           <li>3–4 episodes per week (36–48 total) with symptom scores trending lower after week 6</li>
           <li>2 preventative protocols starting at weeks 1 and 5</li>
-          <li>1 rescue option (Sumatriptan 50mg) used ~once per week</li>
+          <li>1 intervention (Sumatriptan 50mg) used ~once per week</li>
           <li>Daily protocol compliance entries</li>
         </ul>
         <p style="color:#888; font-size:13px;">Only runs if you have fewer than 20 existing episodes.</p>

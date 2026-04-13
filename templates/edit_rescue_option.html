@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Edit Rescue Option — Baseline{% endblock %}
+{% block title %}Edit Intervention — Baseline{% endblock %}
 
 {% block content %}
 <div class="page-header">
-  <h1 class="page-title">Edit Rescue Option</h1>
+  <h1 class="page-title">Edit Intervention</h1>
   <a href="{{ url_for('protocols') }}" class="btn btn-secondary">Cancel</a>
 </div>
 
@@ -34,7 +34,7 @@
 
   <div class="form-actions">
     <form class="delete-form" method="POST" action="{{ url_for('delete_protocol', protocol_id=option.id) }}"
-          onsubmit="return confirm('Delete this rescue option?')">
+          onsubmit="return confirm('Delete this intervention?')">
       <button type="submit" class="btn btn-danger">Delete</button>
     </form>
     <div class="form-actions-primary">

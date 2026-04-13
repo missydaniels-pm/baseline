@@ -60,7 +60,7 @@
     <hr class="divider">
 
     <div class="form-group">
-      <label for="rescue_protocol">Rescue Protocol Used</label>
+      <label for="rescue_protocol">Intervention Used</label>
       <select id="rescue_protocol" name="rescue_protocol">
         <option value="">— none —</option>
         {% for opt in rescue_options %}
@@ -70,7 +70,7 @@
           {{ opt.name }}{% if not opt.available %} (unavailable){% endif %}
         </option>
         {% endfor %}
-        {# Preserve a saved value that no longer exists in rescue options #}
+        {# Preserve a saved value that no longer exists in interventions #}
         {% if episode.rescue_protocol and episode.rescue_protocol not in rescue_options|map(attribute='name')|list %}
         <option value="{{ episode.rescue_protocol }}" selected>{{ episode.rescue_protocol }}</option>
         {% endif %}
@@ -79,7 +79,7 @@
 
     <div class="form-row">
       <div class="form-group">
-        <label for="rescue_effectiveness">Rescue Effectiveness (1–10)</label>
+        <label for="rescue_effectiveness">Effectiveness (1–10)</label>
         <div class="slider-wrap">
           <input type="range" id="rescue_effectiveness" name="rescue_effectiveness"
                  min="1" max="10" value="{{ episode.rescue_effectiveness or 5 }}">
@@ -96,7 +96,7 @@
 
     <div class="form-group">
       <label for="notes">Notes</label>
-      <textarea id="notes" name="notes" placeholder="Symptoms, context, observations…"
+      <textarea id="notes" name="notes" placeholder="Context, observations…"
                 data-charlimit="500">{{ episode.notes or '' }}</textarea>
       <div class="char-counter"><span id="notes_count">0</span>/500</div>
     </div>

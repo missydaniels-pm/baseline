@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Symptoms — Baseline{% endblock %}
+{% block title %}What I Track — Baseline{% endblock %}
 
 {% block content %}
 <div class="page-header">
-  <h1 class="page-title">Symptoms</h1>
-  <a href="{{ url_for('new_symptom') }}" class="btn btn-primary">+ Add Symptom</a>
+  <h1 class="page-title">What I Track</h1>
+  <a href="{{ url_for('new_symptom') }}" class="btn btn-primary">+ Track Something New</a>
 </div>
 
 {% if active %}
@@ -21,8 +21,8 @@
       <div class="symptom-actions">
         <a href="{{ url_for('edit_symptom', symptom_id=symptom.id) }}" class="btn btn-secondary btn-sm">Edit</a>
         <form method="POST" action="{{ url_for('deactivate_symptom', symptom_id=symptom.id) }}"
-              onsubmit="return confirm('Deactivate {{ symptom.name }}? It will stop appearing on the episode form, but all historical data is kept.')">
-          <button type="submit" class="btn btn-sm btn-muted">Deactivate</button>
+              onsubmit="return confirm('Pause tracking for {{ symptom.name }}? It will stop appearing on the episode form, but all historical data is kept.')">
+          <button type="submit" class="btn btn-sm btn-muted">Pause</button>
         </form>
       </div>
     </div>
@@ -30,8 +30,8 @@
   {% endfor %}
 {% else %}
   <div class="empty-state">
-    <p>No active symptoms defined.</p>
-    <a href="{{ url_for('new_symptom') }}" class="btn btn-primary">Add your first symptom</a>
+    <p>Nothing being tracked yet.</p>
+    <a href="{{ url_for('new_symptom') }}" class="btn btn-primary">Start tracking</a>
   </div>
 {% endif %}
 
@@ -39,8 +39,8 @@
 <hr class="divider">
 <div class="section-header">
   <div>
-    <div class="section-title">Inactive</div>
-    <div class="section-sub">These symptoms are hidden from episode logging but their data is preserved.</div>
+    <div class="section-title">Paused</div>
+    <div class="section-sub">These items are hidden from episode logging but their data is preserved.</div>
   </div>
 </div>
 
@@ -50,7 +50,7 @@
     <div class="symptom-info">
       <div class="symptom-name">
         {{ symptom.name }}
-        <span class="tag-inactive">inactive</span>
+        <span class="tag-inactive">paused</span>
       </div>
       <div class="symptom-meta">
         {% if symptom.description %}<span>{{ symptom.description }}</span>{% endif %}
@@ -60,7 +60,7 @@
     <div class="symptom-actions">
       <a href="{{ url_for('edit_symptom', symptom_id=symptom.id) }}" class="btn btn-secondary btn-sm">Edit</a>
       <form method="POST" action="{{ url_for('reactivate_symptom', symptom_id=symptom.id) }}">
-        <button type="submit" class="btn btn-sm btn-reactivate">Reactivate</button>
+        <button type="submit" class="btn btn-sm btn-reactivate">Resume</button>
       </form>
     </div>
   </div>

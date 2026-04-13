@@ -1,6 +1,6 @@
 # Baseline — Product Backlog
 
-Last updated: April 6, 2026 | 5 active users
+Last updated: April 12, 2026 | 5 active users
 
 **Priority:** P0 = fix now, P1 = next sprint, P2 = soon, P3 = later
 **Size:** S = small (<2hrs), M = medium (half day), L = large (1+ days)
@@ -33,7 +33,7 @@ High-value improvements targeting user satisfaction, retention, and portfolio re
 
 | Area | Item | Source | Size | Notes |
 |---|---|---|---|---|
-| UX | App-wide naming overhaul — rename "Symptoms" to "What I Track", rename "Rescue Medications" to "Interventions", update Protocols description from medication-centric copy to "Ongoing practices, medications, supplements, and routines that support your health". Impacts: nav labels, page headers, onboarding flow, help page, welcome modal, empty states, dashboard headers, CLAUDE.md, README, backlog. | Kiersten/Missy | M | BUILD FIRST — all subsequent features should use correct naming. Building on old naming creates throwaway work. |
+| UX | App-wide naming overhaul — rename "Symptoms" to "What I Track", rename "Rescue Medications" to "Interventions", update Protocols description from medication-centric copy to "Ongoing practices, medications, supplements, and routines that support your health". Impacts: nav labels, page headers, onboarding flow, help page, welcome modal, empty states, dashboard headers, CLAUDE.md, README, backlog. | Kiersten/Missy | M | ✅ Complete 4/12/26 |
 | Episode Logging | Allow multiple rescue options per episode | Mackenzie | M | Build before React rebuild — touches data model, better to get right in monolith. |
 | Protocol Tracking | Manual compliance logging without AI check-in | Mackenzie | S | For users who opted out of AI |
 | Dashboard | Chart time range selector (days / weeks / months) | Mackenzie/Missy | M | Build before React rebuild — understand the requirement fully before rebuilding frontend. |

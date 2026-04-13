@@ -1,6 +1,6 @@
 # Baseline — Technical README
 
-Last updated: April 6, 2026
+Last updated: April 12, 2026
 
 ---
 
@@ -72,12 +72,12 @@ Baseline Files/
 |---|---|
 | User | email, password_hash, invite_code_used, is_active, onboarding_complete, baseline data, ai_logging_enabled, has_seen_tour |
 | InviteCode | code, created_at, used_at, used_by_user_id |
-| Symptom | user-defined trackable symptoms (name, description, is_active). No hard post-onboarding limit. |
+| Symptom | user-defined trackable items (name, description, is_active). Displayed as "What I Track" in UI. No hard post-onboarding limit. |
 | Episode | onset timestamp, duration, functional_impairment, notes |
 | SymptomScore | severity score (1-10) per symptom per episode |
 | Protocol | name, start_date, dose, frequency, status (preventative) |
 | ProtocolCompliance | daily compliance log per protocol |
-| RescueOption | rescue medications/interventions |
+| RescueOption | interventions (stored as Protocol with type='rescue') |
 | Experiment | hypothesis, protocol_id, start_date, stabilization_weeks (default 3), status, outcome |
 | CheckIn | AI chat history |
 
@@ -231,11 +231,11 @@ The dashboard renders informative empty states for new users who have no data ye
 
 | Section | Empty Condition | Action Link |
 |---|---|---|
-| Symptom Baseline Cards | No active symptoms | Set up your symptoms → |
+| Tracking Baseline Cards | No active items | Set up what you track → |
 | Episode Frequency Chart | Fewer than 3 episodes or <14 days of data | Log your first episode → |
-| Symptom Trends Chart | No episodes with severity scores or <14 days of data | Log an episode → |
+| Trends Chart | No episodes with severity scores or <14 days of data | Log an episode → |
 | Protocol Impact Markers | No active preventative protocols | Add a protocol → |
-| Rescue Effectiveness | No episodes with rescue data | Log an episode → |
+| Intervention Effectiveness | No episodes with intervention data | Log an episode → |
 
 Empty states include greyed-out SVG chart placeholders, encouraging copy, and action links to the relevant section. Template variables `total_episode_count` and `has_symptom_data` are passed from the `index()` route to support per-section conditional rendering.
 

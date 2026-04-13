@@ -71,12 +71,12 @@ Baseline Files/
 
 - **User** — email, password_hash, invite_code_used, is_active, onboarding_complete, baseline data, ai_logging_enabled
 - **InviteCode** — code, created_at, used_at, used_by_user_id
-- **Symptom** — user-defined trackable symptoms (name, description, is_active). No hard limit on count post-onboarding.
+- **Symptom** — user-defined trackable items (name, description, is_active). Displayed as "What I Track" in UI. No hard limit on count post-onboarding.
 - **Episode** — health episodes with onset timestamp, duration, functional_impairment, notes
 - **SymptomScore** — severity score per symptom per episode (1-10)
 - **Protocol** — preventative protocols with name, start_date, dose, frequency, status
 - **ProtocolCompliance** — daily compliance log per protocol
-- **RescueOption** — rescue medications/interventions
+- **RescueOption** — interventions (displayed as "Interventions" in UI; stored as Protocol with type='rescue')
 - **Experiment** — hypothesis, protocol_id, start_date, stabilization_weeks (default 3), status, outcome
 - **CheckIn** — AI chat history
 
