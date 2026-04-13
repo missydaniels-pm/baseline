@@ -1,6 +1,6 @@
 # Baseline — Claude Code Context Document
 
-Last updated: March 1, 2026
+Last updated: April 12, 2026
 
 This file gives Claude Code persistent context about the Baseline project. Read it at the start of every session before making any changes.
 
@@ -10,13 +10,13 @@ This file gives Claude Code persistent context about the Baseline project. Read 
 
 Baseline is a personal health tracking web application for people managing chronic conditions. The core differentiator is structured experiment tracking — users establish a baseline, introduce one protocol change at a time, and assess outcomes with real data. The philosophy: give chronic illness sufferers the tools to be scientists of their own health.
 
-Live at: https://baseline-health.up.railway.app
+Live at: https://mybaselineapp.com (custom domain; Railway default: baseline-health.up.railway.app)
 
 ---
 
 ## Current Status
 
-- 3 active users: Missy (admin/developer), Mackenzie (stepdaughter, chronic illness), Lizz (software engineer), Kiersten (cousin)
+- 5 active users: Missy (admin/developer), Mackenzie (stepdaughter, chronic illness), Lizz (software engineer), Kiersten (cousin), Katherine (Kiersten's daughter)
 - MVP is live and deployed on Railway
 - PostgreSQL database in production, SQLite locally
 - PWA installed — works as home screen app on iOS (Safari) and Android (Chrome)
@@ -29,7 +29,7 @@ Live at: https://baseline-health.up.railway.app
 - **Database:** SQLAlchemy ORM — PostgreSQL in production, SQLite locally
 - **Frontend:** Jinja2 templates, vanilla JavaScript, Chart.js
 - **AI:** Anthropic API (claude-sonnet-4-6) for check-in parsing
-- **Hosting:** Railway (auto-deploys from GitHub main branch)
+- **Hosting:** Railway (auto-deploys from GitHub main branch), custom domain via Cloudflare DNS
 - **Auth:** Flask sessions, bcrypt password hashing, invite-code registration
 - **PWA:** manifest.json, service worker, home screen icons
 
@@ -89,6 +89,7 @@ Required in .env locally and in Railway variables in production:
 - `SECRET_KEY` — Flask session secret key
 - `DEBUG` — set to `true` locally only, `false` in production
 - `DATABASE_URL` — set automatically by Railway from PostgreSQL service reference
+- `APP_URL` — base URL for email links (production: `https://mybaselineapp.com`)
 
 ---
 
@@ -141,6 +142,7 @@ Required in .env locally and in Railway variables in production:
 - **Assumed compliance** — the app assumes users follow their protocols and captures exceptions via check-in.
 - **Condition-agnostic** — no condition field. Symptoms and protocols are the meaningful units.
 - **Privacy-first** — health data. No third-party analytics until privacy policy is live and Washington MHMD compliance is understood. No instrumentation that sends health content to third parties without explicit user consent.
+- **Learning project** — Baseline is intentionally a learning project. All architecture and design decisions must be raised to Missy with a short-term vs long-term trade-off analysis before proceeding. When a decision point arises (e.g., "should we add an index?", "should this be a separate table?"), present: (1) what the options are, (2) short-term trade-off (speed, simplicity, what works now), (3) long-term trade-off (scalability, maintainability, what matters at 50+ users or during React rebuild), and (4) a recommendation.
 
 ---
 
@@ -177,6 +179,70 @@ Two markdown files live in `Baseline Files/` and must be updated directly as par
 2. Include both in the commit with the code changes
 3. Note what needs updating in the .docx files for Missy
 4. Confirm git push completed
+
+---
+
+## Post-Implementation Workflow (Mandatory)
+
+After every code change, Claude Code must follow this 4-phase workflow automatically. Do not skip phases. Do not wait for Missy to ask.
+
+### Phase 1 — Implementation
+
+1. Build the requested feature or fix
+2. Verify the app loads locally without errors (`python app.py` or check for import/syntax issues)
+3. Confirm the change works as intended
+
+### Phase 2 — Parallel Review
+
+Launch review agents in parallel using the Task tool with `subagent_type: "general-purpose"` and `model: "sonnet"`:
+
+**Always launch (2 agents):**
+
+1. **QA Tester** — Prompt: "You are the QA Tester for Baseline. Read `.claude/agents/qa-tester.md` for your full instructions. Review the following changes: [describe what changed and which files]. Run your checklist and return your report."
+
+2. **Senior Code Reviewer** — Prompt: "You are the Senior Code Reviewer for Baseline. Read `.claude/agents/code-reviewer.md` for your full instructions. Review the following changes: [describe what changed and which files]. Run your checklist and return your report."
+
+**Conditionally launch (1 agent, only when templates or CSS changed):**
+
+3. **UX Reviewer** — Prompt: "You are the UX Reviewer for Baseline. Read `.claude/agents/ux-reviewer.md` for your full instructions. Review the following template/CSS changes: [describe what changed and which files]. Run your checklist and return your report."
+
+All agents run in parallel. Wait for all to complete before proceeding.
+
+### Phase 3 — Fix & Document
+
+1. **Present findings** — Show Missy a summary of all agent reports (blockers, warnings, architecture decisions)
+2. **Fix blockers** — Address any BLOCKER items from QA and Code Review. Re-run affected agents if fixes are significant.
+3. **Address architecture decisions** — If the Code Reviewer flagged architecture decisions, present them to Missy with trade-off analysis before proceeding.
+4. **Update documentation** — Reference `.claude/agents/doc-updater.md` checklist and apply updates directly:
+   - Update `CLAUDE.md` if project context changed
+   - Update `Baseline Files/TECHNICAL_README.md` if technical details changed
+   - Update `Baseline Files/BACKLOG.md` if items were completed or discovered
+   - Flag any `.docx` files that need Missy's attention
+
+### Phase 4 — Deploy Gate
+
+Present a deployment summary and **ask Missy for approval** before committing and pushing:
+
+```
+## Deployment Summary
+
+### Changes
+- [list of what was implemented]
+
+### Review Results
+- QA: X blockers, X warnings (all blockers resolved)
+- Code Review: X blockers, X warnings (all blockers resolved)
+- UX Review: X blockers, X warnings (or "not triggered — no template/CSS changes")
+
+### Documentation Updated
+- [list of docs updated]
+- [list of .docx files flagged for Missy]
+
+### Ready to deploy?
+This will commit and push to main, triggering auto-deploy to production.
+```
+
+**Do not commit or push without Missy's explicit approval.**
 
 ---
 
