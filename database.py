@@ -113,6 +113,23 @@ class SymptomScore(db.Model):
         return f'<SymptomScore episode={self.episode_id} symptom={self.symptom_id} score={self.score}>'
 
 
+class EpisodeIntervention(db.Model):
+    __tablename__ = 'episode_interventions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    episode_id = db.Column(db.Integer, db.ForeignKey('episodes.id'), nullable=False)
+    protocol_id = db.Column(db.Integer, db.ForeignKey('protocols.id'), nullable=False)
+    effectiveness = db.Column(db.Integer, nullable=True)  # 1-10
+    time_to_relief_hours = db.Column(db.Float, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    episode = db.relationship('Episode', backref=db.backref('interventions', lazy=True, cascade='all, delete-orphan'))
+    protocol = db.relationship('Protocol')
+
+    def __repr__(self):
+        return f'<EpisodeIntervention episode={self.episode_id} protocol={self.protocol_id}>'
+
+
 class Protocol(db.Model):
     __tablename__ = 'protocols'
 
@@ -123,7 +140,7 @@ class Protocol(db.Model):
     type = db.Column(db.String(20), nullable=False)  # preventative or rescue
     start_date = db.Column(db.Date, nullable=True)
     dose_frequency = db.Column(db.String(200), nullable=True)
-    status = db.Column(db.String(20), nullable=False, default='active')  # active, paused, stopped
+    status = db.Column(db.String(20), nullable=False, default='active')  # active, paused, stopped, removed (rescue only)
     available = db.Column(db.Boolean, nullable=False, default=True)  # rescue options only
     notes = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

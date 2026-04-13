@@ -2573,3 +2573,47 @@ input[type="range"]::-moz-range-thumb {
     width: calc(100% - 32px);
   }
 }
+
+/* Intervention rows (episode forms) */
+.intervention-row {
+  margin-bottom: 12px;
+  padding: 12px;
+  background: var(--surface2);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.intervention-row-fields {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.intervention-row-fields .form-group {
+  margin-bottom: 0;
+}
+
+.intervention-remove {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+#interventions-section {
+  margin-bottom: 20px;
+}
+
+#interventions-section > label {
+  margin-bottom: 10px;
+}
+
+@media (max-width: 768px) {
+  .intervention-row-fields {
+    flex-wrap: wrap;
+  }
+  .intervention-row-fields .form-group {
+    flex: 1 1 100% !important;
+  }
+  .intervention-remove {
+    margin-top: 0;
+  }
+}

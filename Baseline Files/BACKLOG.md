@@ -34,7 +34,7 @@ High-value improvements targeting user satisfaction, retention, and portfolio re
 | Area | Item | Source | Size | Notes |
 |---|---|---|---|---|
 | UX | App-wide naming overhaul — rename "Symptoms" to "What I Track", rename "Rescue Medications" to "Interventions", update Protocols description from medication-centric copy to "Ongoing practices, medications, supplements, and routines that support your health". Impacts: nav labels, page headers, onboarding flow, help page, welcome modal, empty states, dashboard headers, CLAUDE.md, README, backlog. | Kiersten/Missy | M | ✅ Complete 4/12/26 |
-| Episode Logging | Allow multiple rescue options per episode | Mackenzie | M | Build before React rebuild — touches data model, better to get right in monolith. |
+| Episode Logging | Allow multiple rescue options per episode | Mackenzie | M | ✅ Complete 4/12/26 — EpisodeIntervention junction table, multi-intervention forms, AI prompt updated |
 | Protocol Tracking | Manual compliance logging without AI check-in | Mackenzie | S | For users who opted out of AI |
 | Dashboard | Chart time range selector (days / weeks / months) | Mackenzie/Missy | M | Build before React rebuild — understand the requirement fully before rebuilding frontend. |
 | Help & Onboarding | Full Help page with Dashboard explanation + check-in tutorial | Internal | M | ✅ Complete 3/21/26 |
@@ -128,7 +128,7 @@ Longer-term vision. Architecture decision point: React rebuild is the gateway to
 **March 2026:** 3-symptom limit is an onboarding guardrail only — not enforced app-wide. Protects new users from overwhelm without restricting power users.
 
 ### Data Deletion
-**March 2026:** Account deletion implemented (/settings/delete-account). Satisfies Washington MHMD right to delete. Requires typing "DELETE" to confirm. Deletes all data in FK-safe order: SymptomScores → CheckIns → Episodes → ProtocolCompliance → ProtocolEvents → Experiments → Protocols → Symptoms → InviteCode reference → User.
+**March 2026:** Account deletion implemented (/settings/delete-account). Satisfies Washington MHMD right to delete. Requires typing "DELETE" to confirm. Deletes all data in FK-safe order: EpisodeInterventions → SymptomScores → CheckIns → Episodes → ProtocolCompliance → ProtocolEvents → Experiments → Protocols → Symptoms → InviteCode reference → User.
 
 ### Boolean Migration Defaults — PostgreSQL Compatibility
 **March 2026:** PostgreSQL rejects `DEFAULT 0` / `DEFAULT 1` for BOOLEAN columns (requires `DEFAULT FALSE` / `DEFAULT TRUE`). SQLite accepts both. Fixed all ALTER TABLE migrations in `run_migrations()` to use `TRUE`/`FALSE`. Original bug surfaced when `has_seen_tour` migration ran on production PostgreSQL for the first time.

@@ -59,39 +59,10 @@
 
     <hr class="divider">
 
-    <div class="form-group">
-      <label for="rescue_protocol">Intervention Used</label>
-      <select id="rescue_protocol" name="rescue_protocol">
-        <option value="">— none —</option>
-        {% for opt in rescue_options %}
-        <option value="{{ opt.name }}"
-          {% if episode.rescue_protocol == opt.name %}selected{% endif %}
-          {% if not opt.available %} class="option-unavailable"{% endif %}>
-          {{ opt.name }}{% if not opt.available %} (unavailable){% endif %}
-        </option>
-        {% endfor %}
-        {# Preserve a saved value that no longer exists in interventions #}
-        {% if episode.rescue_protocol and episode.rescue_protocol not in rescue_options|map(attribute='name')|list %}
-        <option value="{{ episode.rescue_protocol }}" selected>{{ episode.rescue_protocol }}</option>
-        {% endif %}
-      </select>
-    </div>
-
-    <div class="form-row">
-      <div class="form-group">
-        <label for="rescue_effectiveness">Effectiveness (1–10)</label>
-        <div class="slider-wrap">
-          <input type="range" id="rescue_effectiveness" name="rescue_effectiveness"
-                 min="1" max="10" value="{{ episode.rescue_effectiveness or 5 }}">
-          <span class="slider-value" id="rescue_effectiveness_display">{{ episode.rescue_effectiveness or 5 }}</span>
-        </div>
-      </div>
-      <div class="form-group">
-        <label for="time_to_relief_hours">Time to Relief (hours)</label>
-        <input type="number" id="time_to_relief_hours" name="time_to_relief_hours"
-               min="0" max="72" step="0.25"
-               value="{{ episode.time_to_relief_hours or '' }}" placeholder="e.g. 1.5">
-      </div>
+    <div id="interventions-section">
+      <label>Interventions Used</label>
+      <div id="intervention-rows"></div>
+      <button type="button" class="btn btn-secondary btn-sm" id="addInterventionBtn" style="margin-top:8px;">+ Add intervention</button>
     </div>
 
     <div class="form-group">
@@ -116,6 +87,81 @@
 </div>
 
 <script>
+  var rescueOptions = [
+    {% for opt in rescue_options %}
+    {id: {{ opt.id }}, name: "{{ opt.name|e }}", available: {{ 'true' if opt.available else 'false' }}}{{ ',' if not loop.last }}
+    {% endfor %}
+  ];
+  var existingInterventions = [
+    {% for ei in episode.interventions %}
+    {protoId: {{ ei.protocol_id }}, eff: {{ ei.effectiveness if ei.effectiveness is not none else 'null' }}, relief: {{ ei.time_to_relief_hours if ei.time_to_relief_hours is not none else 'null' }}}{{ ',' if not loop.last }}
+    {% endfor %}
+  ];
+  var maxInterventions = 5;
+  var nextIdx = 0;
+
+  function addInterventionRow(protoId, eff, relief) {
+    if (document.querySelectorAll('#intervention-rows .intervention-row').length >= maxInterventions) return;
+    var idx = nextIdx++;
+    var row = document.createElement('div');
+    row.className = 'intervention-row';
+    row.setAttribute('data-idx', idx);
+
+    var selectHtml = '<select name="intervention_protocol_' + idx + '" aria-label="Intervention">'
+      + '<option value="">— none —</option>';
+    for (var i = 0; i < rescueOptions.length; i++) {
+      var opt = rescueOptions[i];
+      var sel = (protoId && protoId == opt.id) ? ' selected' : '';
+      var suffix = opt.available ? '' : ' (unavailable)';
+      selectHtml += '<option value="' + opt.id + '"' + sel + '>' + opt.name + suffix + '</option>';
+    }
+    selectHtml += '</select>';
+
+    var effVal = (eff !== null && eff !== undefined) ? eff : 5;
+    var reliefVal = (relief !== null && relief !== undefined) ? relief : '';
+
+    row.innerHTML = '<div class="intervention-row-fields">'
+      + '<div class="form-group" style="flex:2;">' + selectHtml + '</div>'
+      + '<div class="form-group" style="flex:1;"><div class="slider-wrap">'
+      + '<input type="range" name="intervention_effectiveness_' + idx + '" min="1" max="10" value="' + effVal + '" aria-label="Effectiveness (1-10)">'
+      + '<span class="slider-value">' + effVal + '</span>'
+      + '</div><div class="field-hint">Effectiveness</div></div>'
+      + '<div class="form-group" style="flex:1;">'
+      + '<input type="number" inputmode="decimal" name="intervention_relief_' + idx + '" min="0" max="72" step="0.25" placeholder="hours" value="' + reliefVal + '" aria-label="Time to relief (hours)">'
+      + '<div class="field-hint">Time to relief</div></div>'
+      + '<button type="button" class="btn btn-danger btn-sm intervention-remove" aria-label="Remove intervention">✕</button>'
+      + '</div>';
+
+    document.getElementById('intervention-rows').appendChild(row);
+
+    var slider = row.querySelector('input[type="range"]');
+    var display = row.querySelector('.slider-value');
+    slider.addEventListener('input', function() { display.textContent = this.value; });
+
+    row.querySelector('.intervention-remove').addEventListener('click', function() {
+      row.remove();
+      updateAddButton();
+    });
+
+    updateAddButton();
+  }
+
+  function updateAddButton() {
+    var rows = document.querySelectorAll('#intervention-rows .intervention-row');
+    document.getElementById('addInterventionBtn').style.display = rows.length >= maxInterventions ? 'none' : '';
+  }
+
+  document.getElementById('addInterventionBtn').addEventListener('click', function() {
+    addInterventionRow();
+  });
+
+  // Pre-populate existing interventions
+  for (var i = 0; i < existingInterventions.length; i++) {
+    var ei = existingInterventions[i];
+    addInterventionRow(ei.protoId, ei.eff, ei.relief);
+  }
+
+  // Onset helpers
   (function() {
     var now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());

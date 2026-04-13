@@ -74,6 +74,7 @@ Baseline Files/
 | Symptom | user-defined trackable items (name, description, is_active). Displayed as "What I Track" in UI. No hard post-onboarding limit. |
 | Episode | onset timestamp, duration, functional_impairment, notes |
 | SymptomScore | severity score (1-10) per symptom per episode |
+| EpisodeIntervention | junction table: episode_id, protocol_id (rescue), effectiveness (1-10), time_to_relief_hours. Supports multiple interventions per episode. |
 | Protocol | name, start_date, dose, frequency, status (preventative) |
 | ProtocolCompliance | daily compliance log per protocol |
 | RescueOption | interventions (stored as Protocol with type='rescue') |
@@ -213,7 +214,7 @@ python generate_icons.py
 - Sessions encrypted with SECRET_KEY
 - All production traffic over HTTPS (Railway provides SSL)
 - Dev routes grouped in a dedicated section with explicit `if not app.debug` guards — blocked in production (DEBUG=false)
-- Account deletion removes all data in FK-safe order: SymptomScores → CheckIns → Episodes → ProtocolCompliance → ProtocolEvents → Experiments → Protocols → Symptoms → InviteCode reference → User
+- Account deletion removes all data in FK-safe order: EpisodeInterventions → SymptomScores → CheckIns → Episodes → ProtocolCompliance → ProtocolEvents → Experiments → Protocols → Symptoms → InviteCode reference → User
 - Data deletion satisfies Washington State My Health MY Data Act (MHMD) requirements
 - Welcome email sent on registration via Gmail SMTP (smtplib). Fails silently if credentials not configured. HTML + plain text.
 - Welcome tour modal shown on first dashboard visit after onboarding (`has_seen_tour` flag on User model). Replayable from Help page via `/tour/restart`.

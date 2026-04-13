@@ -85,27 +85,54 @@
 </div>
 
 {% if rescue_options %}
-<div class="rescue-grid">
   {% for opt in rescue_options %}
-  <div class="rescue-card {% if not opt.available %}rescue-unavailable{% endif %}">
-    <div class="rescue-card-top">
-      <span class="rescue-name">{{ opt.name }}</span>
-      <span class="avail-badge {% if opt.available %}avail-yes{% else %}avail-no{% endif %}">
-        {% if opt.available %}available{% else %}unavailable{% endif %}
-      </span>
-    </div>
-    {% if opt.notes %}<div class="notes-text" style="margin-top:6px;">{{ opt.notes }}</div>{% endif %}
-    <div style="margin-top:10px;">
-      <a href="{{ url_for('edit_rescue_option', option_id=opt.id) }}" class="btn btn-secondary btn-sm">Edit</a>
+  <div class="card"{% if not opt.available %} style="opacity:0.6;"{% endif %}>
+    <div class="protocol-card">
+      <div class="protocol-info">
+        <div class="protocol-name">{{ opt.name }}</div>
+        <div class="protocol-meta">
+          <span class="{% if opt.available %}avail-badge avail-yes{% else %}avail-badge avail-no{% endif %}">
+            {% if opt.available %}available{% else %}unavailable{% endif %}
+          </span>
+        </div>
+        {% if opt.notes %}<div class="notes-text">{{ opt.notes }}</div>{% endif %}
+      </div>
+      <div style="display:flex; gap:8px; flex-shrink:0;">
+        <a href="{{ url_for('edit_rescue_option', option_id=opt.id) }}" class="btn btn-secondary btn-sm">Edit</a>
+      </div>
     </div>
   </div>
   {% endfor %}
-</div>
 {% else %}
   <div class="empty-state" style="padding:28px 0;">
     <p>No interventions added yet.</p>
     <a href="{{ url_for('new_rescue_option') }}" class="btn btn-primary">Add first intervention</a>
   </div>
+{% endif %}
+
+{% if removed_interventions %}
+<hr class="divider">
+<div class="section-header" style="margin-bottom:12px;">
+  <div class="section-title" style="color:var(--text-muted);">Removed</div>
+</div>
+  {% for opt in removed_interventions %}
+  <div class="card" style="opacity:0.55;">
+    <div class="protocol-card">
+      <div class="protocol-info">
+        <div class="protocol-name">{{ opt.name }}</div>
+        <div class="protocol-meta">
+          <span class="avail-badge avail-no">removed</span>
+        </div>
+        {% if opt.notes %}<div class="notes-text">{{ opt.notes }}</div>{% endif %}
+      </div>
+      <div style="display:flex; gap:8px; flex-shrink:0;">
+        <form class="delete-form" method="POST" action="{{ url_for('restore_rescue_option', option_id=opt.id) }}">
+          <button type="submit" class="btn btn-secondary btn-sm">Restore</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
 {% endif %}
 
 {% endblock %}

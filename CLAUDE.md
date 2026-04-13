@@ -73,6 +73,7 @@ Baseline Files/
 - **Symptom** — user-defined trackable items (name, description, is_active). Displayed as "What I Track" in UI. No hard limit on count post-onboarding.
 - **Episode** — health episodes with onset timestamp, duration, functional_impairment, notes
 - **SymptomScore** — severity score per symptom per episode (1-10)
+- **EpisodeIntervention** — junction table linking episodes to interventions (Protocol type='rescue') with per-intervention effectiveness (1-10) and time_to_relief_hours
 - **Protocol** — preventative protocols with name, start_date, dose, frequency, status
 - **ProtocolCompliance** — daily compliance log per protocol
 - **RescueOption** — interventions (displayed as "Interventions" in UI; stored as Protocol with type='rescue')

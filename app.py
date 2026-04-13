@@ -9,7 +9,7 @@ from email.mime.multipart import MIMEMultipart
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_bcrypt import Bcrypt
 from sqlalchemy import text
-from database import db, User, Episode, Protocol, Symptom, SymptomScore, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode
+from database import db, User, Episode, Protocol, Symptom, SymptomScore, EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode
 from collections import defaultdict
 from datetime import datetime, date, timedelta
 from dotenv import load_dotenv
@@ -235,6 +235,54 @@ def run_data_migrations():
         user.onboarding_complete = True
         db.session.commit()
         print("Migration complete.")
+
+
+def migrate_episode_interventions():
+    """Migrate flat rescue_protocol columns to EpisodeIntervention records."""
+    episodes_needing_migration = (
+        Episode.query
+        .filter(Episode.rescue_protocol.isnot(None), Episode.rescue_protocol != '')
+        .all()
+    )
+    # Only process episodes that don't already have EpisodeIntervention records
+    episodes_needing_migration = [
+        ep for ep in episodes_needing_migration if not ep.interventions
+    ]
+    if not episodes_needing_migration:
+        return
+
+    print(f"Migrating {len(episodes_needing_migration)} episode(s) to EpisodeIntervention records...")
+
+    for ep in episodes_needing_migration:
+        names = [n.strip() for n in ep.rescue_protocol.split(',') if n.strip()]
+        for idx, name in enumerate(names):
+            # Match to existing Protocol (type='rescue') for same user, case-insensitive
+            protocol = Protocol.query.filter(
+                Protocol.user_id == ep.user_id,
+                Protocol.type == 'rescue',
+                db.func.lower(Protocol.name) == name.lower(),
+            ).first()
+            if not protocol:
+                protocol = Protocol(
+                    user_id=ep.user_id,
+                    name=name,
+                    type='rescue',
+                    available=True,
+                )
+                db.session.add(protocol)
+                db.session.flush()
+
+            ei = EpisodeIntervention(
+                episode_id=ep.id,
+                protocol_id=protocol.id,
+                # Apply effectiveness/relief to first intervention only
+                effectiveness=ep.rescue_effectiveness if idx == 0 else None,
+                time_to_relief_hours=ep.time_to_relief_hours if idx == 0 else None,
+            )
+            db.session.add(ei)
+
+    db.session.commit()
+    print("EpisodeIntervention migration complete.")
 
 
 def get_user():
@@ -562,10 +610,12 @@ def delete_account():
     user_id = user.id
 
     # Delete in FK-safe order
+    episode_ids = db.session.query(Episode.id).filter_by(user_id=user_id)
+    EpisodeIntervention.query.filter(
+        EpisodeIntervention.episode_id.in_(episode_ids)
+    ).delete(synchronize_session=False)
     SymptomScore.query.filter(
-        SymptomScore.episode_id.in_(
-            db.session.query(Episode.id).filter_by(user_id=user_id)
-        )
+        SymptomScore.episode_id.in_(episode_ids)
     ).delete(synchronize_session=False)
     CheckIn.query.filter_by(user_id=user_id).delete()
     Episode.query.filter_by(user_id=user_id).delete()
@@ -600,7 +650,7 @@ def build_system_prompt(user, client_time=None):
     current_time = local_dt.strftime('%H:%M')
     symptoms = Symptom.query.filter_by(user_id=user.id, is_active=True).all()
     preventatives = Protocol.query.filter_by(user_id=user.id, type='preventative', status='active').all()
-    rescues = Protocol.query.filter_by(user_id=user.id, type='rescue').all()
+    rescues = Protocol.query.filter(Protocol.user_id == user.id, Protocol.type == 'rescue', Protocol.status != 'removed').all()
     active_exp = get_active_experiment(user.id)
 
     symptom_list = '\n'.join(
@@ -631,12 +681,14 @@ The user tracks these symptoms (use their exact IDs in your JSON):
 Active preventative protocols:
 {preventative_list}
 
-Rescue options:
+Rescue options (interventions):
 {rescue_list}
 
 The user will describe how they are feeling or what happened today. Parse their message and respond with ONLY valid JSON (no markdown, no code fences).
 
 For the episode onset field: if the user mentions a specific time (e.g. "around 2pm", "this morning at 8"), infer the full datetime. Otherwise use the current date and time ({today}T{current_time}) as the onset. Never return null for onset when had_episode is true.
+
+Always match intervention names to the user's existing interventions listed above. Use your knowledge of brand/generic medication names, common misspellings, and colloquial terms to map to the correct one (e.g., "muscle relaxer" → the user's muscle relaxant if they have one, "ondansetren" → Ondansetron). If the user mentions multiple interventions, create a separate entry for each. If an intervention is genuinely new (not in the list), use the correct pharmacological or common name.
 
 Use this exact schema:
 
@@ -646,9 +698,13 @@ Use this exact schema:
     "onset": "YYYY-MM-DDTHH:MM or null",
     "symptom_scores": {{"<symptom_id_as_string>": <1-10 integer>}},
     "functional_impairment": "working_normally or working_reduced or cannot_work or completely_incapacitated or null",
-    "rescue_option_used": "<rescue name> or null",
-    "rescue_effectiveness": <1-10 integer or null>,
-    "time_to_relief_hours": <float or null>,
+    "interventions": [
+      {{
+        "name": "<exact intervention name from the list above>",
+        "effectiveness": <1-10 integer or null>,
+        "time_to_relief_hours": <float or null>
+      }}
+    ],
     "notes": "<string or null>"
   }},
   "protocol_compliance": [<list of preventative protocol IDs taken today>],
@@ -658,6 +714,7 @@ Use this exact schema:
 
 If no episode occurred, set had_episode to false and episode_data fields to null/empty.
 If the user describes experiencing a tracked symptom but does not give a severity score, still set had_episode to true and omit the score — but in suggested_response warmly ask them to rate it on a scale of 1–10 so it can be logged accurately.
+If no interventions were used, set interventions to an empty array [].
 Always populate suggested_response with a warm, brief reply."""
 
 
@@ -748,9 +805,6 @@ def checkin():
                     onset=onset,
                     peak_severity=None,
                     functional_impairment=ep_data.get('functional_impairment') or None,
-                    rescue_protocol=ep_data.get('rescue_option_used') or None,
-                    rescue_effectiveness=ep_data.get('rescue_effectiveness') or None,
-                    time_to_relief_hours=ep_data.get('time_to_relief_hours') or None,
                     notes=ep_data.get('notes') or None,
                 )
                 db.session.add(episode)
@@ -763,6 +817,53 @@ def checkin():
                         symptom_id=int(sym_id_str),
                         score=int(score),
                     ))
+
+                # Handle interventions — new array format
+                interventions_list = ep_data.get('interventions') or []
+                # Backward compat: old single-string format
+                if not interventions_list and ep_data.get('rescue_option_used'):
+                    interventions_list = [{
+                        'name': ep_data['rescue_option_used'],
+                        'effectiveness': ep_data.get('rescue_effectiveness'),
+                        'time_to_relief_hours': ep_data.get('time_to_relief_hours'),
+                    }]
+
+                new_intervention_names = []
+                for intervention in interventions_list:
+                    iname = (intervention.get('name') or '').strip()
+                    if not iname:
+                        continue
+                    # Match to existing Protocol (type='rescue') for user
+                    protocol = Protocol.query.filter(
+                        Protocol.user_id == user.id,
+                        Protocol.type == 'rescue',
+                        db.func.lower(Protocol.name) == iname.lower(),
+                    ).first()
+                    if not protocol:
+                        protocol = Protocol(
+                            user_id=user.id,
+                            name=iname,
+                            type='rescue',
+                            available=True,
+                        )
+                        db.session.add(protocol)
+                        db.session.flush()
+                        new_intervention_names.append(iname)
+
+                    eff = intervention.get('effectiveness')
+                    relief = intervention.get('time_to_relief_hours')
+                    db.session.add(EpisodeIntervention(
+                        episode_id=episode.id,
+                        protocol_id=protocol.id,
+                        effectiveness=int(eff) if eff is not None else None,
+                        time_to_relief_hours=float(relief) if relief is not None else None,
+                    ))
+
+                if new_intervention_names:
+                    suggestion = parsed.get('suggested_response', '')
+                    for n in new_intervention_names:
+                        suggestion += f" I've added {n} as a new intervention."
+                    parsed['suggested_response'] = suggestion
 
             # Log protocol compliance (deduplicate)
             today_date = date.today()
@@ -1239,23 +1340,24 @@ def index():
             if 0 <= week_index < num_weeks:
                 protocol_annotations.append({'name': p.name, 'week_index': round(week_index, 1)})
 
-    # ── Rescue effectiveness stats ──
-    rescue_episodes = (
-        Episode.query.filter(Episode.user_id == user.id,
-                             Episode.rescue_protocol.isnot(None),
-                             Episode.rescue_protocol != '')
+    # ── Rescue effectiveness stats (from EpisodeIntervention) ──
+    intervention_records = (
+        db.session.query(EpisodeIntervention, Protocol.name)
+        .join(Protocol, EpisodeIntervention.protocol_id == Protocol.id)
+        .join(Episode, EpisodeIntervention.episode_id == Episode.id)
+        .filter(Episode.user_id == user.id)
         .all()
     )
     rescue_grouped = defaultdict(list)
-    for ep in rescue_episodes:
-        rescue_grouped[ep.rescue_protocol].append(ep)
+    for ei, pname in intervention_records:
+        rescue_grouped[pname].append(ei)
     rescue_stats = []
-    for name, eps in rescue_grouped.items():
-        eff_scores = [ep.rescue_effectiveness for ep in eps if ep.rescue_effectiveness is not None]
-        relief_hours = [ep.time_to_relief_hours for ep in eps if ep.time_to_relief_hours is not None]
+    for name, eis in rescue_grouped.items():
+        eff_scores = [ei.effectiveness for ei in eis if ei.effectiveness is not None]
+        relief_hours = [ei.time_to_relief_hours for ei in eis if ei.time_to_relief_hours is not None]
         rescue_stats.append({
             'name': name,
-            'times_used': len(eps),
+            'times_used': len(eis),
             'avg_effectiveness': round(sum(eff_scores) / len(eff_scores), 1) if eff_scores else None,
             'avg_relief_hours': round(sum(relief_hours) / len(relief_hours), 1) if relief_hours else None,
         })
@@ -1312,7 +1414,7 @@ def episodes():
 def new_episode():
     user = get_user()
     symptoms = Symptom.query.filter_by(user_id=user.id, is_active=True).all()
-    rescue_options = Protocol.query.filter_by(user_id=user.id, type='rescue').order_by(Protocol.available.desc(), Protocol.name).all()
+    rescue_options = Protocol.query.filter(Protocol.user_id == user.id, Protocol.type == 'rescue', Protocol.status != 'removed').order_by(Protocol.available.desc(), Protocol.name).all()
 
     if request.method == 'POST':
         onset_str = request.form.get('onset')
@@ -1333,9 +1435,6 @@ def new_episode():
             peak_severity=None,
             duration_hours=float(request.form.get('duration_hours') or 0) or None,
             functional_impairment=request.form.get('functional_impairment'),
-            rescue_protocol=request.form.get('rescue_protocol') or None,
-            rescue_effectiveness=int(request.form.get('rescue_effectiveness', 5)) if request.form.get('rescue_protocol') else None,
-            time_to_relief_hours=float(v) if (v := request.form.get('time_to_relief_hours')) else None,
             notes=request.form.get('notes') or None,
         )
         db.session.add(episode)
@@ -1345,6 +1444,24 @@ def new_episode():
             score_str = request.form.get(f'score_{symptom.id}', '').strip()
             if score_str:
                 db.session.add(SymptomScore(episode_id=episode.id, symptom_id=symptom.id, score=int(score_str)))
+
+        # Save interventions from repeatable form fields
+        for i in range(5):
+            proto_id = request.form.get(f'intervention_protocol_{i}', '').strip()
+            if not proto_id:
+                continue
+            # Validate protocol belongs to current user
+            protocol = Protocol.query.filter_by(id=int(proto_id), user_id=user.id, type='rescue').first()
+            if not protocol:
+                continue
+            eff_str = request.form.get(f'intervention_effectiveness_{i}', '').strip()
+            relief_str = request.form.get(f'intervention_relief_{i}', '').strip()
+            db.session.add(EpisodeIntervention(
+                episode_id=episode.id,
+                protocol_id=protocol.id,
+                effectiveness=int(eff_str) if eff_str else None,
+                time_to_relief_hours=float(relief_str) if relief_str else None,
+            ))
 
         db.session.commit()
         flash('Episode logged.', 'success')
@@ -1358,7 +1475,7 @@ def edit_episode(episode_id):
     user = get_user()
     episode = Episode.query.filter_by(id=episode_id, user_id=user.id).first_or_404()
     symptoms = Symptom.query.filter_by(user_id=user.id, is_active=True).all()
-    rescue_options = Protocol.query.filter_by(user_id=user.id, type='rescue').order_by(Protocol.available.desc(), Protocol.name).all()
+    rescue_options = Protocol.query.filter(Protocol.user_id == user.id, Protocol.type == 'rescue', Protocol.status != 'removed').order_by(Protocol.available.desc(), Protocol.name).all()
 
     if request.method == 'POST':
         onset_str = request.form.get('onset')
@@ -1380,9 +1497,6 @@ def edit_episode(episode_id):
         episode.onset = new_onset
         episode.duration_hours = float(v) if (v := request.form.get('duration_hours')) else None
         episode.functional_impairment = request.form.get('functional_impairment')
-        episode.rescue_protocol = request.form.get('rescue_protocol') or None
-        episode.rescue_effectiveness = int(request.form.get('rescue_effectiveness', 5)) if episode.rescue_protocol else None
-        episode.time_to_relief_hours = float(v) if (v := request.form.get('time_to_relief_hours')) else None
         episode.notes = notes_val or None
 
         # Replace symptom scores
@@ -1394,6 +1508,28 @@ def edit_episode(episode_id):
             score_str = request.form.get(f'score_{symptom.id}', '').strip()
             if score_str:
                 db.session.add(SymptomScore(episode_id=episode.id, symptom_id=symptom.id, score=int(score_str)))
+
+        # Replace interventions
+        for ei in list(episode.interventions):
+            db.session.delete(ei)
+        db.session.flush()
+
+        for i in range(5):
+            proto_id = request.form.get(f'intervention_protocol_{i}', '').strip()
+            if not proto_id:
+                continue
+            # Validate protocol belongs to current user
+            protocol = Protocol.query.filter_by(id=int(proto_id), user_id=user.id, type='rescue').first()
+            if not protocol:
+                continue
+            eff_str = request.form.get(f'intervention_effectiveness_{i}', '').strip()
+            relief_str = request.form.get(f'intervention_relief_{i}', '').strip()
+            db.session.add(EpisodeIntervention(
+                episode_id=episode.id,
+                protocol_id=protocol.id,
+                effectiveness=int(eff_str) if eff_str else None,
+                time_to_relief_hours=float(relief_str) if relief_str else None,
+            ))
 
         db.session.commit()
         flash('Episode updated.', 'success')
@@ -1422,8 +1558,9 @@ def delete_episode(episode_id):
 def protocols():
     user = get_user()
     preventatives = Protocol.query.filter_by(user_id=user.id, type='preventative').order_by(Protocol.start_date.desc()).all()
-    rescue_options = Protocol.query.filter_by(user_id=user.id, type='rescue').order_by(Protocol.available.desc(), Protocol.name).all()
-    return render_template('protocols.html', preventatives=preventatives, rescue_options=rescue_options)
+    rescue_options = Protocol.query.filter(Protocol.user_id == user.id, Protocol.type == 'rescue', Protocol.status != 'removed').order_by(Protocol.available.desc(), Protocol.name).all()
+    removed_interventions = Protocol.query.filter_by(user_id=user.id, type='rescue', status='removed').order_by(Protocol.name).all()
+    return render_template('protocols.html', preventatives=preventatives, rescue_options=rescue_options, removed_interventions=removed_interventions)
 
 
 @app.route('/protocols/new', methods=['GET', 'POST'])
@@ -1609,6 +1746,9 @@ def new_rescue_option():
 def edit_rescue_option(option_id):
     user = get_user()
     option = Protocol.query.filter_by(id=option_id, user_id=user.id, type='rescue').first_or_404()
+    if option.status == 'removed':
+        flash('Restore this intervention before editing.', 'error')
+        return redirect(url_for('protocols'))
 
     if request.method == 'POST':
         name_val = request.form.get('name', '').strip()
@@ -1629,10 +1769,34 @@ def edit_rescue_option(option_id):
     return render_template('edit_rescue_option.html', option=option)
 
 
+@app.route('/rescue-options/<int:option_id>/restore', methods=['POST'])
+def restore_rescue_option(option_id):
+    user = get_user()
+    option = Protocol.query.filter_by(id=option_id, user_id=user.id, type='rescue', status='removed').first_or_404()
+    option.status = 'active'
+    option.available = True
+    db.session.commit()
+    flash(f'{option.name} has been restored.', 'success')
+    return redirect(url_for('protocols'))
+
+
 @app.route('/protocols/<int:protocol_id>/delete', methods=['POST'])
 def delete_protocol(protocol_id):
     user = get_user()
     protocol = Protocol.query.filter_by(id=protocol_id, user_id=user.id).first_or_404()
+
+    # For rescue protocols (interventions) with historical usage, soft-delete instead of hard delete
+    if protocol.type == 'rescue':
+        has_usage = EpisodeIntervention.query.filter_by(protocol_id=protocol.id).first()
+        if has_usage:
+            protocol.status = 'removed'
+            protocol.available = False
+            db.session.commit()
+            flash(f'{protocol.name} has been removed. Historical episode data is preserved.', 'success')
+            return redirect(url_for('protocols'))
+
+    # No historical usage (or preventative) — safe to hard delete
+    EpisodeIntervention.query.filter_by(protocol_id=protocol.id).delete()
     db.session.delete(protocol)
     db.session.commit()
     flash('Deleted.', 'success')
@@ -1657,10 +1821,12 @@ def dev_reset():
         CheckIn.query.filter_by(user_id=user.id).delete()
         ProtocolCompliance.query.filter_by(user_id=user.id).delete()
         Experiment.query.filter_by(user_id=user.id).delete()
+        episode_ids = db.session.query(Episode.id).filter_by(user_id=user.id)
+        EpisodeIntervention.query.filter(
+            EpisodeIntervention.episode_id.in_(episode_ids)
+        ).delete(synchronize_session=False)
         SymptomScore.query.filter(
-            SymptomScore.episode_id.in_(
-                db.session.query(Episode.id).filter_by(user_id=user.id)
-            )
+            SymptomScore.episode_id.in_(episode_ids)
         ).delete(synchronize_session=False)
         Episode.query.filter_by(user_id=user.id).delete()
         Protocol.query.filter_by(user_id=user.id).delete()
@@ -1770,12 +1936,17 @@ def dev_seed():
                     peak_severity=None,
                     duration_hours=round(random.uniform(4, 24), 1),
                     functional_impairment=impairment,
-                    rescue_protocol=rescue.name if used_rescue else None,
-                    rescue_effectiveness=random.randint(4, 9) if used_rescue else None,
-                    time_to_relief_hours=round(random.uniform(0.5, 4.0), 1) if used_rescue else None,
                 )
                 db.session.add(episode)
                 db.session.flush()
+
+                if used_rescue:
+                    db.session.add(EpisodeIntervention(
+                        episode_id=episode.id,
+                        protocol_id=rescue.id,
+                        effectiveness=random.randint(4, 9),
+                        time_to_relief_hours=round(random.uniform(0.5, 4.0), 1),
+                    ))
 
                 for symptom in symptoms:
                     score = max(1, min(10, base_score + random.randint(-1, 1)))
@@ -1899,6 +2070,7 @@ with app.app_context():
     run_migrations()
     migrate_existing_user()
     run_data_migrations()
+    migrate_episode_interventions()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True)

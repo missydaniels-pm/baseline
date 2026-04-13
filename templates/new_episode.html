@@ -52,32 +52,10 @@
 
     <hr class="divider">
 
-    <div class="form-group">
-      <label for="rescue_protocol">Intervention Used</label>
-      <select id="rescue_protocol" name="rescue_protocol">
-        <option value="">— none —</option>
-        {% for opt in rescue_options %}
-        <option value="{{ opt.name }}"{% if not opt.available %} class="option-unavailable"{% endif %}>
-          {{ opt.name }}{% if not opt.available %} (unavailable){% endif %}
-        </option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <div class="form-row">
-      <div class="form-group">
-        <label for="rescue_effectiveness">Effectiveness (1–10)</label>
-        <div class="slider-wrap">
-          <input type="range" id="rescue_effectiveness" name="rescue_effectiveness"
-                 min="1" max="10" value="5">
-          <span class="slider-value" id="rescue_effectiveness_display">5</span>
-        </div>
-      </div>
-      <div class="form-group">
-        <label for="time_to_relief_hours">Time to Relief (hours)</label>
-        <input type="number" id="time_to_relief_hours" name="time_to_relief_hours"
-               min="0" max="72" step="0.25" placeholder="e.g. 1.5">
-      </div>
+    <div id="interventions-section">
+      <label>Interventions Used</label>
+      <div id="intervention-rows"></div>
+      <button type="button" class="btn btn-secondary btn-sm" id="addInterventionBtn" style="margin-top:8px;">+ Add intervention</button>
     </div>
 
     <div class="form-group">
@@ -95,12 +73,73 @@
 </div>
 
 <script>
+  var rescueOptions = [
+    {% for opt in rescue_options %}
+    {id: {{ opt.id }}, name: "{{ opt.name|e }}", available: {{ 'true' if opt.available else 'false' }}}{{ ',' if not loop.last }}
+    {% endfor %}
+  ];
+  var maxInterventions = 5;
+  var nextIdx = 0;
+
+  function addInterventionRow(protoId, eff, relief) {
+    if (document.querySelectorAll('#intervention-rows .intervention-row').length >= maxInterventions) return;
+    var idx = nextIdx++;
+    var row = document.createElement('div');
+    row.className = 'intervention-row';
+    row.setAttribute('data-idx', idx);
+
+    var selectHtml = '<select name="intervention_protocol_' + idx + '" aria-label="Intervention">'
+      + '<option value="">— none —</option>';
+    for (var i = 0; i < rescueOptions.length; i++) {
+      var opt = rescueOptions[i];
+      var sel = (protoId && protoId == opt.id) ? ' selected' : '';
+      var suffix = opt.available ? '' : ' (unavailable)';
+      selectHtml += '<option value="' + opt.id + '"' + sel + '>' + opt.name + suffix + '</option>';
+    }
+    selectHtml += '</select>';
+
+    row.innerHTML = '<div class="intervention-row-fields">'
+      + '<div class="form-group" style="flex:2;">' + selectHtml + '</div>'
+      + '<div class="form-group" style="flex:1;"><div class="slider-wrap">'
+      + '<input type="range" name="intervention_effectiveness_' + idx + '" min="1" max="10" value="' + (eff || 5) + '" aria-label="Effectiveness (1-10)">'
+      + '<span class="slider-value">' + (eff || 5) + '</span>'
+      + '</div><div class="field-hint">Effectiveness</div></div>'
+      + '<div class="form-group" style="flex:1;">'
+      + '<input type="number" inputmode="decimal" name="intervention_relief_' + idx + '" min="0" max="72" step="0.25" placeholder="hours" value="' + (relief || '') + '" aria-label="Time to relief (hours)">'
+      + '<div class="field-hint">Time to relief</div></div>'
+      + '<button type="button" class="btn btn-danger btn-sm intervention-remove" aria-label="Remove intervention">✕</button>'
+      + '</div>';
+
+    document.getElementById('intervention-rows').appendChild(row);
+
+    // Slider live display
+    var slider = row.querySelector('input[type="range"]');
+    var display = row.querySelector('.slider-value');
+    slider.addEventListener('input', function() { display.textContent = this.value; });
+
+    row.querySelector('.intervention-remove').addEventListener('click', function() {
+      row.remove();
+      updateAddButton();
+    });
+
+    updateAddButton();
+  }
+
+  function updateAddButton() {
+    var rows = document.querySelectorAll('#intervention-rows .intervention-row');
+    document.getElementById('addInterventionBtn').style.display = rows.length >= maxInterventions ? 'none' : '';
+  }
+
+  document.getElementById('addInterventionBtn').addEventListener('click', function() {
+    addInterventionRow();
+  });
+
+  // Onset helpers
   function setOnsetNow() {
     var now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     document.getElementById('onset').value = now.toISOString().slice(0, 16);
   }
-  // Set max to current local time to prevent future dates
   function updateOnsetMax() {
     var now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
