@@ -14,6 +14,9 @@
   <a href="#protocols">Protocols</a>
   <a href="#experiments">Running Experiments</a>
   <a href="#dashboard">Your Dashboard</a>
+  <a href="#managing-tracking">Managing What You Track</a>
+  <a href="#account">Your Account</a>
+  <a href="#install">Install as an App</a>
   <a href="#early-version">A note on this early version</a>
 </nav>
 
@@ -135,7 +138,8 @@
 
   <h3 class="help-subheading">Preventative protocols</h3>
   <p>These are the ongoing interventions you're using to manage your condition — medications, supplements, lifestyle changes, dietary protocols. Add them in the <a href="{{ url_for('protocols') }}">Protocols</a> section with a start date and notes.</p>
-  <p>Each protocol has a detail page where you can log daily compliance and see a full history timeline showing every taken and missed entry alongside status changes.</p>
+  <p>Each protocol has a detail page where you can log daily compliance and see a full history timeline. The timeline shows every taken and missed entry alongside status changes — when you started, paused, stopped, or changed the dose — all in reverse chronological order. If you've already logged today, the form collapses so you can update it without losing what you entered.</p>
+  <p>You can also add protocols with a future start date to plan what you want to try next. This is useful for keeping a running list of things you want to experiment with.</p>
 
   <h3 class="help-subheading">Interventions</h3>
   <p>These are the things you reach for when you're in the middle of a bad episode — medications, techniques, or remedies. When you log an episode, you can record which intervention you used and how effective it was.</p>
@@ -184,6 +188,40 @@
 
   <h3 class="help-subheading">When will my charts appear?</h3>
   <p>The dashboard shows an empty state message until you have at least two weeks of data. This is intentional — the charts need enough data points to be meaningful. Keep logging consistently and the insights will build up.</p>
+</section>
+
+<hr class="divider">
+
+<section class="help-section" id="managing-tracking">
+  <h2 class="help-heading">Managing What You Track</h2>
+  <p>You set up what you're tracking during onboarding, but you can always change it. Go to <a href="{{ url_for('symptoms') }}">What I Track</a> to add new items, edit existing ones, or pause items you no longer want to track.</p>
+  <p>Pausing an item removes it from your episode logging form but preserves all your historical data. You can resume it at any time.</p>
+</section>
+
+<hr class="divider">
+
+<section class="help-section" id="account">
+  <h2 class="help-heading">Your Account</h2>
+  <p>From <a href="{{ url_for('settings') }}">Settings</a> you can:</p>
+  <ul class="help-list">
+    <li>Change your email address or password (both require your current password to confirm)</li>
+    <li>Enable or disable AI logging</li>
+    <li>Delete your account and all associated data</li>
+  </ul>
+  <p>You can log out at any time from the sidebar. Check "Remember me" on the login page to stay logged in for 30 days.</p>
+</section>
+
+<hr class="divider">
+
+<section class="help-section" id="install">
+  <h2 class="help-heading">Install as an App</h2>
+  <p>Baseline can be installed directly from your browser — no App Store required. Once installed it opens like a native app, without browser toolbars.</p>
+  <ul class="help-list">
+    <li><strong>iOS:</strong> Open Baseline in Safari, tap the Share button, then tap <strong>Add to Home Screen</strong></li>
+    <li><strong>Android:</strong> Open Baseline in Chrome, tap the browser menu, then tap <strong>Add to Home Screen</strong> or <strong>Install app</strong></li>
+    <li><strong>Desktop:</strong> In Chrome or Edge, look for the install icon in the address bar, or check the browser menu for <strong>Install Baseline</strong></li>
+  </ul>
+  <p>You may also see an "Install Baseline" prompt at the bottom of the screen when you first visit — just tap it to install.</p>
 </section>
 
 <hr class="divider">

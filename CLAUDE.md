@@ -59,7 +59,6 @@ templates/
   [other templates]     — episodes, protocols, experiments, symptoms, settings, help
 Baseline Files/
   baseline-technical-readme.docx
-  baseline-user-guide.docx
   baseline-vision-roadmap.docx
   baseline-privacy-policy.docx
   baseline-backlog.docx
@@ -166,9 +165,11 @@ Two markdown files live in `Baseline Files/` and must be updated directly as par
 - Priorities change
 - New decisions are made (add to Decision Log)
 
-### Files you do NOT edit directly (.docx):
+### In-app help page:
 
-**`Baseline Files/baseline-user-guide.docx`** — At the end of your session, describe what changed for users and which section needs updating. Missy will update this separately.
+**`templates/help.html`** — the single source of truth for user-facing documentation. Update when user-facing features, workflows, or terminology change. The user guide `.docx` was retired — all user docs live in the help page now.
+
+### Files you do NOT edit directly (.docx):
 
 **`Baseline Files/baseline-privacy-policy.docx`** — Flag any changes needed to Missy for review. Never suggest committing privacy policy changes without her explicit approval.
 
@@ -176,9 +177,10 @@ Two markdown files live in `Baseline Files/` and must be updated directly as par
 
 ### Session end checklist:
 1. Update TECHNICAL_README.md and BACKLOG.md directly
-2. Include both in the commit with the code changes
-3. Note what needs updating in the .docx files for Missy
-4. Confirm git push completed
+2. Update help.html if user-facing features or workflows changed
+3. Include all in the commit with the code changes
+4. Note what needs updating in the .docx files for Missy
+5. Confirm git push completed
 
 ---
 

@@ -59,7 +59,6 @@ templates/
 Baseline Files/
   TECHNICAL_README.md         — this file
   BACKLOG.md                  — product backlog
-  baseline-user-guide.docx    — end user guide
   baseline-privacy-policy.docx — privacy policy
   baseline-vision-roadmap.docx — product vision
 ```
