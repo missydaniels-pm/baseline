@@ -120,7 +120,9 @@ def send_verification_email(user_email, verify_url):
     """Send the verify-your-email link. Returns True if sent, False otherwise."""
     plain = f"""Welcome to Baseline!
 
-Please verify your email to activate your account:
+Baseline helps you track what's working — and what's not — so your health decisions are based on evidence, not guesswork.
+
+Verify your email to activate your account:
 
 {verify_url}
 
@@ -132,22 +134,22 @@ This link expires in 24 hours. If you didn't create a Baseline account, you can 
     html = f"""<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"></head>
-<body style="margin:0; padding:0; background:#0f0f13; font-family:'Inter',system-ui,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#0f0f13; padding:32px 16px;">
+<body style="margin:0; padding:0; background:#f8f8f8; font-family:'Inter','Helvetica Neue',Helvetica,Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f8f8; padding:32px 16px;">
 <tr><td align="center">
-<table width="480" cellpadding="0" cellspacing="0" style="background:#1a1a24; border:1px solid #2e2e3e; border-radius:10px; padding:36px 32px;">
+<table width="480" cellpadding="0" cellspacing="0" style="background:#ffffff; border:1px solid #ececee; border-radius:10px; padding:36px 32px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
 <tr><td>
-  <div style="font-size:20px; font-weight:700; color:#e8e6f0; margin-bottom:24px;">
-    <span style="color:#a07de0;">B</span>aseline
+  <div style="font-size:20px; font-weight:700; color:#1a1a2e; margin-bottom:24px;">
+    <span style="color:#7c3aed;">B</span>aseline
   </div>
-  <h1 style="font-size:22px; font-weight:700; color:#e8e6f0; margin:0 0 8px;">Verify your email</h1>
-  <p style="font-size:14px; color:#888899; line-height:1.7; margin:0 0 20px;">Thanks for signing up for Baseline. Click the button below to verify your email and activate your account.</p>
+  <h1 style="font-size:22px; font-weight:700; color:#1a1a2e; margin:0 0 12px;">Verify your email</h1>
+  <p style="font-size:14px; color:#666666; line-height:1.7; margin:0 0 20px;">Baseline helps you track what's working — and what's not — so your health decisions are based on evidence, not guesswork.</p>
   <div style="text-align:center; margin:24px 0;">
-    <a href="{verify_url}" style="display:inline-block; background:#7c5cbf; color:#fff; text-decoration:none; padding:12px 28px; border-radius:8px; font-size:14px; font-weight:600;">Verify email</a>
+    <a href="{verify_url}" style="display:inline-block; background:#7c3aed; color:#ffffff; text-decoration:none; padding:12px 28px; border-radius:8px; font-size:14px; font-weight:600;">Verify email</a>
   </div>
-  <p style="font-size:13px; color:#888899; line-height:1.7; margin:0 0 12px;">Or paste this link into your browser:</p>
-  <p style="font-size:12px; color:#a07de0; word-break:break-all; margin:0 0 20px;">{verify_url}</p>
-  <p style="font-size:13px; color:#888899; line-height:1.7; margin:0;">This link expires in 24 hours. If you didn't create a Baseline account, you can ignore this email.</p>
+  <p style="font-size:13px; color:#666666; line-height:1.7; margin:0 0 12px;">Or paste this link into your browser:</p>
+  <p style="font-size:12px; color:#7c3aed; word-break:break-all; margin:0 0 20px;">{verify_url}</p>
+  <p style="font-size:13px; color:#666666; line-height:1.7; margin:0;">This link expires in 24 hours. If you didn't create a Baseline account, you can ignore this email.</p>
 </td></tr>
 </table>
 </td></tr>
@@ -160,12 +162,13 @@ This link expires in 24 hours. If you didn't create a Baseline account, you can 
 
 def send_welcome_email(user_email, user_name):
     """Send a welcome/orientation email to a newly registered user.
-    Fails silently — never blocks registration."""
+    Fails silently — never blocks registration. user_name is accepted for
+    API stability but no longer rendered (greeting is now brand-focused)."""
     app_url = os.environ.get('APP_URL', 'https://baseline-health.up.railway.app')
 
-    plain = f"""Welcome to Baseline, {user_name}!
+    plain = f"""Welcome to Baseline
 
-You're in. Here's a quick orientation to help you get started.
+You now have a structured way to track your health, run experiments, and find out what actually moves the needle.
 
 WHAT TO EXPECT
 You just completed onboarding — you've set up what you're tracking and your baseline scores. Now you're ready to start tracking.
@@ -178,7 +181,7 @@ Both create the same records — use whichever feels easier.
 
 YOUR FIRST STEPS
 - Log your first episode or try the Daily Check-in
-- Add any medications, supplements, or routines you're currently following as protocols
+- Add your preventatives — medications, supplements, or routines you do consistently
 - When you're ready, start your first experiment to test a protocol change
 
 NEED HELP?
@@ -192,40 +195,40 @@ Questions or feedback? Reply to this email or reach out at baselinehealthapp@gma
     html = f"""<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"></head>
-<body style="margin:0; padding:0; background:#0f0f13; font-family:'Inter',system-ui,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#0f0f13; padding:32px 16px;">
+<body style="margin:0; padding:0; background:#f8f8f8; font-family:'Inter','Helvetica Neue',Helvetica,Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f8f8; padding:32px 16px;">
 <tr><td align="center">
-<table width="480" cellpadding="0" cellspacing="0" style="background:#1a1a24; border:1px solid #2e2e3e; border-radius:10px; padding:36px 32px;">
+<table width="480" cellpadding="0" cellspacing="0" style="background:#ffffff; border:1px solid #ececee; border-radius:10px; padding:36px 32px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
 <tr><td>
-  <div style="font-size:20px; font-weight:700; color:#e8e6f0; margin-bottom:24px;">
-    <span style="color:#a07de0;">B</span>aseline
+  <div style="font-size:20px; font-weight:700; color:#1a1a2e; margin-bottom:24px;">
+    <span style="color:#7c3aed;">B</span>aseline
   </div>
-  <h1 style="font-size:22px; font-weight:700; color:#e8e6f0; margin:0 0 8px;">Welcome, {user_name}!</h1>
-  <p style="font-size:14px; color:#888899; line-height:1.7; margin:0 0 20px;">You're in. Here's a quick orientation to help you get started.</p>
+  <h1 style="font-size:22px; font-weight:700; color:#1a1a2e; margin:0 0 12px;">Welcome to Baseline</h1>
+  <p style="font-size:14px; color:#666666; line-height:1.7; margin:0 0 20px;">You now have a structured way to track your health, run experiments, and find out what actually moves the needle.</p>
 
-  <h2 style="font-size:15px; font-weight:600; color:#e8e6f0; margin:0 0 8px;">What to expect</h2>
-  <p style="font-size:14px; color:#888899; line-height:1.7; margin:0 0 20px;">You've set up what you're tracking and your baseline scores during onboarding. Now you're ready to start tracking and building your evidence base.</p>
+  <h2 style="font-size:15px; font-weight:600; color:#1a1a2e; margin:0 0 8px;">What to expect</h2>
+  <p style="font-size:14px; color:#666666; line-height:1.7; margin:0 0 20px;">You've set up what you're tracking and your baseline scores during onboarding. Now you're ready to start tracking and building your evidence base.</p>
 
-  <h2 style="font-size:15px; font-weight:600; color:#e8e6f0; margin:0 0 8px;">Two ways to log</h2>
-  <p style="font-size:14px; color:#888899; line-height:1.7; margin:0 0 6px;"><strong style="color:#e8e6f0;">Daily Check-in</strong> — if you enabled AI logging, just describe your day in plain language and Baseline logs the details automatically.</p>
-  <p style="font-size:14px; color:#888899; line-height:1.7; margin:0 0 20px;"><strong style="color:#e8e6f0;">Manual logging</strong> — use the Episodes and Protocols pages to enter structured data directly.</p>
+  <h2 style="font-size:15px; font-weight:600; color:#1a1a2e; margin:0 0 8px;">Two ways to log</h2>
+  <p style="font-size:14px; color:#666666; line-height:1.7; margin:0 0 6px;"><strong style="color:#1a1a2e;">Daily Check-in</strong> — if you enabled AI logging, just describe your day in plain language and Baseline logs the details automatically.</p>
+  <p style="font-size:14px; color:#666666; line-height:1.7; margin:0 0 20px;"><strong style="color:#1a1a2e;">Manual logging</strong> — use the Episodes and Protocols pages to enter structured data directly.</p>
 
-  <h2 style="font-size:15px; font-weight:600; color:#e8e6f0; margin:0 0 8px;">Your first steps</h2>
-  <ul style="font-size:14px; color:#888899; line-height:1.7; margin:0 0 24px; padding-left:20px;">
+  <h2 style="font-size:15px; font-weight:600; color:#1a1a2e; margin:0 0 8px;">Your first steps</h2>
+  <ul style="font-size:14px; color:#666666; line-height:1.7; margin:0 0 24px; padding-left:20px;">
     <li style="margin-bottom:4px;">Log your first episode or try the Daily Check-in</li>
-    <li style="margin-bottom:4px;">Add any current medications, supplements, or routines as protocols</li>
+    <li style="margin-bottom:4px;">Add your preventatives — medications, supplements, or routines you do consistently</li>
     <li>When you're ready, start your first experiment to test a protocol change</li>
   </ul>
 
   <div style="text-align:center; margin:24px 0;">
-    <a href="{app_url}" style="display:inline-block; background:#7c5cbf; color:#fff; text-decoration:none; padding:12px 28px; border-radius:8px; font-size:14px; font-weight:600;">Open Baseline</a>
+    <a href="{app_url}" style="display:inline-block; background:#7c3aed; color:#ffffff; text-decoration:none; padding:12px 28px; border-radius:8px; font-size:14px; font-weight:600;">Open Baseline</a>
   </div>
 
-  <h2 style="font-size:15px; font-weight:600; color:#e8e6f0; margin:0 0 8px;">Need help?</h2>
-  <p style="font-size:14px; color:#888899; line-height:1.7; margin:0 0 20px;">Visit the <a href="{app_url}/help" style="color:#a07de0; text-decoration:none;">Help page</a> for a full guide including a check-in tutorial. Questions or feedback? Reply to this email or reach out at <a href="mailto:baselinehealthapp@gmail.com" style="color:#a07de0; text-decoration:none;">baselinehealthapp@gmail.com</a>.</p>
+  <h2 style="font-size:15px; font-weight:600; color:#1a1a2e; margin:0 0 8px;">Need help?</h2>
+  <p style="font-size:14px; color:#666666; line-height:1.7; margin:0 0 20px;">Visit the <a href="{app_url}/help" style="color:#7c3aed; text-decoration:none;">Help page</a> for a full guide including a check-in tutorial. Questions or feedback? Reply to this email or reach out at <a href="mailto:baselinehealthapp@gmail.com" style="color:#7c3aed; text-decoration:none;">baselinehealthapp@gmail.com</a>.</p>
 
-  <div style="border-top:1px solid #2e2e3e; padding-top:16px; margin-top:8px; font-size:12px; color:#888899;">
-    You're receiving this because you created a Baseline account. <a href="{app_url}/privacy" style="color:#a07de0; text-decoration:none;">Privacy Policy</a>
+  <div style="border-top:1px solid #ececee; padding-top:16px; margin-top:8px; font-size:12px; color:#666666;">
+    You're receiving this because you created a Baseline account. <a href="{app_url}/privacy" style="color:#7c3aed; text-decoration:none;">Privacy Policy</a>
   </div>
 </td></tr>
 </table>

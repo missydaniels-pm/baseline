@@ -11,7 +11,7 @@ fi
 source .venv/bin/activate
 
 echo "Installing dependencies..."
-pip install -q -r requirements.txt
+pip3 install -q -r requirements.txt
 
 echo "Starting Baseline at http://localhost:5001"
 python app.py

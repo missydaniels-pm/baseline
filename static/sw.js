@@ -1,4 +1,4 @@
-const CACHE_NAME = 'baseline-v3';
+const CACHE_NAME = 'baseline-v4';
 const STATIC_ASSETS = [
   '/static/css/style.css',
   '/static/icons/icon-192.png',
@@ -43,7 +43,22 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Static assets: cache-first
+  // CSS and JS: network-first so style/script updates reach users without
+  // a service-worker version bump. Fall back to cache when offline.
+  if (request.url.match(/\/static\/.*\.(css|js)$/)) {
+    event.respondWith(
+      fetch(request)
+        .then(response => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
+          return response;
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  // Other static assets (images, icons, manifest): cache-first.
   if (request.url.includes('/static/')) {
     event.respondWith(
       caches.match(request).then(cached => {

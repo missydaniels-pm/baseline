@@ -28,11 +28,7 @@
     <div id="symptom-rows">
       {% for symptom in symptoms %}
       <div class="form-group symptom-score-group" data-sid="{{ symptom.id }}" data-name="{{ symptom.name }}">
-        <div class="symptom-score-header">
-          <label for="score_{{ symptom.id }}">{{ symptom.name }}</label>
-          <button type="button" class="btn btn-danger btn-sm symptom-remove"
-                  aria-label="Remove {{ symptom.name }} from this episode">✕</button>
-        </div>
+        <label for="score_{{ symptom.id }}">{{ symptom.name }}</label>
         {% if symptom.description %}
           <div class="field-hint">{{ symptom.description }}</div>
         {% endif %}
@@ -41,6 +37,8 @@
                  min="1" max="10" value="5"
                  aria-label="{{ symptom.name }} severity, 1 to 10">
           <span class="slider-value" id="score_{{ symptom.id }}_display">5</span>
+          <button type="button" class="symptom-remove"
+                  aria-label="Remove {{ symptom.name }} from this episode">✕</button>
           <input type="hidden" name="score_{{ symptom.id }}_rated" value="1" id="score_{{ symptom.id }}_rated">
         </div>
       </div>

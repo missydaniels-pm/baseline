@@ -402,15 +402,25 @@ input[type="range"]::-moz-range-thumb {
 .flash-success { background: rgba(95,180,120,0.12); color: #7fd3a1; border: 1px solid rgba(95,180,120,0.35); }
 .flash-warning { background: rgba(232,168,56,0.12); color: var(--mid); border: 1px solid rgba(232,168,56,0.35); }
 
-.symptom-score-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 4px;
+/* ✕ button sits inline with the slider value, light grey. */
+.symptom-remove {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  padding: 4px 6px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
 }
-.symptom-score-header label { margin-bottom: 0; }
-.symptom-remove { flex-shrink: 0; }
+.symptom-remove:hover,
+.symptom-remove:focus-visible {
+  color: var(--text);
+  background: var(--surface2);
+  outline: none;
+}
 .symptom-add-row {
   display: flex;
   gap: 8px;
