@@ -495,16 +495,14 @@ input[type="range"]::-moz-range-thumb {
 
 /* Section header (protocols page) */
 .section-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 16px;
   margin-bottom: 16px;
 }
 
 .section-header > .btn {
-  flex-shrink: 0;
-  align-self: flex-start;
   white-space: nowrap;
 }
 
@@ -1321,8 +1319,9 @@ input[type="range"]::-moz-range-thumb {
   /* Rescue grid — single column */
   .rescue-grid { grid-template-columns: 1fr; }
 
-  /* Section header — allow wrapping */
-  .section-header { flex-wrap: wrap; gap: 10px; }
+  /* Section header — stack text above button on narrow screens */
+  .section-header { grid-template-columns: 1fr; gap: 10px; }
+  .section-header > .btn { justify-self: start; }
 
   /* Edit form actions — stack: primary (save/cancel) on top, delete below */
   .form-actions {
