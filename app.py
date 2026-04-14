@@ -49,6 +49,25 @@ limiter = Limiter(
 VERIFY_TOKEN_MAX_AGE = 60 * 60 * 24  # 24 hours
 VERIFY_SALT = 'baseline-email-verify-v1'
 
+
+def _compute_asset_version(relpath):
+    """Short content hash for cache-busting the query string on static assets.
+    Falls back to a fixed string if the file is missing (shouldn't happen)."""
+    path = os.path.join(app.static_folder, relpath)
+    try:
+        with open(path, 'rb') as f:
+            return hashlib.md5(f.read()).hexdigest()[:8]
+    except OSError:
+        return '0'
+
+
+CSS_VERSION = _compute_asset_version('css/style.css')
+
+
+@app.context_processor
+def inject_asset_versions():
+    return {'CSS_VERSION': CSS_VERSION}
+
 DISPOSABLE_EMAIL_DOMAINS = {
     'mailinator.com', 'tempmail.com', 'temp-mail.org', 'guerrillamail.com',
     'guerrillamail.net', 'guerrillamail.org', 'guerrillamailblock.com',
