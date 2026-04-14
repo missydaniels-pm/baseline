@@ -43,21 +43,26 @@ Update when:
 - [ ] Priorities shift — reorder items
 - [ ] Decisions made — add to Decision Log section
 
-### 4. .docx Files (DO NOT EDIT — flag for Missy)
+### 4. templates/help.html (in-app user guide — edit directly)
 
-These files cannot be edited by Claude Code. Instead, note what changed at the end of the session:
-
-**baseline-user-guide.docx** — Flag when:
+Update when:
 - [ ] User-facing workflows change
 - [ ] New features are added that users need to know about
 - [ ] UI changes that affect how users interact with the app
 - [ ] New settings or options added
 
-**baseline-privacy-policy.docx** — Flag when:
+### 5. templates/privacy.html (in-app privacy policy — edit directly)
+
+Update when:
 - [ ] New data collection occurs
 - [ ] Data sharing with third parties changes
 - [ ] AI features change in scope
-- [ ] New cookies or tracking mechanisms added
+- [ ] Registration, email handling, or data retention changes
+- [ ] Any change with MHMD/legal implications — raise to Missy for approval before committing
+
+### 6. .docx Files (DO NOT EDIT — flag for Missy)
+
+These files cannot be edited by Claude Code. Instead, note what changed at the end of the session:
 
 **baseline-vision-roadmap.docx** — Flag when:
 - [ ] Significant product direction changes
@@ -84,10 +89,10 @@ After reviewing changes, produce a summary:
 - CLAUDE.md: [what was updated]
 - TECHNICAL_README.md: [what was updated]
 - BACKLOG.md: [what was updated]
+- templates/help.html: [what was updated]
+- templates/privacy.html: [what was updated — flag legal-sensitive edits to Missy before committing]
 
 ### Flagged for Missy (.docx files):
-- baseline-user-guide.docx: [what needs updating and why]
-- baseline-privacy-policy.docx: [what needs updating and why]
 - baseline-vision-roadmap.docx: [what needs updating and why]
 
 ### No update needed:

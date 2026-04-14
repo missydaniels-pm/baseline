@@ -69,7 +69,7 @@
   <div class="privacy-container">
     <div class="privacy-brand">Base<span>line</span></div>
     <h1>Privacy Policy</h1>
-    <p class="privacy-effective">Effective March 6, 2026</p>
+    <p class="privacy-effective">Effective April 14, 2026</p>
 
     <p>
       Baseline is a personal health tracking application. We take the privacy of your health data
@@ -90,6 +90,14 @@
       <li>To generate dashboard insights (charts, trends, experiment assessments) from your own data.</li>
       <li>If AI logging is enabled, to send your check-in text to Anthropic's Claude API for natural language processing. Anthropic's data usage policy applies to that interaction.</li>
     </ul>
+
+    <h3 style="font-size:1rem;font-weight:600;margin-top:18px;margin-bottom:8px;color:var(--text);">Transactional Emails</h3>
+    <p>
+      Baseline sends two types of automated emails: a verification email when you create an account,
+      and a welcome email after your account is confirmed. These emails are sent using Gmail's SMTP
+      service via your provided email address. We do not send marketing emails. You cannot opt out
+      of transactional emails as they are required for account security and setup.
+    </p>
 
     <h2>3. Data We Do Not Collect</h2>
     <ul>
@@ -115,7 +123,7 @@
     <ul>
       <li>Your data is stored in a PostgreSQL database hosted on Railway's infrastructure.</li>
       <li>Passwords are hashed using bcrypt and are never stored in plain text.</li>
-      <li>Access to the application requires an invite code — there is no public registration.</li>
+      <li>Baseline uses email verification to confirm user identity during registration. Your account is not active until you click the verification link we email to you.</li>
       <li>All connections use HTTPS encryption in transit.</li>
     </ul>
 
@@ -132,6 +140,15 @@
       Your data is retained for as long as your account exists. When you delete your account, all
       data — episodes, protocols, experiments, compliance logs, check-in history, and tracking
       records — is permanently removed from our database.
+    </p>
+
+    <h3 style="font-size:1rem;font-weight:600;margin-top:18px;margin-bottom:8px;color:var(--text);">Unverified Accounts</h3>
+    <p>
+      When you begin registration, a temporary account record is created before your email address
+      is verified. If you do not complete email verification within 48 hours, this unverified account
+      record and any associated data is automatically deleted. No health data can be entered until
+      email verification is complete. If you verify your email, your account becomes active and
+      standard data retention terms apply.
     </p>
 
     <h2>8. Children</h2>

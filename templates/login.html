@@ -27,6 +27,16 @@
       {% endif %}
     {% endwith %}
 
+    {% if unverified %}
+      <div class="flash flash-warning">
+        Please verify your email before logging in. We sent a link to <strong>{{ email }}</strong>.
+        <form method="POST" action="{{ url_for('resend_verification') }}" style="margin-top:10px;">
+          <input type="hidden" name="email" value="{{ email }}">
+          <button type="submit" class="btn btn-secondary" style="width:100%;">Resend verification email</button>
+        </form>
+      </div>
+    {% endif %}
+
     <form method="POST" class="auth-form">
       <div class="form-group">
         <label for="email">Email</label>
@@ -52,7 +62,7 @@
     </form>
 
     <div class="auth-footer">
-      Have an invite code? <a href="{{ url_for('register') }}">Create an account</a>
+      New to Baseline? <a href="{{ url_for('register') }}">Create an account</a>
     </div>
     <div class="auth-footer" style="margin-top:8px; font-size:13px;">
       <a href="{{ url_for('privacy') }}" style="color:var(--text-muted);">Privacy Policy</a>

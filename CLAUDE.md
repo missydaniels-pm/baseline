@@ -1,6 +1,6 @@
 # Baseline — Claude Code Context Document
 
-Last updated: April 12, 2026
+Last updated: April 14, 2026
 
 This file gives Claude Code persistent context about the Baseline project. Read it at the start of every session before making any changes.
 
@@ -30,7 +30,7 @@ Live at: https://mybaselineapp.com (custom domain; Railway default: baseline-hea
 - **Frontend:** Jinja2 templates, vanilla JavaScript, Chart.js
 - **AI:** Anthropic API (claude-sonnet-4-6) for check-in parsing
 - **Hosting:** Railway (auto-deploys from GitHub main branch), custom domain via Cloudflare DNS
-- **Auth:** Flask sessions, bcrypt password hashing, invite-code registration
+- **Auth:** Flask sessions, bcrypt password hashing, self-serve registration with email verification (itsdangerous signed tokens, 24h TTL, SHA-256 replay protection), Flask-Limiter rate limiting
 - **PWA:** manifest.json, service worker, home screen icons
 
 ---
@@ -60,7 +60,6 @@ templates/
 Baseline Files/
   baseline-technical-readme.docx
   baseline-vision-roadmap.docx
-  baseline-privacy-policy.docx
   baseline-backlog.docx
 ```
 
@@ -68,8 +67,9 @@ Baseline Files/
 
 ## Data Models
 
-- **User** — email, password_hash, invite_code_used, is_active, onboarding_complete, baseline data, ai_logging_enabled
-- **InviteCode** — code, created_at, used_at, used_by_user_id
+- **User** — email, password_hash, invite_code_used (legacy), is_active, verified_at, onboarding_complete, baseline data, ai_logging_enabled, has_seen_tour
+- **InviteCode** — code, created_at, used_at, used_by_user_id (legacy — admin use only via /dev/create-invite)
+- **UsedVerifyToken** — token_hash (SHA-256), used_at. Prevents email-verification token replay.
 - **Symptom** — user-defined trackable items (name, description, is_active). Displayed as "What I Track" in UI. No hard limit on count post-onboarding.
 - **Episode** — health episodes with onset timestamp, duration, functional_impairment, notes
 - **SymptomScore** — severity score per symptom per episode (1-10)
@@ -99,7 +99,7 @@ Required in .env locally and in Railway variables in production:
 
 **Database:** SQLite locally (no setup required), PostgreSQL in production. The DATABASE_URL environment variable controls which is used. The postgres:// → postgresql:// rewrite is handled in app.py.
 
-**Auth:** Invite-code only registration. No public signup. Invite codes generated at /dev/create-invite (debug mode only). Session-based auth with bcrypt.
+**Auth:** Self-serve registration with email verification. Flow: `/register` creates inactive user + sends signed itsdangerous token (24h TTL) → user clicks `/verify/<token>` → `verified_at` set, `is_active=True`, welcome email sent, logged in. Used tokens hashed into `used_verify_tokens` to block replay. Unverified accounts deleted after 48h by `cleanup_stale_unverified_users()` at startup. Flask-Limiter: 5/hour register + resend, 20/hour login. Disposable-email blocklist. Privacy policy acknowledgment required (server-enforced). `InviteCode` + `/dev/create-invite` retained for admin manual onboarding.
 
 **AI check-in:** Opt-in. Uses load_dotenv(override=True) to ensure .env always wins over shell environment. Returns structured JSON parsed into episode/compliance records.
 
@@ -170,9 +170,9 @@ Two markdown files live in `Baseline Files/` and must be updated directly as par
 
 **`templates/help.html`** — the single source of truth for user-facing documentation. Update when user-facing features, workflows, or terminology change. The user guide `.docx` was retired — all user docs live in the help page now.
 
-### Files you do NOT edit directly (.docx):
+**`templates/privacy.html`** — the single source of truth for the privacy policy. Update directly when registration/email/data-handling changes. Changes with legal or MHMD implications must be raised to Missy for approval before committing.
 
-**`Baseline Files/baseline-privacy-policy.docx`** — Flag any changes needed to Missy for review. Never suggest committing privacy policy changes without her explicit approval.
+### Files you do NOT edit directly (.docx):
 
 **`Baseline Files/baseline-vision-roadmap.docx`** — Note significant product direction changes for Missy to update.
 

@@ -19,6 +19,7 @@ class User(db.Model):
 
     ai_logging_enabled = db.Column(db.Boolean, default=False, nullable=False)
     has_seen_tour = db.Column(db.Boolean, default=False, nullable=False)
+    verified_at = db.Column(db.DateTime, nullable=True)
 
     episodes = db.relationship('Episode', backref='user', lazy=True, cascade='all, delete-orphan')
     protocols = db.relationship('Protocol', backref='user', lazy=True, cascade='all, delete-orphan')
@@ -248,6 +249,15 @@ class ProtocolEvent(db.Model):
 
     def __repr__(self):
         return f'<ProtocolEvent {self.event_type} {self.date}>'
+
+
+class UsedVerifyToken(db.Model):
+    """Records consumed email-verification tokens to prevent replay within TTL."""
+    __tablename__ = 'used_verify_tokens'
+
+    id = db.Column(db.Integer, primary_key=True)
+    token_hash = db.Column(db.String(64), unique=True, nullable=False)
+    used_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
 
 class InviteCode(db.Model):

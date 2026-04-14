@@ -53,14 +53,16 @@
       </div>
 
       <div class="form-group">
-        <label for="invite_code">Invite code</label>
-        <input type="text" id="invite_code" name="invite_code" value="{{ invite_code or '' }}"
-               placeholder="Enter your invite code" autocomplete="off">
+        <label class="toggle-label" style="margin-bottom:0; align-items:flex-start;">
+          <input type="checkbox" id="privacy_ack" name="privacy_ack" {% if privacy_ack %}checked{% endif %}>
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          <span>I have read and agree to the <a href="{{ url_for('privacy') }}" style="color:var(--accent);">Privacy Policy</a>.</span>
+        </label>
       </div>
 
       <button type="submit" class="btn btn-primary auth-submit" id="register-btn" disabled>Create account</button>
       <p style="margin-top:12px; font-size:13px; color:var(--text-muted); text-align:center;">
-        By creating an account you agree to our <a href="{{ url_for('privacy') }}" style="color:var(--accent);">Privacy Policy</a>
+        We'll email a link to verify your address.
       </p>
     </form>
 
@@ -77,6 +79,7 @@
   var pw = document.getElementById('password');
   var confirm = document.getElementById('confirm_password');
   var btn = document.getElementById('register-btn');
+  var ack = document.getElementById('privacy_ack');
   var strengthWrap = document.getElementById('pw-strength');
   var strengthFill = document.getElementById('pw-strength-fill');
   var strengthLabel = document.getElementById('pw-strength-label');
@@ -123,11 +126,13 @@
     }
 
     // Enable/disable submit
-    btn.disabled = !(meetsRequirements(val) && val === cval && cval.length > 0);
+    btn.disabled = !(meetsRequirements(val) && val === cval && cval.length > 0 && ack.checked);
   }
 
   pw.addEventListener('input', validate);
   confirm.addEventListener('input', validate);
+  ack.addEventListener('change', validate);
+  validate();
 })();
 </script>
 <script>

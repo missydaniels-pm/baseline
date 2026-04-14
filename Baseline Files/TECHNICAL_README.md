@@ -1,6 +1,6 @@
 # Baseline — Technical README
 
-Last updated: April 12, 2026
+Last updated: April 14, 2026
 
 ---
 
@@ -18,7 +18,7 @@ Live at: **https://baseline-health.up.railway.app**
 - **Database:** SQLAlchemy ORM — PostgreSQL (production), SQLite (local dev)
 - **Frontend:** Jinja2 templates, vanilla JavaScript, Chart.js
 - **AI:** Anthropic API (claude-sonnet-4-6) for check-in parsing
-- **Auth:** Flask sessions, bcrypt password hashing, invite-code registration
+- **Auth:** Flask sessions, bcrypt password hashing, self-serve registration with email verification (itsdangerous signed tokens, 24h TTL), Flask-Limiter rate limiting
 - **Hosting:** Railway (auto-deploys from GitHub main branch)
 - **PWA:** manifest.json, service worker, home screen icons (Pillow-generated)
 
@@ -45,8 +45,11 @@ static/
 templates/
   base.html                   — base template, nav, PWA meta tags
   index.html                  — dashboard with Chart.js visualizations
-  login.html                  — login page
-  register.html               — registration with invite code + password validation
+  login.html                  — login page (surfaces resend prompt for unverified accounts)
+  register.html               — self-serve registration with privacy acknowledgment + password validation
+  verify_sent.html            — "check your email" confirmation page
+  verify_result.html          — verification link expired/invalid/error landing
+  resend_verification.html    — request a new verification link
   offline.html                — PWA offline fallback page
   settings.html               — user settings, change password/email, delete account
   symptoms.html               — symptom management
@@ -59,8 +62,9 @@ templates/
 Baseline Files/
   TECHNICAL_README.md         — this file
   BACKLOG.md                  — product backlog
-  baseline-privacy-policy.docx — privacy policy
   baseline-vision-roadmap.docx — product vision
+
+templates/privacy.html          — in-app privacy policy (single source of truth, edited directly)
 ```
 
 ---
@@ -69,8 +73,9 @@ Baseline Files/
 
 | Model | Description |
 |---|---|
-| User | email, password_hash, invite_code_used, is_active, onboarding_complete, baseline data, ai_logging_enabled, has_seen_tour |
-| InviteCode | code, created_at, used_at, used_by_user_id |
+| User | email, password_hash, invite_code_used (legacy), is_active, verified_at, onboarding_complete, baseline data, ai_logging_enabled, has_seen_tour |
+| InviteCode | code, created_at, used_at, used_by_user_id (legacy — admin use only) |
+| UsedVerifyToken | token_hash (SHA-256), used_at — prevents email-verification token replay |
 | Symptom | user-defined trackable items (name, description, is_active). Displayed as "What I Track" in UI. No hard post-onboarding limit. |
 | Episode | onset timestamp, duration, functional_impairment, notes |
 | SymptomScore | severity score (1-10) per symptom per episode |
@@ -134,8 +139,11 @@ claude --resume                         # resume previous session
 ### Public
 | Route | Method | Description |
 |---|---|---|
-| `/login` | GET, POST | Login |
-| `/register` | GET, POST | Register with invite code |
+| `/login` | GET, POST | Login (rate-limited 20/hour POST). Surfaces resend prompt for unverified accounts. |
+| `/register` | GET, POST | Self-serve registration (rate-limited 5/hour POST). Requires privacy policy acknowledgment. Creates inactive user and sends verification email. |
+| `/verify/<token>` | GET | Email verification callback. Signed itsdangerous token, 24h TTL, SHA-256 replay protection via `used_verify_tokens`. |
+| `/verify/sent` | GET | "Check your email" confirmation page. |
+| `/resend-verification` | GET, POST | Resend verification email (rate-limited 5/hour POST). Enumeration-safe. |
 | `/logout` | GET | Logout |
 | `/sw.js` | GET | Service worker (must be served from root scope) |
 | `/offline` | GET | PWA offline fallback |
@@ -216,7 +224,12 @@ python generate_icons.py
 - Dev routes grouped in a dedicated section with explicit `if not app.debug` guards — blocked in production (DEBUG=false)
 - Account deletion removes all data in FK-safe order: EpisodeInterventions → SymptomScores → CheckIns → Episodes → ProtocolCompliance → ProtocolEvents → Experiments → Protocols → Symptoms → InviteCode reference → User
 - Data deletion satisfies Washington State My Health MY Data Act (MHMD) requirements
-- Welcome email sent on registration via Gmail SMTP (smtplib). Fails silently if credentials not configured. HTML + plain text.
+- **Email verification (self-serve registration):** New accounts created with `is_active=False` and `verified_at=None`. Signed itsdangerous token (HMAC over SECRET_KEY, salt `baseline-email-verify-v1`, 24h max_age) emailed as a verification link. On verify, token SHA-256 hash stored in `used_verify_tokens` to prevent replay; user flipped to `is_active=True` with `verified_at=now()`. Welcome email sent post-verification.
+- **Rate limiting:** Flask-Limiter (in-memory backend). `/register` and `/resend-verification` 5/hour/IP; `/login` 20/hour/IP.
+- **Disposable-email blocklist:** common throwaway domains rejected at `/register`.
+- **Privacy acknowledgment:** `/register` requires a checkbox acknowledging the Privacy Policy (server-enforced).
+- **Stale unverified cleanup:** accounts with `verified_at IS NULL` and `created_at` older than 48 hours are deleted at app startup, freeing the email for re-registration.
+- Welcome email sent on successful email verification via Gmail SMTP (smtplib). Fails silently if credentials not configured. HTML + plain text.
 - Welcome tour modal shown on first dashboard visit after onboarding (`has_seen_tour` flag on User model). Replayable from Help page via `/tour/restart`.
 
 ---
@@ -271,3 +284,5 @@ Key packages (see requirements.txt for full list):
 - `anthropic` — Anthropic API client
 - `python-dotenv` — environment variable management
 - `Pillow` — PWA icon generation
+- `Flask-Limiter` — rate limiting for auth endpoints
+- `itsdangerous` — signed email verification tokens (pinned; also a Flask transitive)

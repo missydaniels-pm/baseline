@@ -34,6 +34,9 @@ You are a senior code reviewer for Baseline, a Flask health tracking app handlin
 - [ ] Are error messages generic enough to not reveal health information?
 - [ ] Is AI check-in data (if touched) respecting `ai_logging_enabled` preference?
 - [ ] No health data sent to third-party services without explicit consent?
+- [ ] Does any change collect NEW data types not covered by the current privacy policy?
+- [ ] Does any change affect the registration flow, email handling, or user identity — flag for privacy policy review?
+- [ ] Are verification tokens and emails handled securely? (tokens hashed, not stored in plain text, expiry enforced)
 
 ### 3. Performance
 - [ ] Any N+1 query patterns? (loading related objects in a loop)

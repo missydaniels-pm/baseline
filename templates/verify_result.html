@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% if status == 'expired' %}Link expired{% elif status == 'error' %}Something went wrong{% else %}Invalid link{% endif %} — Baseline</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+  <meta name="theme-color" content="#0f0f13">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+</head>
+<body>
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-brand">Base<span>line</span></div>
+    {% if status == 'expired' %}
+      <h1 class="auth-title">Link expired</h1>
+      <p style="color:var(--text-muted); line-height:1.6; margin-bottom:20px;">
+        This verification link is more than 24 hours old. Request a fresh one below.
+      </p>
+      <a href="{{ url_for('resend_verification') }}" class="btn btn-primary auth-submit" style="display:block; text-align:center;">Request new link</a>
+    {% elif status == 'error' %}
+      <h1 class="auth-title">Something went wrong</h1>
+      <p style="color:var(--text-muted); line-height:1.6; margin-bottom:20px;">
+        We couldn't complete verification. Please try the link again, or request a new one.
+      </p>
+      <a href="{{ url_for('resend_verification') }}" class="btn btn-primary auth-submit" style="display:block; text-align:center;">Request new link</a>
+    {% else %}
+      <h1 class="auth-title">Invalid link</h1>
+      <p style="color:var(--text-muted); line-height:1.6; margin-bottom:20px;">
+        We couldn't verify that link. It may have already been used or been altered.
+      </p>
+      <a href="{{ url_for('resend_verification') }}" class="btn btn-primary auth-submit" style="display:block; text-align:center;">Request new link</a>
+    {% endif %}
+    <div class="auth-footer" style="margin-top:16px;">
+      <a href="{{ url_for('login') }}">Back to log in</a>
+    </div>
+  </div>
+</div>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(function() {});
+  }
+</script>
+</body>
+</html>

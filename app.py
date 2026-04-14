@@ -4,12 +4,16 @@ import re
 import random
 import secrets
 import smtplib
+import hashlib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_bcrypt import Bcrypt
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from sqlalchemy import text
-from database import db, User, Episode, Protocol, Symptom, SymptomScore, EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode
+from database import db, User, Episode, Protocol, Symptom, SymptomScore, EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode, UsedVerifyToken
 from collections import defaultdict
 from datetime import datetime, date, timedelta
 from dotenv import load_dotenv
@@ -36,6 +40,115 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
 
 db.init_app(app)
 bcrypt = Bcrypt(app)
+
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    default_limits=[],
+    storage_uri='memory://',
+)
+
+VERIFY_TOKEN_MAX_AGE = 60 * 60 * 24  # 24 hours
+VERIFY_SALT = 'baseline-email-verify-v1'
+
+DISPOSABLE_EMAIL_DOMAINS = {
+    'mailinator.com', 'tempmail.com', 'temp-mail.org', 'guerrillamail.com',
+    'guerrillamail.net', 'guerrillamail.org', 'guerrillamailblock.com',
+    'sharklasers.com', 'grr.la', 'throwawaymail.com', 'yopmail.com',
+    '10minutemail.com', '10minutemail.net', 'trashmail.com', 'trashmail.net',
+    'getnada.com', 'getairmail.com', 'dispostable.com', 'fakeinbox.com',
+    'mytemp.email', 'mohmal.com', 'emailondeck.com', 'maildrop.cc',
+    'moakt.com', 'mintemail.com', 'mailnesia.com',
+}
+
+
+def is_disposable_email(email):
+    try:
+        domain = email.rsplit('@', 1)[1].lower()
+    except IndexError:
+        return False
+    return domain in DISPOSABLE_EMAIL_DOMAINS
+
+
+def _verify_serializer():
+    return URLSafeTimedSerializer(app.config['SECRET_KEY'])
+
+
+def generate_verify_token(email):
+    return _verify_serializer().dumps(email, salt=VERIFY_SALT)
+
+
+def load_verify_token(token, max_age=VERIFY_TOKEN_MAX_AGE):
+    """Return (email, error) — error is 'expired', 'invalid', or None."""
+    try:
+        email = _verify_serializer().loads(token, salt=VERIFY_SALT, max_age=max_age)
+        return email, None
+    except SignatureExpired:
+        return None, 'expired'
+    except BadSignature:
+        return None, 'invalid'
+
+
+def send_verification_email(user_email, verify_url):
+    """Send the verify-your-email link. Returns True if sent, False otherwise."""
+    mail_user = os.environ.get('MAIL_USERNAME')
+    mail_pass = os.environ.get('MAIL_PASSWORD')
+    if not mail_user or not mail_pass:
+        return False
+
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = 'Verify your Baseline account'
+    msg['From'] = f'Baseline <{mail_user}>'
+    msg['To'] = user_email
+
+    plain = f"""Welcome to Baseline!
+
+Please verify your email to activate your account:
+
+{verify_url}
+
+This link expires in 24 hours. If you didn't create a Baseline account, you can ignore this message.
+
+— The Baseline Team
+"""
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0; padding:0; background:#0f0f13; font-family:'Inter',system-ui,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#0f0f13; padding:32px 16px;">
+<tr><td align="center">
+<table width="480" cellpadding="0" cellspacing="0" style="background:#1a1a24; border:1px solid #2e2e3e; border-radius:10px; padding:36px 32px;">
+<tr><td>
+  <div style="font-size:20px; font-weight:700; color:#e8e6f0; margin-bottom:24px;">
+    <span style="color:#a07de0;">B</span>aseline
+  </div>
+  <h1 style="font-size:22px; font-weight:700; color:#e8e6f0; margin:0 0 8px;">Verify your email</h1>
+  <p style="font-size:14px; color:#888899; line-height:1.7; margin:0 0 20px;">Thanks for signing up for Baseline. Click the button below to verify your email and activate your account.</p>
+  <div style="text-align:center; margin:24px 0;">
+    <a href="{verify_url}" style="display:inline-block; background:#7c5cbf; color:#fff; text-decoration:none; padding:12px 28px; border-radius:8px; font-size:14px; font-weight:600;">Verify email</a>
+  </div>
+  <p style="font-size:13px; color:#888899; line-height:1.7; margin:0 0 12px;">Or paste this link into your browser:</p>
+  <p style="font-size:12px; color:#a07de0; word-break:break-all; margin:0 0 20px;">{verify_url}</p>
+  <p style="font-size:13px; color:#888899; line-height:1.7; margin:0;">This link expires in 24 hours. If you didn't create a Baseline account, you can ignore this email.</p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>"""
+
+    msg.attach(MIMEText(plain, 'plain'))
+    msg.attach(MIMEText(html, 'html'))
+
+    try:
+        with smtplib.SMTP('smtp.gmail.com', 587, timeout=10) as server:
+            server.starttls()
+            server.login(mail_user, mail_pass)
+            server.sendmail(mail_user, user_email, msg.as_string())
+        return True
+    except Exception:
+        return False
 
 
 def send_welcome_email(user_email, user_name):
@@ -154,6 +267,7 @@ def run_migrations():
         ('users',                 'invite_code_used',          'ALTER TABLE users ADD COLUMN invite_code_used VARCHAR(100)'),
         ('users',                 'is_active',                 'ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE'),
         ('users',                 'has_seen_tour',             'ALTER TABLE users ADD COLUMN has_seen_tour BOOLEAN NOT NULL DEFAULT FALSE'),
+        ('users',                 'verified_at',               'ALTER TABLE users ADD COLUMN verified_at TIMESTAMP'),
     ]
 
     # Widen symptoms.name from varchar(100) to varchar(200) on PostgreSQL
@@ -207,6 +321,36 @@ def run_migrations():
                 conn.execute(text('ALTER TABLE episodes ALTER COLUMN peak_severity DROP NOT NULL'))
             conn.commit()
             print("Migration complete.")
+
+
+def cleanup_stale_unverified_users():
+    """Delete unverified accounts older than 48h so the email can be re-registered.
+    Runs at startup; safe at our scale (5 users) without cron."""
+    try:
+        cutoff = datetime.utcnow() - timedelta(hours=48)
+        stale = User.query.filter(
+            User.verified_at.is_(None),
+            User.is_active == False,
+            User.created_at < cutoff,
+        ).all()
+        if not stale:
+            return
+        for u in stale:
+            # Unverified accounts never completed onboarding, so no child data to clean.
+            db.session.delete(u)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+
+def backfill_verified_existing_users():
+    """Mark pre-existing active users as verified so they aren't locked out."""
+    users = User.query.filter(User.is_active == True, User.verified_at.is_(None)).all()
+    if not users:
+        return
+    for u in users:
+        u.verified_at = u.created_at or datetime.utcnow()
+    db.session.commit()
 
 
 def run_data_migrations():
@@ -315,7 +459,7 @@ def get_active_experiment(user_id):
 # Authentication gate + onboarding gate
 # ---------------------------------------------------------------------------
 
-PUBLIC_ENDPOINTS = {'login', 'register', 'static', 'dev_bootstrap', 'serve_sw', 'offline', 'privacy'}
+PUBLIC_ENDPOINTS = {'login', 'register', 'static', 'dev_bootstrap', 'serve_sw', 'offline', 'privacy', 'verify_email', 'resend_verification', 'verify_sent'}
 
 @app.context_processor
 def inject_onboarding_state():
@@ -359,6 +503,7 @@ def offline():
 # ---------------------------------------------------------------------------
 
 @app.route('/login', methods=['GET', 'POST'])
+@limiter.limit('20 per hour', methods=['POST'])
 def login():
     if get_user():
         return redirect(url_for('index'))
@@ -369,6 +514,12 @@ def login():
         remember = 'remember' in request.form
 
         user = User.query.filter_by(email=email).first()
+
+        # Surface unverified state before doing a password check, so we don't
+        # leak password validity via the unverified-vs-generic-error response.
+        if user and user.verified_at is None and not user.is_active:
+            return render_template('login.html', email=email, unverified=True)
+
         if user and user.password_hash and bcrypt.check_password_hash(user.password_hash, password):
             if not user.is_active:
                 flash('Your account has been deactivated.', 'error')
@@ -390,6 +541,7 @@ def login():
 
 
 @app.route('/register', methods=['GET', 'POST'])
+@limiter.limit('5 per hour', methods=['POST'])
 def register():
     if get_user():
         return redirect(url_for('index'))
@@ -398,11 +550,13 @@ def register():
         email = request.form.get('email', '').strip().lower()
         password = request.form.get('password', '')
         confirm = request.form.get('confirm_password', '')
-        code_str = request.form.get('invite_code', '').strip()
+        privacy_ack = 'privacy_ack' in request.form
 
         errors = []
-        if not email or '@' not in email:
+        if not email or '@' not in email or '.' not in email.split('@')[-1]:
             errors.append('A valid email is required.')
+        elif is_disposable_email(email):
+            errors.append('Please use a non-disposable email address.')
         elif User.query.filter_by(email=email).first():
             errors.append('An account with that email already exists.')
         if len(password) < 8:
@@ -413,35 +567,109 @@ def register():
             errors.append('Password must contain at least one number.')
         if password != confirm:
             errors.append('Passwords do not match.')
-
-        invite = InviteCode.query.filter_by(code=code_str).first() if code_str else None
-        if not invite:
-            errors.append('Invalid invite code.')
-        elif invite.used_at is not None:
-            errors.append('That invite code has already been used.')
+        if not privacy_ack:
+            errors.append('You must acknowledge the Privacy Policy to create an account.')
 
         if errors:
             for e in errors:
                 flash(e, 'error')
-            return render_template('register.html', email=email, invite_code=code_str)
+            return render_template('register.html', email=email, privacy_ack=privacy_ack)
 
         pw_hash = bcrypt.generate_password_hash(password).decode('utf-8')
-        user = User(name=email.split('@')[0], email=email, password_hash=pw_hash,
-                    invite_code_used=code_str)
-        db.session.add(user)
-        db.session.flush()
+        user = User(
+            name='Friend',
+            email=email,
+            password_hash=pw_hash,
+            is_active=False,
+            verified_at=None,
+        )
+        try:
+            db.session.add(user)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            flash('An account with that email already exists.', 'error')
+            return render_template('register.html', email=email, privacy_ack=privacy_ack)
 
-        invite.used_at = datetime.utcnow()
-        invite.used_by_user_id = user.id
-        db.session.commit()
+        token = generate_verify_token(email)
+        app_url = os.environ.get('APP_URL', 'https://baseline-health.up.railway.app')
+        verify_url = f"{app_url.rstrip('/')}/verify/{token}"
+        sent = send_verification_email(email, verify_url)
+        if not os.environ.get('DATABASE_URL'):  # local SQLite only — never logs in prod
+            print(f'[DEV] Verification URL for {email}: {verify_url}')
 
-        send_welcome_email(user.email, user.name)
-
-        session.clear()
-        session['user_id'] = user.id
-        return redirect(url_for('onboarding_step1'))
+        session['pending_verify_email'] = email
+        if not sent and os.environ.get('MAIL_USERNAME'):
+            flash('We had trouble sending your verification email. Try the resend link, or contact baselinehealthapp@gmail.com.', 'warning')
+        return redirect(url_for('verify_sent'))
 
     return render_template('register.html')
+
+
+@app.route('/verify/sent')
+def verify_sent():
+    email = session.pop('pending_verify_email', '')
+    return render_template('verify_sent.html', email=email)
+
+
+@app.route('/verify/<token>')
+def verify_email(token):
+    email, err = load_verify_token(token)
+    if err == 'expired':
+        return render_template('verify_result.html', status='expired', email=None), 400
+    if err or not email:
+        return render_template('verify_result.html', status='invalid', email=None), 400
+
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    if UsedVerifyToken.query.filter_by(token_hash=token_hash).first():
+        # Token already consumed — treat as invalid so attackers can't distinguish replay.
+        return render_template('verify_result.html', status='invalid', email=None), 400
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return render_template('verify_result.html', status='invalid', email=None), 400
+
+    if user.verified_at is not None:
+        flash('This account is already verified. Please log in.', 'success')
+        return redirect(url_for('login'))
+
+    try:
+        user.verified_at = datetime.utcnow()
+        user.is_active = True
+        db.session.add(UsedVerifyToken(token_hash=token_hash))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return render_template('verify_result.html', status='error', email=None), 500
+
+    send_welcome_email(user.email, user.name)
+
+    session.clear()
+    session['user_id'] = user.id
+    if not user.onboarding_complete:
+        return redirect(url_for('onboarding_step1'))
+    return redirect(url_for('index'))
+
+
+@app.route('/resend-verification', methods=['GET', 'POST'])
+@limiter.limit('5 per hour', methods=['POST'])
+def resend_verification():
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        # Enumeration-safe: always redirect to the same confirmation page
+        if email and '@' in email:
+            user = User.query.filter_by(email=email).first()
+            if user and user.verified_at is None:
+                token = generate_verify_token(email)
+                app_url = os.environ.get('APP_URL', 'https://baseline-health.up.railway.app')
+                verify_url = f"{app_url.rstrip('/')}/verify/{token}"
+                send_verification_email(email, verify_url)
+                if not os.environ.get('DATABASE_URL'):
+                    print(f'[DEV] Verification URL for {email}: {verify_url}')
+        session['pending_verify_email'] = email
+        return redirect(url_for('verify_sent'))
+
+    return render_template('resend_verification.html')
 
 
 @app.route('/logout')
@@ -2183,6 +2411,8 @@ with app.app_context():
     db.create_all()
     run_migrations()
     migrate_existing_user()
+    backfill_verified_existing_users()
+    cleanup_stale_unverified_users()
     run_data_migrations()
     migrate_episode_interventions()
 

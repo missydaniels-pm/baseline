@@ -1,6 +1,6 @@
 # Baseline — Product Backlog
 
-Last updated: April 12, 2026 | 5 active users
+Last updated: April 14, 2026 | 5 active users
 
 **Priority:** P0 = fix now, P1 = next sprint, P2 = soon, P3 = later
 **Size:** S = small (<2hrs), M = medium (half day), L = large (1+ days)
@@ -43,6 +43,7 @@ High-value improvements targeting user satisfaction, retention, and portfolio re
 | UX | Dashboard check-in shortcut | Internal | S | ✅ Complete 3/21/26 — "Start Check-in →" button in dashboard header next to Log Episode |
 | UX | Update contact email to baselinehealthapp@gmail.com | Internal | S | ✅ Complete 3/21/26 — updated in help page and welcome email |
 | UX | Remove invite code reference from help page | Internal | S | ✅ Complete 3/21/26 — registration flow may change |
+| Auth & Security | Self-serve registration with email verification | Missy | M | ✅ Complete 4/14/26 — itsdangerous signed tokens (24h TTL), SHA-256 replay protection via `used_verify_tokens`, Flask-Limiter rate limits, disposable-email blocklist, privacy-policy acknowledgment checkbox, stale-account cleanup at 48h. Replaces invite-only registration. |
 | UX | Dashboard empty states for new users | Internal | M | ✅ Complete 3/18/26 — per-section empty states with SVG placeholders and action links |
 | UX | Experiments page empty state with assessment preview | Internal | S | ✅ Complete 3/18/26 — full two-column assessment preview using real assess-*/decision-* classes at 50% opacity |
 | Analytics | Internal event logging to PostgreSQL (privacy-safe instrumentation) | Internal | M | Consider building into React architecture from the start rather than retrofitting monolith. |
@@ -76,6 +77,9 @@ Important but not urgent. Build once P0 and P1 are clear.
 | Infrastructure | GitHub Actions: automated doc updates on deploy | Internal | M | Phase 1 of automated documentation pipeline |
 | Infrastructure | GitHub Actions: basic automated testing | Internal | M | |
 | Privacy | Consult health tech lawyer — Washington MHMD obligations | Legal | S | Before paid tier or significant user growth |
+| Privacy & Legal | Update privacy policy to describe transactional email (verification + welcome) and temporary storage of unverified accounts (48h TTL) | Internal | S | ✅ Complete 4/14/26 — `templates/privacy.html` updated (in-app page is single source of truth). |
+| Auth & Security | Add CSRF protection (Flask-WTF) to all auth forms | Code Review | S | Pre-existing gap surfaced during self-serve reg review. Rate limiting currently mitigates. |
+| Auth & Security | Switch Flask-Limiter to Redis backend once Railway Redis is provisioned | Code Review | S | In-memory backend resets on each deploy and is per-worker — acceptable at current scale but documented gap. |
 
 ---
 
@@ -100,7 +104,7 @@ Longer-term vision. Architecture decision point: React rebuild is the gateway to
 
 | Area | Item | Rationale |
 |---|---|---|
-| UX | Self-serve access request form | Deferred — meaningful new user growth requires welcome email and in-app tutorial first. Invite-only maintained until those are in place. |
+| UX | Self-serve access request form | Superseded 4/14/26 — replaced by self-serve registration with email verification (no access-request step needed). |
 
 ---
 
@@ -150,6 +154,9 @@ Longer-term vision. Architecture decision point: React rebuild is the gateway to
 
 ### Pre-LinkedIn Launch Requirements
 **March 2026:** Identified minimum viable requirements before posting on LinkedIn to 1000+ connections: privacy policy in app (✅ complete), in-app help/tutorial, welcome email, Baseline email address (✅ baselinehealthapp@gmail.com). Invite-only registration maintained during this phase. Self-serve access request deferred until support infrastructure is ready.
+
+### Self-Serve Registration with Email Verification
+**April 14, 2026:** Replaced invite-only registration with self-serve registration gated by email verification. Chose email-verification-only (vs. fully open or invite+verify) to support LinkedIn launch without manual invite issuance. Implementation: itsdangerous signed tokens (HMAC over SECRET_KEY, 24h TTL) sent via existing Gmail SMTP pipeline; SHA-256 hash of consumed tokens stored in `used_verify_tokens` to prevent replay (chosen over "verified_at check only" for defense in depth); Flask-Limiter (in-memory) applied to `/register` 5/hour, `/resend-verification` 5/hour, `/login` 20/hour; small hardcoded disposable-email blocklist; required privacy-policy acknowledgment checkbox on the form (server-enforced); stale unverified accounts deleted at startup after 48h so the email can be re-registered. Login leaks no password-validity oracle for unverified accounts (unverified banner shown before bcrypt check). Welcome email moved from registration to post-verification. `InviteCode` model retained for admin use via `/dev/create-invite`. Known follow-ups in backlog: CSRF protection (pre-existing gap), Redis backend for rate limiter. In-app privacy policy (`templates/privacy.html`) updated in the same commit to describe transactional email (verification + welcome), 48-hour unverified-account retention, and the shift away from invite-only.
 
 ---
 
