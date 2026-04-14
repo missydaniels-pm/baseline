@@ -283,9 +283,14 @@ label {
 }
 
 input[type="text"],
+input[type="email"],
+input[type="password"],
 input[type="number"],
 input[type="date"],
 input[type="datetime-local"],
+input[type="search"],
+input[type="tel"],
+input[type="url"],
 textarea,
 select {
   width: 100%;
@@ -302,6 +307,29 @@ select {
 
 input:focus, textarea:focus, select:focus {
   border-color: var(--accent);
+}
+
+/* Override Chrome/Safari autofill yellow/white background on dark theme.
+   The 9999s transition is an intentional hack to prevent Chrome's autofill
+   background flash — do not shorten. Firefox uses -moz-autofill below. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px var(--bg) inset !important;
+  box-shadow: 0 0 0 1000px var(--bg) inset !important;
+  -webkit-text-fill-color: var(--text) !important;
+  caret-color: var(--text);
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+/* Firefox best-effort — :-moz-autofill only accepts `filter`, no box-shadow or bg. */
+input:-moz-autofill,
+textarea:-moz-autofill,
+select:-moz-autofill {
+  filter: none !important;
 }
 
 textarea { resize: vertical; min-height: 80px; }
@@ -373,6 +401,27 @@ input[type="range"]::-moz-range-thumb {
 
 .flash-success { background: rgba(95,180,120,0.12); color: #7fd3a1; border: 1px solid rgba(95,180,120,0.35); }
 .flash-warning { background: rgba(232,168,56,0.12); color: var(--mid); border: 1px solid rgba(232,168,56,0.35); }
+
+.symptom-score-hint { margin-bottom: 6px; }
+.symptom-score-clear {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s;
+}
+.symptom-score-clear:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+.symptom-score-slider-untouched { opacity: 0.4; }
+/* Hide the thumb entirely when untouched so the slider doesn't look pre-selected at its default midpoint. */
+.symptom-score-slider-untouched::-webkit-slider-thumb { opacity: 0; }
+.symptom-score-slider-untouched::-moz-range-thumb { opacity: 0; }
 .flash-error { background: rgba(224,82,82,0.15); color: var(--high); border: 1px solid rgba(224,82,82,0.3); }
 
 /* Divider */
@@ -451,6 +500,12 @@ input[type="range"]::-moz-range-thumb {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 16px;
+}
+
+.section-header > .btn {
+  flex-shrink: 0;
+  align-self: flex-start;
+  white-space: nowrap;
 }
 
 .section-title {
@@ -1293,9 +1348,14 @@ input[type="range"]::-moz-range-thumb {
 
   /* Inputs — 16px font prevents iOS auto-zoom, 48px min height for tap comfort */
   input[type="text"],
+  input[type="email"],
+  input[type="password"],
   input[type="number"],
   input[type="date"],
   input[type="datetime-local"],
+  input[type="search"],
+  input[type="tel"],
+  input[type="url"],
   textarea,
   select {
     font-size: 16px;
@@ -1896,7 +1956,7 @@ input[type="range"]::-moz-range-thumb {
 
 .experiment-preview {
   width: 100%;
-  opacity: 0.50;
+  opacity: 0.75;
   pointer-events: none;
   margin-bottom: 8px;
 }

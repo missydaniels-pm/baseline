@@ -1741,6 +1741,8 @@ def new_episode():
         db.session.flush()
 
         for symptom in symptoms:
+            if request.form.get(f'score_{symptom.id}_rated') != '1':
+                continue
             score_str = request.form.get(f'score_{symptom.id}', '').strip()
             if score_str:
                 try:
@@ -1820,6 +1822,8 @@ def edit_episode(episode_id):
         db.session.flush()
 
         for symptom in symptoms:
+            if request.form.get(f'score_{symptom.id}_rated') != '1':
+                continue
             score_str = request.form.get(f'score_{symptom.id}', '').strip()
             if score_str:
                 try:

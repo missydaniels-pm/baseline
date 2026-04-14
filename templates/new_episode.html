@@ -26,15 +26,21 @@
     </div>
 
     {% for symptom in symptoms %}
-    <div class="form-group">
+    <div class="form-group symptom-score-group" data-sid="{{ symptom.id }}">
       <label for="score_{{ symptom.id }}">{{ symptom.name }}</label>
       {% if symptom.description %}
         <div class="field-hint">{{ symptom.description }}</div>
       {% endif %}
+      <div class="field-hint symptom-score-hint">Optional — drag the slider to rate, or leave as "—" to skip.</div>
       <div class="slider-wrap">
         <input type="range" id="score_{{ symptom.id }}" name="score_{{ symptom.id }}"
-               min="1" max="10" value="5">
-        <span class="slider-value" id="score_{{ symptom.id }}_display">5</span>
+               min="1" max="10" value="5" class="symptom-score-slider symptom-score-slider-untouched"
+               aria-label="{{ symptom.name }} severity, optional. Drag to rate from 1 to 10."
+               aria-valuetext="Not rated">
+        <span class="slider-value" id="score_{{ symptom.id }}_display" aria-hidden="true">—</span>
+        <button type="button" class="symptom-score-clear" id="score_{{ symptom.id }}_clear"
+                aria-label="Clear {{ symptom.name }} rating" hidden>Clear</button>
+        <input type="hidden" name="score_{{ symptom.id }}_rated" value="0" id="score_{{ symptom.id }}_rated">
       </div>
     </div>
     {% endfor %}
@@ -73,6 +79,33 @@
 </div>
 
 <script>
+  // Symptom sliders — optional: only count as "rated" once user interacts.
+  document.querySelectorAll('.symptom-score-group').forEach(function(group) {
+    var sid = group.getAttribute('data-sid');
+    var slider = document.getElementById('score_' + sid);
+    var display = document.getElementById('score_' + sid + '_display');
+    var rated = document.getElementById('score_' + sid + '_rated');
+    var clearBtn = document.getElementById('score_' + sid + '_clear');
+    function markRated() {
+      rated.value = '1';
+      slider.classList.remove('symptom-score-slider-untouched');
+      slider.removeAttribute('aria-valuetext');
+      display.textContent = slider.value;
+      if (clearBtn) clearBtn.hidden = false;
+    }
+    function clearRating() {
+      rated.value = '0';
+      slider.value = 5;
+      slider.classList.add('symptom-score-slider-untouched');
+      slider.setAttribute('aria-valuetext', 'Not rated');
+      display.textContent = '—';
+      if (clearBtn) clearBtn.hidden = true;
+    }
+    slider.addEventListener('input', markRated);
+    slider.addEventListener('change', markRated);
+    if (clearBtn) clearBtn.addEventListener('click', clearRating);
+  });
+
   var rescueOptions = [
     {% for opt in rescue_options %}
     {id: {{ opt.id }}, name: "{{ opt.name|e }}", available: {{ 'true' if opt.available else 'false' }}}{{ ',' if not loop.last }}
