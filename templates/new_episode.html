@@ -25,25 +25,35 @@
       </div>
     </div>
 
-    {% for symptom in symptoms %}
-    <div class="form-group symptom-score-group" data-sid="{{ symptom.id }}">
-      <label for="score_{{ symptom.id }}">{{ symptom.name }}</label>
-      {% if symptom.description %}
-        <div class="field-hint">{{ symptom.description }}</div>
-      {% endif %}
-      <div class="field-hint symptom-score-hint">Optional — drag the slider to rate, or leave as "—" to skip.</div>
-      <div class="slider-wrap">
-        <input type="range" id="score_{{ symptom.id }}" name="score_{{ symptom.id }}"
-               min="1" max="10" value="5" class="symptom-score-slider symptom-score-slider-untouched"
-               aria-label="{{ symptom.name }} severity, optional. Drag to rate from 1 to 10."
-               aria-valuetext="Not rated">
-        <span class="slider-value" id="score_{{ symptom.id }}_display" aria-hidden="true">—</span>
-        <button type="button" class="symptom-score-clear" id="score_{{ symptom.id }}_clear"
-                aria-label="Clear {{ symptom.name }} rating" hidden>Clear</button>
-        <input type="hidden" name="score_{{ symptom.id }}_rated" value="0" id="score_{{ symptom.id }}_rated">
+    <div id="symptom-rows">
+      {% for symptom in symptoms %}
+      <div class="form-group symptom-score-group" data-sid="{{ symptom.id }}" data-name="{{ symptom.name }}">
+        <div class="symptom-score-header">
+          <label for="score_{{ symptom.id }}">{{ symptom.name }}</label>
+          <button type="button" class="btn btn-danger btn-sm symptom-remove"
+                  aria-label="Remove {{ symptom.name }} from this episode">✕</button>
+        </div>
+        {% if symptom.description %}
+          <div class="field-hint">{{ symptom.description }}</div>
+        {% endif %}
+        <div class="slider-wrap">
+          <input type="range" id="score_{{ symptom.id }}" name="score_{{ symptom.id }}"
+                 min="1" max="10" value="5"
+                 aria-label="{{ symptom.name }} severity, 1 to 10">
+          <span class="slider-value" id="score_{{ symptom.id }}_display">5</span>
+          <input type="hidden" name="score_{{ symptom.id }}_rated" value="1" id="score_{{ symptom.id }}_rated">
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="form-group" id="symptom-add-section" hidden>
+      <label for="symptomAddSelect">Add symptom to this episode</label>
+      <div class="symptom-add-row">
+        <select id="symptomAddSelect"><option value="">— select —</option></select>
+        <button type="button" class="btn btn-secondary btn-sm" id="addSymptomBtn">+ Add</button>
       </div>
     </div>
-    {% endfor %}
 
     <div class="form-group">
       <label for="functional_impairment">Functional Impairment</label>
@@ -79,31 +89,58 @@
 </div>
 
 <script>
-  // Symptom sliders — optional: only count as "rated" once user interacts.
+  // Symptom sliders — live display update.
   document.querySelectorAll('.symptom-score-group').forEach(function(group) {
     var sid = group.getAttribute('data-sid');
     var slider = document.getElementById('score_' + sid);
     var display = document.getElementById('score_' + sid + '_display');
-    var rated = document.getElementById('score_' + sid + '_rated');
-    var clearBtn = document.getElementById('score_' + sid + '_clear');
-    function markRated() {
-      rated.value = '1';
-      slider.classList.remove('symptom-score-slider-untouched');
-      slider.removeAttribute('aria-valuetext');
-      display.textContent = slider.value;
-      if (clearBtn) clearBtn.hidden = false;
-    }
-    function clearRating() {
-      rated.value = '0';
-      slider.value = 5;
-      slider.classList.add('symptom-score-slider-untouched');
-      slider.setAttribute('aria-valuetext', 'Not rated');
-      display.textContent = '—';
-      if (clearBtn) clearBtn.hidden = true;
-    }
-    slider.addEventListener('input', markRated);
-    slider.addEventListener('change', markRated);
-    if (clearBtn) clearBtn.addEventListener('click', clearRating);
+    slider.addEventListener('input', function() { display.textContent = slider.value; });
+  });
+
+  // Remove / add-back symptoms for this episode.
+  var addSection = document.getElementById('symptom-add-section');
+  var addSelect = document.getElementById('symptomAddSelect');
+  var addBtn = document.getElementById('addSymptomBtn');
+
+  function refreshAddSection() {
+    // Show the add section only when there's at least one removed symptom.
+    var hasOptions = addSelect.options.length > 1;
+    addSection.hidden = !hasOptions;
+  }
+
+  function removeSymptom(group) {
+    var sid = group.getAttribute('data-sid');
+    var name = group.getAttribute('data-name');
+    group.hidden = true;
+    document.getElementById('score_' + sid + '_rated').value = '0';
+    var opt = document.createElement('option');
+    opt.value = sid;
+    opt.textContent = name;
+    addSelect.appendChild(opt);
+    refreshAddSection();
+  }
+
+  function addSymptomBack(sid) {
+    var group = document.querySelector('.symptom-score-group[data-sid="' + sid + '"]');
+    if (!group) return;
+    group.hidden = false;
+    document.getElementById('score_' + sid + '_rated').value = '1';
+    var opt = addSelect.querySelector('option[value="' + sid + '"]');
+    if (opt) opt.remove();
+    addSelect.value = '';
+    refreshAddSection();
+  }
+
+  document.querySelectorAll('.symptom-remove').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var group = btn.closest('.symptom-score-group');
+      if (group) removeSymptom(group);
+    });
+  });
+
+  addBtn.addEventListener('click', function() {
+    var sid = addSelect.value;
+    if (sid) addSymptomBack(sid);
   });
 
   var rescueOptions = [

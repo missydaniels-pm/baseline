@@ -402,26 +402,22 @@ input[type="range"]::-moz-range-thumb {
 .flash-success { background: rgba(95,180,120,0.12); color: #7fd3a1; border: 1px solid rgba(95,180,120,0.35); }
 .flash-warning { background: rgba(232,168,56,0.12); color: var(--mid); border: 1px solid rgba(232,168,56,0.35); }
 
-.symptom-score-hint { margin-bottom: 6px; }
-.symptom-score-clear {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: color 0.15s, border-color 0.15s;
+.symptom-score-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
 }
-.symptom-score-clear:hover {
-  color: var(--text);
-  border-color: var(--text-muted);
+.symptom-score-header label { margin-bottom: 0; }
+.symptom-remove { flex-shrink: 0; }
+.symptom-add-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
-.symptom-score-slider-untouched { opacity: 0.4; }
-/* Hide the thumb entirely when untouched so the slider doesn't look pre-selected at its default midpoint. */
-.symptom-score-slider-untouched::-webkit-slider-thumb { opacity: 0; }
-.symptom-score-slider-untouched::-moz-range-thumb { opacity: 0; }
+.symptom-add-row select { flex: 1; min-width: 0; }
+.symptom-add-row .btn { flex-shrink: 0; }
 .flash-error { background: rgba(224,82,82,0.15); color: var(--high); border: 1px solid rgba(224,82,82,0.3); }
 
 /* Divider */
