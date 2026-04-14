@@ -147,7 +147,13 @@ This link expires in 24 hours. If you didn't create a Baseline account, you can 
             server.login(mail_user, mail_pass)
             server.sendmail(mail_user, user_email, msg.as_string())
         return True
-    except Exception:
+    except Exception as e:
+        # TEMP DEBUG: log in prod only (DATABASE_URL is Railway-only). Remove once root-caused.
+        if os.environ.get('DATABASE_URL'):
+            app.logger.error(
+                'send_verification_email failed: %s: %s (mail_user=%s, to=%s)',
+                type(e).__name__, e, mail_user, user_email,
+            )
         return False
 
 
@@ -245,8 +251,13 @@ Questions or feedback? Reply to this email or reach out at baselinehealthapp@gma
             server.starttls()
             server.login(mail_user, mail_pass)
             server.sendmail(mail_user, user_email, msg.as_string())
-    except Exception:
-        pass  # Never block registration
+    except Exception as e:
+        # TEMP DEBUG: log in prod only (DATABASE_URL is Railway-only). Remove once root-caused.
+        if os.environ.get('DATABASE_URL'):
+            app.logger.error(
+                'send_welcome_email failed: %s: %s (mail_user=%s, to=%s)',
+                type(e).__name__, e, mail_user, user_email,
+            )
 
 
 def run_migrations():
