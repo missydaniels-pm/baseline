@@ -96,8 +96,7 @@ templates/privacy.html          — in-app privacy policy (single source of trut
 | `SECRET_KEY` | Yes | Flask session secret key |
 | `DEBUG` | No | `true` locally only, `false` in production |
 | `DATABASE_URL` | Production only | Set automatically by Railway PostgreSQL reference |
-| `MAIL_USERNAME` | No | Gmail address for welcome emails (e.g. `baselinehealthapp@gmail.com`) |
-| `MAIL_PASSWORD` | No | Gmail App Password for SMTP auth |
+| `RESEND_API_KEY` | No | Resend API key for transactional email. From address is hardcoded to `Baseline <hello@mybaselineapp.com>` (domain must be verified in Resend). If unset, email sends fail silently — used in local dev. Replaces the prior Gmail SMTP flow (Railway blocks outbound SMTP — errno 101). |
 | `APP_URL` | No | Base URL for email links (defaults to `https://baseline-health.up.railway.app`) |
 
 Local `.env` file uses `load_dotenv(override=True)` to ensure `.env` always wins over shell environment.
@@ -229,7 +228,7 @@ python generate_icons.py
 - **Disposable-email blocklist:** common throwaway domains rejected at `/register`.
 - **Privacy acknowledgment:** `/register` requires a checkbox acknowledging the Privacy Policy (server-enforced).
 - **Stale unverified cleanup:** accounts with `verified_at IS NULL` and `created_at` older than 48 hours are deleted at app startup, freeing the email for re-registration.
-- Welcome email sent on successful email verification via Gmail SMTP (smtplib). Fails silently if credentials not configured. HTML + plain text.
+- Welcome email sent on successful email verification via Resend API (`resend` package). From address `Baseline <hello@mybaselineapp.com>` (domain verified in Resend). Fails silently if `RESEND_API_KEY` not configured. HTML + plain text. Previously used Gmail SMTP — retired because Railway blocks outbound SMTP (errno 101 network unreachable).
 - Welcome tour modal shown on first dashboard visit after onboarding (`has_seen_tour` flag on User model). Replayable from Help page via `/tour/restart`.
 
 ---

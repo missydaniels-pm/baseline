@@ -3,10 +3,8 @@ import json
 import re
 import random
 import secrets
-import smtplib
 import hashlib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import resend
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_bcrypt import Bcrypt
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -89,18 +87,37 @@ def load_verify_token(token, max_age=VERIFY_TOKEN_MAX_AGE):
         return None, 'invalid'
 
 
-def send_verification_email(user_email, verify_url):
-    """Send the verify-your-email link. Returns True if sent, False otherwise."""
-    mail_user = os.environ.get('MAIL_USERNAME')
-    mail_pass = os.environ.get('MAIL_PASSWORD')
-    if not mail_user or not mail_pass:
+MAIL_FROM = 'Baseline <hello@mybaselineapp.com>'
+
+
+def _send_email(to_email, subject, html, text):
+    """Send via Resend. Returns True on success, False otherwise.
+    Fails silently if RESEND_API_KEY is not set (local dev)."""
+    api_key = os.environ.get('RESEND_API_KEY')
+    if not api_key:
+        return False
+    resend.api_key = api_key
+    try:
+        resend.Emails.send({
+            'from': MAIL_FROM,
+            'to': [to_email],
+            'subject': subject,
+            'html': html,
+            'text': text,
+        })
+        return True
+    except Exception as e:
+        # Log in prod only (DATABASE_URL is Railway-only). Local dev stays silent.
+        if os.environ.get('DATABASE_URL'):
+            app.logger.error(
+                '_send_email failed: %s: %s (to=%s, subject=%s)',
+                type(e).__name__, e, to_email, subject,
+            )
         return False
 
-    msg = MIMEMultipart('alternative')
-    msg['Subject'] = 'Verify your Baseline account'
-    msg['From'] = f'Baseline <{mail_user}>'
-    msg['To'] = user_email
 
+def send_verification_email(user_email, verify_url):
+    """Send the verify-your-email link. Returns True if sent, False otherwise."""
     plain = f"""Welcome to Baseline!
 
 Please verify your email to activate your account:
@@ -138,39 +155,13 @@ This link expires in 24 hours. If you didn't create a Baseline account, you can 
 </body>
 </html>"""
 
-    msg.attach(MIMEText(plain, 'plain'))
-    msg.attach(MIMEText(html, 'html'))
-
-    try:
-        with smtplib.SMTP('smtp.gmail.com', 587, timeout=10) as server:
-            server.starttls()
-            server.login(mail_user, mail_pass)
-            server.sendmail(mail_user, user_email, msg.as_string())
-        return True
-    except Exception as e:
-        # TEMP DEBUG: log in prod only (DATABASE_URL is Railway-only). Remove once root-caused.
-        if os.environ.get('DATABASE_URL'):
-            app.logger.error(
-                'send_verification_email failed: %s: %s (mail_user=%s, to=%s)',
-                type(e).__name__, e, mail_user, user_email,
-            )
-        return False
+    return _send_email(user_email, 'Verify your Baseline account', html, plain)
 
 
 def send_welcome_email(user_email, user_name):
     """Send a welcome/orientation email to a newly registered user.
     Fails silently — never blocks registration."""
-    mail_user = os.environ.get('MAIL_USERNAME')
-    mail_pass = os.environ.get('MAIL_PASSWORD')
-    if not mail_user or not mail_pass:
-        return
-
     app_url = os.environ.get('APP_URL', 'https://baseline-health.up.railway.app')
-
-    msg = MIMEMultipart('alternative')
-    msg['Subject'] = 'Welcome to Baseline'
-    msg['From'] = f'Baseline <{mail_user}>'
-    msg['To'] = user_email
 
     plain = f"""Welcome to Baseline, {user_name}!
 
@@ -243,21 +234,7 @@ Questions or feedback? Reply to this email or reach out at baselinehealthapp@gma
 </body>
 </html>"""
 
-    msg.attach(MIMEText(plain, 'plain'))
-    msg.attach(MIMEText(html, 'html'))
-
-    try:
-        with smtplib.SMTP('smtp.gmail.com', 587, timeout=10) as server:
-            server.starttls()
-            server.login(mail_user, mail_pass)
-            server.sendmail(mail_user, user_email, msg.as_string())
-    except Exception as e:
-        # TEMP DEBUG: log in prod only (DATABASE_URL is Railway-only). Remove once root-caused.
-        if os.environ.get('DATABASE_URL'):
-            app.logger.error(
-                'send_welcome_email failed: %s: %s (mail_user=%s, to=%s)',
-                type(e).__name__, e, mail_user, user_email,
-            )
+    _send_email(user_email, 'Welcome to Baseline', html, plain)
 
 
 def run_migrations():

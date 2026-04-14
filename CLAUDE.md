@@ -90,6 +90,7 @@ Required in .env locally and in Railway variables in production:
 - `DEBUG` — set to `true` locally only, `false` in production
 - `DATABASE_URL` — set automatically by Railway from PostgreSQL service reference
 - `APP_URL` — base URL for email links (production: `https://mybaselineapp.com`)
+- `RESEND_API_KEY` — Resend API key for transactional email (verification + welcome). From address is `Baseline <hello@mybaselineapp.com>`. Unset locally → email sends fail silently.
 
 ---
 
