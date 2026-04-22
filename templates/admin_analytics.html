@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block title %}Analytics — Baseline{% endblock %}
+
+{% block head_extra %}
+<style>
+  .analytics-summary { display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; margin-bottom:24px; }
+  .analytics-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px; }
+  .analytics-retention { max-width:100%; overflow:hidden; }
+  @media (max-width: 700px) {
+    .analytics-summary { grid-template-columns:1fr 1fr; }
+    .analytics-grid { grid-template-columns:1fr; }
+  }
+  @media (max-width: 480px) {
+    .analytics-summary { grid-template-columns:1fr 1fr; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Analytics</h1>
+</div>
+
+{# ── Summary Cards ─────────────────────────────────────────────── #}
+<div class="analytics-summary">
+  <div class="card" style="text-align:center;">
+    <div style="font-size:28px; font-weight:700; color:var(--accent-light);">{{ total_users }}</div>
+    <div style="font-size:13px; color:var(--text-muted); margin-top:4px;">Total Users</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div style="font-size:28px; font-weight:700; color:var(--accent-light);">{{ signups_this_week }}</div>
+    <div style="font-size:13px; color:var(--text-muted); margin-top:4px;">Signups This Week</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div style="font-size:28px; font-weight:700; color:var(--accent-light);">{{ logins_today }}</div>
+    <div style="font-size:13px; color:var(--text-muted); margin-top:4px;">Logins Today</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div style="font-size:28px; font-weight:700; color:var(--accent-light);">{{ dau_today }}</div>
+    <div style="font-size:13px; color:var(--text-muted); margin-top:4px;">Active Today</div>
+  </div>
+</div>
+
+{# ── DAU / WAU ─────────────────────────────────────────────────── #}
+<div class="analytics-grid">
+  <div class="card">
+    <div style="font-weight:600; margin-bottom:12px;">Daily Active Users <span style="color:var(--text-muted); font-weight:400; font-size:13px;">(30 days)</span></div>
+    {% if dau %}
+    <table style="width:100%; font-size:13px; border-collapse:collapse;">
+      <thead><tr style="color:var(--text-muted); border-bottom:1px solid var(--border);">
+        <th scope="col" style="text-align:left; padding:6px 0;">Date</th>
+        <th scope="col" style="text-align:right; padding:6px 0;">Users</th>
+      </tr></thead>
+      <tbody>
+      {% for row in dau %}
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:6px 0;">{{ row.day }}</td>
+          <td style="text-align:right; padding:6px 0;">{{ row.count }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:var(--text-muted); font-size:13px;">No activity data yet. Data will appear as users interact with the app.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div style="font-weight:600; margin-bottom:12px;">Weekly Active Users <span style="color:var(--text-muted); font-weight:400; font-size:13px;">(12 weeks)</span></div>
+    {% if wau %}
+    <table style="width:100%; font-size:13px; border-collapse:collapse;">
+      <thead><tr style="color:var(--text-muted); border-bottom:1px solid var(--border);">
+        <th scope="col" style="text-align:left; padding:6px 0;">Week</th>
+        <th scope="col" style="text-align:right; padding:6px 0;">Users</th>
+      </tr></thead>
+      <tbody>
+      {% for row in wau %}
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:6px 0;">{{ row.week }}</td>
+          <td style="text-align:right; padding:6px 0;">{{ row.count }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:var(--text-muted); font-size:13px;">No activity data yet.</p>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Feature Usage ─────────────────────────────────────────────── #}
+<div class="card" style="margin-bottom:24px;">
+  <div style="font-weight:600; margin-bottom:12px;">Feature Usage <span style="color:var(--text-muted); font-weight:400; font-size:13px;">(30 days)</span></div>
+  {% if feature_usage %}
+  <table style="width:100%; font-size:13px; border-collapse:collapse;">
+    <thead><tr style="color:var(--text-muted); border-bottom:1px solid var(--border);">
+      <th scope="col" style="text-align:left; padding:6px 0;">Feature</th>
+      <th scope="col" style="text-align:right; padding:6px 0; width:60px;">Views</th>
+      <th scope="col" style="padding:6px 0 6px 12px; width:40%;">Share</th>
+    </tr></thead>
+    <tbody>
+    {% for f in feature_usage %}
+      <tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:6px 0;">{{ f.name }}</td>
+        <td style="text-align:right; padding:6px 0;">{{ f.count }}</td>
+        <td style="padding:6px 0 6px 12px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div style="flex:1; background:var(--surface2); border-radius:4px; height:8px; overflow:hidden;">
+              <div style="width:{{ f.pct }}%; height:100%; background:var(--accent); border-radius:4px;"></div>
+            </div>
+            <span style="color:var(--text-muted); font-size:12px; min-width:36px; text-align:right;">{{ f.pct }}%</span>
+          </div>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:var(--text-muted); font-size:13px;">No feature usage data yet.</p>
+  {% endif %}
+</div>
+
+{# ── Signups & Logins ──────────────────────────────────────────── #}
+<div class="analytics-grid">
+  <div class="card">
+    <div style="font-weight:600; margin-bottom:12px;">Signups <span style="color:var(--text-muted); font-weight:400; font-size:13px;">(30 days)</span></div>
+    {% if signups %}
+    <table style="width:100%; font-size:13px; border-collapse:collapse;">
+      <thead><tr style="color:var(--text-muted); border-bottom:1px solid var(--border);">
+        <th scope="col" style="text-align:left; padding:6px 0;">Date</th>
+        <th scope="col" style="text-align:right; padding:6px 0;">Count</th>
+      </tr></thead>
+      <tbody>
+      {% for row in signups %}
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:6px 0;">{{ row.day }}</td>
+          <td style="text-align:right; padding:6px 0;">{{ row.count }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:var(--text-muted); font-size:13px;">No signups in the last 30 days.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div style="font-weight:600; margin-bottom:12px;">Logins <span style="color:var(--text-muted); font-weight:400; font-size:13px;">(30 days)</span></div>
+    {% if logins %}
+    <table style="width:100%; font-size:13px; border-collapse:collapse;">
+      <thead><tr style="color:var(--text-muted); border-bottom:1px solid var(--border);">
+        <th scope="col" style="text-align:left; padding:6px 0;">Date</th>
+        <th scope="col" style="text-align:right; padding:6px 0;">Count</th>
+      </tr></thead>
+      <tbody>
+      {% for row in logins %}
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:6px 0;">{{ row.day }}</td>
+          <td style="text-align:right; padding:6px 0;">{{ row.count }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:var(--text-muted); font-size:13px;">No logins in the last 30 days.</p>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Retention ─────────────────────────────────────────────────── #}
+<div class="card analytics-retention" style="margin-bottom:24px;">
+  <div style="font-weight:600; margin-bottom:12px;">User Retention</div>
+  {% if retention %}
+  <div style="overflow-x:auto;">
+    <table style="width:100%; font-size:13px; border-collapse:collapse; white-space:nowrap;">
+      <thead><tr style="color:var(--text-muted); border-bottom:1px solid var(--border);">
+        <th scope="col" style="text-align:left; padding:6px 8px 6px 0;">User</th>
+        <th scope="col" style="text-align:left; padding:6px 8px;">Joined</th>
+        <th scope="col" style="text-align:left; padding:6px 8px;">First Active</th>
+        <th scope="col" style="text-align:left; padding:6px 8px;">Last Active</th>
+        <th scope="col" style="text-align:right; padding:6px 0 6px 8px;">Active Days</th>
+      </tr></thead>
+      <tbody>
+      {% for r in retention %}
+        {% set days_since = ((now - r.last_seen).total_seconds() / 86400) | int %}
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:6px 8px 6px 0;">
+            {{ r.name }}
+            <span style="color:var(--text-muted); font-size:12px;">({{ r.email }})</span>
+          </td>
+          <td style="padding:6px 8px;">{{ r.joined.strftime('%Y-%m-%d') if r.joined else '—' }}</td>
+          <td style="padding:6px 8px;">{{ r.first_seen.strftime('%Y-%m-%d') }}</td>
+          <td style="padding:6px 8px;">
+            {{ r.last_seen.strftime('%Y-%m-%d') }}
+            {% if days_since == 0 %}
+              <span style="color:var(--low); font-size:12px;">today</span>
+            {% elif days_since <= 7 %}
+              <span style="color:var(--mid); font-size:12px;">{{ days_since }}d ago</span>
+            {% else %}
+              <span style="color:var(--high); font-size:12px;">{{ days_since }}d ago</span>
+            {% endif %}
+          </td>
+          <td style="text-align:right; padding:6px 0 6px 8px;">{{ r.active_days }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p style="color:var(--text-muted); font-size:13px;">No retention data yet. Data will appear as users interact with the app.</p>
+  {% endif %}
+</div>
+
+<p style="color:var(--text-muted); font-size:12px; text-align:center; margin-bottom:24px;">
+  Data as of {{ now.strftime('%Y-%m-%d %H:%M') }} UTC
+</p>
+{% endblock %}

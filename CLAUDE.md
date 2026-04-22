@@ -67,7 +67,7 @@ Baseline Files/
 
 ## Data Models
 
-- **User** — email, password_hash, invite_code_used (legacy), is_active, verified_at, onboarding_complete, baseline data, ai_logging_enabled, has_seen_tour
+- **User** — email, password_hash, invite_code_used (legacy), is_active, verified_at, onboarding_complete, baseline data, ai_logging_enabled, has_seen_tour, is_admin
 - **InviteCode** — code, created_at, used_at, used_by_user_id (legacy — admin use only via /dev/create-invite)
 - **UsedVerifyToken** — token_hash (SHA-256), used_at. Prevents email-verification token replay.
 - **Symptom** — user-defined trackable items (name, description, is_active). Displayed as "What I Track" in UI. No hard limit on count post-onboarding.
@@ -79,6 +79,7 @@ Baseline Files/
 - **RescueOption** — interventions (displayed as "Interventions" in UI; stored as Protocol with type='rescue')
 - **Experiment** — hypothesis, protocol_id, start_date, stabilization_weeks (default 3), status, outcome
 - **CheckIn** — AI chat history
+- **UserActivity** — first-party usage analytics: user_id (nullable FK), event_type (signup/login/page_view), detail (endpoint name), created_at. Admin-only dashboard at /admin/analytics.
 
 ---
 
@@ -91,6 +92,7 @@ Required in .env locally and in Railway variables in production:
 - `DATABASE_URL` — set automatically by Railway from PostgreSQL service reference
 - `APP_URL` — base URL for email links (production: `https://mybaselineapp.com`)
 - `RESEND_API_KEY` — Resend API key for transactional email (verification + welcome). From address is `Baseline <hello@mybaselineapp.com>`. Unset locally → email sends fail silently.
+- `ADMIN_EMAIL` — email address to grant admin access on startup (defaults to `daniels.missy@gmail.com`)
 
 ---
 

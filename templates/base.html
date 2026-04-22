@@ -83,6 +83,16 @@
       </span> What I Track
     </a>
     <div class="nav-spacer"></div>
+    {% if current_user and current_user.is_admin %}
+    <a href="{{ url_for('admin_analytics') }}" class="nav-link {% if request.endpoint == 'admin_analytics' %}active{% endif %}"
+       >
+      <span class="nav-icon">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <path d="M2 13V7M6 13V4M10 13V9M14 13V2"/>
+        </svg>
+      </span> Analytics
+    </a>
+    {% endif %}
     <a href="{{ url_for('settings') }}" class="nav-link {% if request.endpoint == 'settings' %}active{% endif %}{% if nav_disabled %} nav-disabled{% endif %}"
        {% if nav_disabled %}title="Complete setup to access this section"{% endif %}>
       <span class="nav-icon">

@@ -20,6 +20,7 @@ class User(db.Model):
     ai_logging_enabled = db.Column(db.Boolean, default=False, nullable=False)
     has_seen_tour = db.Column(db.Boolean, default=False, nullable=False)
     verified_at = db.Column(db.DateTime, nullable=True)
+    is_admin = db.Column(db.Boolean, default=False, nullable=False)
 
     episodes = db.relationship('Episode', backref='user', lazy=True, cascade='all, delete-orphan')
     protocols = db.relationship('Protocol', backref='user', lazy=True, cascade='all, delete-orphan')
@@ -271,3 +272,18 @@ class InviteCode(db.Model):
 
     def __repr__(self):
         return f'<InviteCode {self.code}>'
+
+
+class UserActivity(db.Model):
+    """Lightweight event log for first-party usage analytics."""
+    __tablename__ = 'user_activity'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    event_type = db.Column(db.String(50), nullable=False)  # signup, login, page_view
+    detail = db.Column(db.String(200), nullable=True)       # e.g. endpoint name
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.Index('ix_user_activity_type_created', 'event_type', 'created_at'),
+    )

@@ -1,6 +1,6 @@
 # Baseline — Product Backlog
 
-Last updated: April 14, 2026 | 5 active users
+Last updated: April 22, 2026 | 5 active users
 
 **Priority:** P0 = fix now, P1 = next sprint, P2 = soon, P3 = later
 **Size:** S = small (<2hrs), M = medium (half day), L = large (1+ days)
@@ -46,7 +46,7 @@ High-value improvements targeting user satisfaction, retention, and portfolio re
 | Auth & Security | Self-serve registration with email verification | Missy | M | ✅ Complete 4/14/26 — itsdangerous signed tokens (24h TTL), SHA-256 replay protection via `used_verify_tokens`, Flask-Limiter rate limits, disposable-email blocklist, privacy-policy acknowledgment checkbox, stale-account cleanup at 48h. Replaces invite-only registration. |
 | UX | Dashboard empty states for new users | Internal | M | ✅ Complete 3/18/26 — per-section empty states with SVG placeholders and action links |
 | UX | Experiments page empty state with assessment preview | Internal | S | ✅ Complete 3/18/26 — full two-column assessment preview using real assess-*/decision-* classes at 50% opacity |
-| Analytics | Internal event logging to PostgreSQL (privacy-safe instrumentation) | Internal | M | Consider building into React architecture from the start rather than retrofitting monolith. |
+| Analytics | Internal event logging to PostgreSQL (privacy-safe instrumentation) | Internal | M | ✅ Complete 4/22/26 — UserActivity model (signup/login/page_view events), admin-only /admin/analytics dashboard with DAU/WAU/feature usage/retention, is_admin flag on User, privacy policy updated. |
 | Portfolio | Prepare repo for public GitHub launch — clean dev routes, write README | Internal | M | ✅ Complete — dev routes cleaned 3/5/26, README written, repo public 3/4/26 |
 | Reporting | Neurologist insurance report — auto-generated PDF matching standard migraine calendar form. Day, category (M/H/P), pain score 0-10, medication codes, monthly totals. Required for insurance approval of triptans/gepants. Baseline already captures all needed data. | Missy | L | DEFER TO POST-REACT REBUILD — backend logic transfers cleanly, but PDF generation layer will be cleaner in API-first architecture. Spec the backend now, build properly during React rebuild. |
 

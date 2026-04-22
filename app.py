@@ -11,7 +11,7 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from sqlalchemy import text
-from database import db, User, Episode, Protocol, Symptom, SymptomScore, EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode, UsedVerifyToken
+from database import db, User, Episode, Protocol, Symptom, SymptomScore, EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode, UsedVerifyToken, UserActivity
 from collections import defaultdict
 from datetime import datetime, date, timedelta
 from dotenv import load_dotenv
@@ -278,6 +278,7 @@ def run_migrations():
         ('users',                 'is_active',                 'ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE'),
         ('users',                 'has_seen_tour',             'ALTER TABLE users ADD COLUMN has_seen_tour BOOLEAN NOT NULL DEFAULT FALSE'),
         ('users',                 'verified_at',               'ALTER TABLE users ADD COLUMN verified_at TIMESTAMP'),
+        ('users',                 'is_admin',                  'ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT FALSE'),
     ]
 
     # Widen symptoms.name from varchar(100) to varchar(200) on PostgreSQL
@@ -361,6 +362,35 @@ def backfill_verified_existing_users():
     for u in users:
         u.verified_at = u.created_at or datetime.utcnow()
     db.session.commit()
+
+
+def ensure_admin_user():
+    """Grant admin to the app owner on startup."""
+    try:
+        admin_email = os.environ.get('ADMIN_EMAIL', 'daniels.missy@gmail.com')
+        owner = User.query.filter_by(email=admin_email).first()
+        if owner and not owner.is_admin:
+            owner.is_admin = True
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+
+def log_activity(event_type, detail=None, user_id=None):
+    """Write an activity row using a standalone connection so it never
+    interferes with the request session's transaction state."""
+    try:
+        with db.engine.connect() as conn:
+            conn.execute(
+                text(
+                    'INSERT INTO user_activity (user_id, event_type, detail, created_at)'
+                    ' VALUES (:uid, :etype, :detail, :ts)'
+                ),
+                {'uid': user_id, 'etype': event_type, 'detail': detail, 'ts': datetime.utcnow()},
+            )
+            conn.commit()
+    except Exception as e:
+        app.logger.warning('log_activity failed: %s: %s', type(e).__name__, e)
 
 
 def run_data_migrations():
@@ -474,7 +504,13 @@ PUBLIC_ENDPOINTS = {'login', 'register', 'static', 'dev_bootstrap', 'serve_sw', 
 @app.context_processor
 def inject_onboarding_state():
     user = get_user()
-    return {'onboarding_in_progress': user is not None and not user.onboarding_complete}
+    return {
+        'onboarding_in_progress': user is not None and not user.onboarding_complete,
+        'current_user': user,
+    }
+
+
+SKIP_TRACKING = {'static', 'serve_sw', 'admin_analytics', 'offline'}
 
 
 @app.before_request
@@ -493,6 +529,9 @@ def require_auth():
         return
     if not user.onboarding_complete:
         return redirect(url_for('onboarding_step1'))
+    # Track page views for analytics (GET only, lightweight, never blocks)
+    if request.method == 'GET' and request.endpoint not in SKIP_TRACKING:
+        log_activity('page_view', detail=request.endpoint, user_id=user.id)
 
 
 # ---------------------------------------------------------------------------
@@ -536,6 +575,7 @@ def login():
                 return render_template('login.html')
             session.clear()
             session['user_id'] = user.id
+            log_activity('login', user_id=user.id)
             if remember:
                 session.permanent = True
             else:
@@ -596,6 +636,7 @@ def register():
         try:
             db.session.add(user)
             db.session.commit()
+            log_activity('signup', user_id=user.id)
         except Exception:
             db.session.rollback()
             flash('An account with that email already exists.', 'error')
@@ -891,6 +932,7 @@ def delete_account():
     Experiment.query.filter_by(user_id=user_id).delete()
     Protocol.query.filter_by(user_id=user_id).delete()
     Symptom.query.filter_by(user_id=user_id).delete()
+    UserActivity.query.filter_by(user_id=user_id).delete()
     InviteCode.query.filter_by(used_by_user_id=user_id).update({'used_by_user_id': None, 'used_at': None})
     User.query.filter_by(id=user_id).delete()
     db.session.commit()
@@ -898,6 +940,155 @@ def delete_account():
     session.clear()
     flash('Your account has been deleted.', 'success')
     return redirect(url_for('login'))
+
+
+# ---------------------------------------------------------------------------
+# Admin Analytics
+# ---------------------------------------------------------------------------
+
+FEATURE_LABELS = {
+    'index': 'Dashboard', 'checkin': 'Check-in', 'episodes': 'Episodes',
+    'episode_new': 'New Episode', 'episode_edit': 'Edit Episode',
+    'protocols': 'Protocols', 'protocol_new': 'New Protocol',
+    'protocol_detail': 'Protocol Detail', 'edit_protocol': 'Edit Protocol',
+    'experiments': 'Experiments', 'experiment_new': 'New Experiment',
+    'edit_experiment': 'Edit Experiment', 'assess_experiment': 'Assess Experiment',
+    'symptoms': 'What I Track', 'symptom_new': 'New Symptom', 'edit_symptom': 'Edit Symptom',
+    'settings': 'Settings', 'help_page': 'Help', 'delete_account': 'Delete Account',
+    'new_rescue_option': 'New Intervention', 'edit_rescue_option': 'Edit Intervention',
+    'experiment_offer': 'Experiment Offer',
+}
+
+
+@app.route('/admin/analytics')
+def admin_analytics():
+    from sqlalchemy import func, cast, Date
+
+    user = get_user()
+    if not user or not user.is_admin:
+        return redirect(url_for('index'))
+
+    is_sqlite = str(db.engine.url).startswith('sqlite')
+
+    def date_group(column):
+        if is_sqlite:
+            return func.strftime('%Y-%m-%d', column)
+        return cast(column, Date)
+
+    def week_group(column):
+        if is_sqlite:
+            return func.strftime('%Y-W%W', column)
+        return func.to_char(column, 'IYYY-"W"IW')
+
+    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    twelve_weeks_ago = datetime.utcnow() - timedelta(weeks=12)
+
+    day_expr = date_group(UserActivity.created_at)
+    week_expr = week_group(UserActivity.created_at)
+
+    # Total users
+    total_users = User.query.filter(User.is_active == True, User.verified_at.isnot(None)).count()
+
+    # Signups (last 30 days)
+    signups = db.session.query(
+        day_expr.label('day'),
+        func.count().label('count')
+    ).filter(
+        UserActivity.event_type == 'signup',
+        UserActivity.created_at >= thirty_days_ago
+    ).group_by(day_expr).order_by(day_expr).all()
+
+    # Logins (last 30 days)
+    logins = db.session.query(
+        day_expr.label('day'),
+        func.count().label('count')
+    ).filter(
+        UserActivity.event_type == 'login',
+        UserActivity.created_at >= thirty_days_ago
+    ).group_by(day_expr).order_by(day_expr).all()
+
+    # DAU (last 30 days)
+    dau = db.session.query(
+        day_expr.label('day'),
+        func.count(func.distinct(UserActivity.user_id)).label('count')
+    ).filter(
+        UserActivity.event_type == 'page_view',
+        UserActivity.created_at >= thirty_days_ago
+    ).group_by(day_expr).order_by(day_expr).all()
+
+    # WAU (last 12 weeks)
+    wau = db.session.query(
+        week_expr.label('week'),
+        func.count(func.distinct(UserActivity.user_id)).label('count')
+    ).filter(
+        UserActivity.event_type == 'page_view',
+        UserActivity.created_at >= twelve_weeks_ago
+    ).group_by(week_expr).order_by(week_expr).all()
+
+    # Feature usage (last 30 days)
+    feature_rows = db.session.query(
+        UserActivity.detail.label('feature'),
+        func.count().label('count')
+    ).filter(
+        UserActivity.event_type == 'page_view',
+        UserActivity.created_at >= thirty_days_ago,
+        UserActivity.detail.isnot(None)
+    ).group_by(UserActivity.detail).order_by(func.count().desc()).all()
+
+    total_views = sum(r.count for r in feature_rows) or 1
+    feature_usage = [
+        {
+            'name': FEATURE_LABELS.get(r.feature, r.feature),
+            'endpoint': r.feature,
+            'count': r.count,
+            'pct': round(r.count / total_views * 100, 1),
+        }
+        for r in feature_rows
+    ]
+
+    # Retention — per-user activity summary
+    retention = db.session.query(
+        User.name,
+        User.email,
+        User.created_at.label('joined'),
+        func.min(UserActivity.created_at).label('first_seen'),
+        func.max(UserActivity.created_at).label('last_seen'),
+        func.count(func.distinct(date_group(UserActivity.created_at))).label('active_days')
+    ).join(UserActivity, User.id == UserActivity.user_id).filter(
+        UserActivity.event_type == 'page_view'
+    ).group_by(User.id, User.name, User.email, User.created_at).all()
+
+    # Summary cards
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = today_start - timedelta(days=today_start.weekday())
+    signups_this_week = UserActivity.query.filter(
+        UserActivity.event_type == 'signup',
+        UserActivity.created_at >= week_start
+    ).count()
+    logins_today = UserActivity.query.filter(
+        UserActivity.event_type == 'login',
+        UserActivity.created_at >= today_start
+    ).count()
+    dau_today = db.session.query(
+        func.count(func.distinct(UserActivity.user_id))
+    ).filter(
+        UserActivity.event_type == 'page_view',
+        UserActivity.created_at >= today_start
+    ).scalar() or 0
+
+    return render_template('admin_analytics.html',
+        total_users=total_users,
+        signups_this_week=signups_this_week,
+        logins_today=logins_today,
+        dau_today=dau_today,
+        signups=signups,
+        logins=logins,
+        dau=dau,
+        wau=wau,
+        feature_usage=feature_usage,
+        retention=retention,
+        now=datetime.utcnow(),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2429,6 +2620,7 @@ with app.app_context():
     cleanup_stale_unverified_users()
     run_data_migrations()
     migrate_episode_interventions()
+    ensure_admin_user()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True)

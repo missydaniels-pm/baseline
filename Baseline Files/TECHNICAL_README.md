@@ -1,6 +1,6 @@
 # Baseline — Technical README
 
-Last updated: April 14, 2026
+Last updated: April 22, 2026
 
 ---
 
@@ -73,7 +73,7 @@ templates/privacy.html          — in-app privacy policy (single source of trut
 
 | Model | Description |
 |---|---|
-| User | email, password_hash, invite_code_used (legacy), is_active, verified_at, onboarding_complete, baseline data, ai_logging_enabled, has_seen_tour |
+| User | email, password_hash, invite_code_used (legacy), is_active, verified_at, onboarding_complete, baseline data, ai_logging_enabled, has_seen_tour, is_admin |
 | InviteCode | code, created_at, used_at, used_by_user_id (legacy — admin use only) |
 | UsedVerifyToken | token_hash (SHA-256), used_at — prevents email-verification token replay |
 | Symptom | user-defined trackable items (name, description, is_active). Displayed as "What I Track" in UI. No hard post-onboarding limit. |
@@ -85,6 +85,7 @@ templates/privacy.html          — in-app privacy policy (single source of trut
 | RescueOption | interventions (stored as Protocol with type='rescue') |
 | Experiment | hypothesis, protocol_id, start_date, stabilization_weeks (default 3), status, outcome |
 | CheckIn | AI chat history |
+| UserActivity | First-party usage analytics: user_id (nullable FK), event_type (signup/login/page_view), detail (endpoint name), created_at. Indexed on (event_type, created_at). |
 
 ---
 
@@ -98,6 +99,7 @@ templates/privacy.html          — in-app privacy policy (single source of trut
 | `DATABASE_URL` | Production only | Set automatically by Railway PostgreSQL reference |
 | `RESEND_API_KEY` | No | Resend API key for transactional email. From address is hardcoded to `Baseline <hello@mybaselineapp.com>` (domain must be verified in Resend). If unset, email sends fail silently — used in local dev. Replaces the prior Gmail SMTP flow (Railway blocks outbound SMTP — errno 101). |
 | `APP_URL` | No | Base URL for email links (defaults to `https://baseline-health.up.railway.app`) |
+| `ADMIN_EMAIL` | No | Email address to grant admin access on startup (defaults to `daniels.missy@gmail.com`) |
 
 Local `.env` file uses `load_dotenv(override=True)` to ensure `.env` always wins over shell environment.
 
@@ -163,6 +165,7 @@ claude --resume                         # resume previous session
 | `/settings/change-email` | POST | Change email |
 | `/settings/delete-account` | POST | Delete account and all data (MHMD compliance) |
 | `/help` | GET | Help and documentation |
+| `/admin/analytics` | GET | Admin-only usage analytics dashboard (signups, logins, DAU/WAU, feature usage, retention) |
 | `/tour/complete` | POST | Mark welcome tour as seen (JSON response) |
 | `/tour/restart` | GET | Reset tour flag and redirect to dashboard |
 
@@ -221,7 +224,7 @@ python generate_icons.py
 - Sessions encrypted with SECRET_KEY
 - All production traffic over HTTPS (Railway provides SSL)
 - Dev routes grouped in a dedicated section with explicit `if not app.debug` guards — blocked in production (DEBUG=false)
-- Account deletion removes all data in FK-safe order: EpisodeInterventions → SymptomScores → CheckIns → Episodes → ProtocolCompliance → ProtocolEvents → Experiments → Protocols → Symptoms → InviteCode reference → User
+- Account deletion removes all data in FK-safe order: EpisodeInterventions → SymptomScores → CheckIns → Episodes → ProtocolCompliance → ProtocolEvents → Experiments → Protocols → Symptoms → UserActivity → InviteCode reference → User
 - Data deletion satisfies Washington State My Health MY Data Act (MHMD) requirements
 - **Email verification (self-serve registration):** New accounts created with `is_active=False` and `verified_at=None`. Signed itsdangerous token (HMAC over SECRET_KEY, salt `baseline-email-verify-v1`, 24h max_age) emailed as a verification link. On verify, token SHA-256 hash stored in `used_verify_tokens` to prevent replay; user flipped to `is_active=True` with `verified_at=now()`. Welcome email sent post-verification.
 - **Rate limiting:** Flask-Limiter (in-memory backend). `/register` and `/resend-verification` 5/hour/IP; `/login` 20/hour/IP.
