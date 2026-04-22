@@ -2,7 +2,7 @@
 
 **A health tracking app for people managing chronic conditions through structured experiment tracking.**
 
-Live at: [baseline-health.up.railway.app](https://baseline-health.up.railway.app) — invite only during early access
+Live at: (https://mybaselineapp.com/)
 
 ---
 
@@ -112,4 +112,4 @@ The code quality reflects Claude Code's output. The product decisions reflect mi
 
 ---
 
-*Built by [Missy Daniels](https://linkedin.com/in/missydaniels) — VP of Digital Products @ Teaching Strategies. Previously Amazon. Currently figuring out what AI-assisted product development looks like when it's done seriously.*
+*Built by [Missy Daniels](https://linkedin.com/in/missydaniels) —  
