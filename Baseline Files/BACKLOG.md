@@ -1,6 +1,6 @@
 # Baseline — Product Backlog
 
-Last updated: April 24, 2026 | 5 active users (open registration)
+Last updated: April 24, 2026 | open self-serve registration
 
 **Priority:** P0 = fix now, P1 = next sprint, P2 = soon, P3 = later
 **Size:** S = small (<2hrs), M = medium (half day), L = large (1+ days)

@@ -16,7 +16,7 @@ Live at: https://mybaselineapp.com (custom domain; Railway default: baseline-hea
 
 ## Current Status
 
-- 5 active users: Missy (admin/developer), Mackenzie (stepdaughter, chronic illness), Lizz (software engineer), Kiersten (cousin), Katherine (Kiersten's daughter)
+- Open self-serve registration. Core feedback circle: Missy (admin/developer), Mackenzie (stepdaughter, chronic illness), Lizz (software engineer), Kiersten (cousin), Katherine (Kiersten's daughter). Broader user base referenced as `current_user` in code and visible via `/admin/users`.
 - MVP is live and deployed on Railway
 - PostgreSQL database in production, SQLite locally
 - PWA installed — works as home screen app on iOS (Safari) and Android (Chrome)
