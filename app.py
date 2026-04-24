@@ -4,6 +4,8 @@ import re
 import random
 import secrets
 import hashlib
+import hmac
+import base64
 import resend
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_bcrypt import Bcrypt
@@ -106,6 +108,105 @@ def load_verify_token(token, max_age=VERIFY_TOKEN_MAX_AGE):
         return None, 'invalid'
 
 
+UNSUBSCRIBE_SALT = b'baseline-email-unsubscribe-v1'
+
+
+def _unsubscribe_mac(email):
+    key = app.config['SECRET_KEY']
+    key_bytes = key.encode('utf-8') if isinstance(key, str) else key
+    msg = UNSUBSCRIBE_SALT + b':' + email.lower().encode('utf-8')
+    return hmac.new(key_bytes, msg, hashlib.sha256).digest()
+
+
+def generate_unsubscribe_token(email):
+    """Stateless HMAC-SHA256 token that lets any email recipient unsubscribe.
+    No expiry: an old welcome email years later should still work. The email
+    payload is base64-encoded for URL safety, not encrypted — the security
+    property is authenticity (the HMAC), not confidentiality."""
+    digest = _unsubscribe_mac(email)
+    sig = base64.urlsafe_b64encode(digest).rstrip(b'=').decode('ascii')
+    payload = base64.urlsafe_b64encode(email.lower().encode('utf-8')).rstrip(b'=').decode('ascii')
+    return f'{payload}.{sig}'
+
+
+def load_unsubscribe_token(token):
+    """Return email on valid token, None otherwise. Constant-time compare."""
+    try:
+        # Base64url alphabet excludes '.', so the separator is unambiguous.
+        payload_b64, sig_b64 = token.split('.', 1)
+        pad_p = '=' * (-len(payload_b64) % 4)
+        pad_s = '=' * (-len(sig_b64) % 4)
+        email = base64.urlsafe_b64decode(payload_b64 + pad_p).decode('utf-8')
+        sig = base64.urlsafe_b64decode(sig_b64 + pad_s)
+    except (ValueError, UnicodeDecodeError, base64.binascii.Error):
+        return None
+    expected = _unsubscribe_mac(email)
+    if not hmac.compare_digest(sig, expected):
+        return None
+    return email
+
+
+# ---------------------------------------------------------------------------
+# Resend audience (contacts) sync — opt-in preference mirroring
+# ---------------------------------------------------------------------------
+# All operations are best-effort: fail silently when RESEND_AUDIENCE_ID is
+# unset (local dev) and log-and-swallow any API error so user-facing flows
+# (verify, unsubscribe, delete-account) are never blocked by a Resend issue.
+
+def _resend_audience_configured():
+    if not os.environ.get('RESEND_API_KEY') or not os.environ.get('RESEND_AUDIENCE_ID'):
+        return None
+    resend.api_key = os.environ['RESEND_API_KEY']
+    return os.environ['RESEND_AUDIENCE_ID']
+
+
+def resend_contact_upsert(email, unsubscribed=False):
+    """Add or update a contact in the Resend audience."""
+    audience_id = _resend_audience_configured()
+    if not audience_id:
+        return
+    try:
+        resend.Contacts.create({
+            'audience_id': audience_id,
+            'email': email,
+            'unsubscribed': bool(unsubscribed),
+        })
+    except Exception as e:
+        # The SDK raises generically on any non-2xx response (including the 422
+        # Resend returns for duplicate email), so we can't cheaply distinguish
+        # "already exists" from other failures. Fall through to update — if the
+        # underlying error is transient/auth, update will also fail and get
+        # swallowed. update() accepts email as the contact identifier in the
+        # SDK, so this is a valid upsert path.
+        try:
+            resend.Contacts.update({
+                'audience_id': audience_id,
+                'email': email,
+                'unsubscribed': bool(unsubscribed),
+            })
+        except Exception as e2:
+            if os.environ.get('DATABASE_URL'):
+                app.logger.warning(
+                    'resend_contact_upsert failed: %s: %s (email=%s)',
+                    type(e2).__name__, e2, email,
+                )
+
+
+def resend_contact_delete(email):
+    """Remove a contact from the Resend audience."""
+    audience_id = _resend_audience_configured()
+    if not audience_id:
+        return
+    try:
+        resend.Contacts.remove(audience_id=audience_id, email=email)
+    except Exception as e:
+        if os.environ.get('DATABASE_URL'):
+            app.logger.warning(
+                'resend_contact_delete failed: %s: %s (email=%s)',
+                type(e).__name__, e, email,
+            )
+
+
 MAIL_FROM = 'Baseline <hello@mybaselineapp.com>'
 
 
@@ -184,6 +285,7 @@ def send_welcome_email(user_email, user_name):
     Fails silently — never blocks registration. user_name is accepted for
     API stability but no longer rendered (greeting is now brand-focused)."""
     app_url = os.environ.get('APP_URL', 'https://baseline-health.up.railway.app')
+    unsubscribe_url = f"{app_url.rstrip('/')}/unsubscribe/{generate_unsubscribe_token(user_email)}"
 
     plain = f"""Welcome to Baseline
 
@@ -209,6 +311,11 @@ Visit the Help page for a full guide: {app_url}/help
 Questions or feedback? Reply to this email or reach out at baselinehealthapp@gmail.com.
 
 — The Baseline Team
+
+---
+You're receiving this because you have a Baseline account.
+Unsubscribe from app updates: {unsubscribe_url}
+{app_url}
 """
 
     html = f"""<!DOCTYPE html>
@@ -246,8 +353,13 @@ Questions or feedback? Reply to this email or reach out at baselinehealthapp@gma
   <h2 style="font-size:15px; font-weight:600; color:#1a1a2e; margin:0 0 8px;">Need help?</h2>
   <p style="font-size:14px; color:#666666; line-height:1.7; margin:0 0 20px;">Visit the <a href="{app_url}/help" style="color:#7c3aed; text-decoration:none;">Help page</a> for a full guide including a check-in tutorial. Questions or feedback? Reply to this email or reach out at <a href="mailto:baselinehealthapp@gmail.com" style="color:#7c3aed; text-decoration:none;">baselinehealthapp@gmail.com</a>.</p>
 
-  <div style="border-top:1px solid #ececee; padding-top:16px; margin-top:8px; font-size:12px; color:#666666;">
-    You're receiving this because you created a Baseline account. <a href="{app_url}/privacy" style="color:#7c3aed; text-decoration:none;">Privacy Policy</a>
+  <div style="border-top:1px solid #ececee; padding-top:16px; margin-top:8px; font-size:12px; color:#666666; line-height:1.7;">
+    You're receiving this because you have a Baseline account.<br>
+    <a href="{unsubscribe_url}" style="color:#7c3aed; text-decoration:none;">Unsubscribe</a>
+    &nbsp;|&nbsp;
+    <a href="{app_url}" style="color:#7c3aed; text-decoration:none;">mybaselineapp.com</a>
+    &nbsp;|&nbsp;
+    <a href="{app_url}/privacy" style="color:#7c3aed; text-decoration:none;">Privacy Policy</a>
   </div>
 </td></tr>
 </table>
@@ -279,6 +391,7 @@ def run_migrations():
         ('users',                 'has_seen_tour',             'ALTER TABLE users ADD COLUMN has_seen_tour BOOLEAN NOT NULL DEFAULT FALSE'),
         ('users',                 'verified_at',               'ALTER TABLE users ADD COLUMN verified_at TIMESTAMP'),
         ('users',                 'is_admin',                  'ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT FALSE'),
+        ('users',                 'email_updates_enabled',     'ALTER TABLE users ADD COLUMN email_updates_enabled BOOLEAN NOT NULL DEFAULT TRUE'),
     ]
 
     # Widen symptoms.name from varchar(100) to varchar(200) on PostgreSQL
@@ -499,7 +612,7 @@ def get_active_experiment(user_id):
 # Authentication gate + onboarding gate
 # ---------------------------------------------------------------------------
 
-PUBLIC_ENDPOINTS = {'login', 'register', 'static', 'dev_bootstrap', 'serve_sw', 'offline', 'privacy', 'verify_email', 'resend_verification', 'verify_sent'}
+PUBLIC_ENDPOINTS = {'login', 'register', 'static', 'dev_bootstrap', 'serve_sw', 'offline', 'privacy', 'verify_email', 'resend_verification', 'verify_sent', 'unsubscribe'}
 
 @app.context_processor
 def inject_onboarding_state():
@@ -510,7 +623,7 @@ def inject_onboarding_state():
     }
 
 
-SKIP_TRACKING = {'static', 'serve_sw', 'admin_analytics', 'offline'}
+SKIP_TRACKING = {'static', 'serve_sw', 'admin_analytics', 'admin_users', 'offline'}
 
 
 @app.before_request
@@ -694,6 +807,7 @@ def verify_email(token):
         return render_template('verify_result.html', status='error', email=None), 500
 
     send_welcome_email(user.email, user.name)
+    resend_contact_upsert(user.email, unsubscribed=not user.email_updates_enabled)
 
     session.clear()
     session['user_id'] = user.id
@@ -728,6 +842,31 @@ def logout():
     session.clear()
     flash('You have been logged out.', 'success')
     return redirect(url_for('login'))
+
+
+@app.route('/unsubscribe/<token>')
+@limiter.limit('30 per hour')
+def unsubscribe(token):
+    """One-click unsubscribe from non-transactional email. Publicly accessible."""
+    email = load_unsubscribe_token(token)
+    if not email:
+        return render_template('unsubscribe.html', status='invalid'), 400
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        # Generic error — don't reveal whether the address is known.
+        return render_template('unsubscribe.html', status='invalid'), 400
+
+    if user.email_updates_enabled:
+        try:
+            user.email_updates_enabled = False
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            return render_template('unsubscribe.html', status='error'), 500
+
+    resend_contact_upsert(user.email, unsubscribed=True)
+    return render_template('unsubscribe.html', status='success')
 
 
 # ---------------------------------------------------------------------------
@@ -854,8 +993,27 @@ def settings():
         flash('Settings saved.', 'success')
         return redirect(url_for('settings'))
 
-    api_key_set = bool(os.environ.get('ANTHROPIC_API_KEY'))
-    return render_template('settings.html', user=user, api_key_set=api_key_set)
+    return render_template('settings.html', user=user)
+
+
+@app.route('/settings/email-preferences', methods=['POST'])
+def email_preferences():
+    user = get_user()
+    if not user:
+        return redirect(url_for('login'))
+    enabled = ('email_updates' in request.form)
+    try:
+        user.email_updates_enabled = enabled
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        flash("Couldn't save your preferences. Please try again.", 'error')
+        return redirect(url_for('settings'))
+    # Mirror preference to Resend audience so campaigns honor it.
+    if user.email:
+        resend_contact_upsert(user.email, unsubscribed=not enabled)
+    flash('Email preferences saved.', 'success')
+    return redirect(url_for('settings'))
 
 
 @app.route('/settings/email', methods=['POST'])
@@ -871,8 +1029,14 @@ def change_email():
     elif User.query.filter(User.email == new_email, User.id != user.id).first():
         flash('That email is already in use.', 'error')
     else:
+        old_email = user.email
         user.email = new_email
         db.session.commit()
+        # Keep Resend audience in sync: remove the old contact, add the new
+        # one carrying the user's current email-updates preference.
+        if old_email:
+            resend_contact_delete(old_email)
+        resend_contact_upsert(new_email, unsubscribed=not user.email_updates_enabled)
         flash('Email updated.', 'success')
 
     return redirect(url_for('settings'))
@@ -916,6 +1080,11 @@ def delete_account():
         return redirect(url_for('settings'))
 
     user_id = user.id
+    user_email = user.email
+
+    # Remove from Resend audience before DB delete so we still have the email.
+    if user_email:
+        resend_contact_delete(user_email)
 
     # Delete in FK-safe order
     episode_ids = db.session.query(Episode.id).filter_by(user_id=user_id)
@@ -1089,6 +1258,52 @@ def admin_analytics():
         retention=retention,
         now=datetime.utcnow(),
     )
+
+
+@app.route('/admin/users')
+def admin_users():
+    """Read-only admin table of all users. Guarded by is_admin."""
+    from sqlalchemy import func
+
+    user = get_user()
+    if not user or not user.is_admin:
+        app.logger.warning(
+            'Unauthorized /admin/users access by user_id=%s',
+            user.id if user else None,
+        )
+        return redirect(url_for('index'))
+
+    # Last-login per user: latest UserActivity row of type 'login'
+    last_login_rows = (
+        db.session.query(
+            UserActivity.user_id,
+            func.max(UserActivity.created_at).label('last_login'),
+        )
+        .filter(UserActivity.event_type == 'login')
+        .group_by(UserActivity.user_id)
+        .all()
+    )
+    last_login_by_user = {uid: ts for uid, ts in last_login_rows}
+
+    # Episode count per user
+    episode_count_rows = (
+        db.session.query(Episode.user_id, func.count(Episode.id))
+        .group_by(Episode.user_id)
+        .all()
+    )
+    episode_count_by_user = {uid: n for uid, n in episode_count_rows}
+
+    users = User.query.order_by(User.created_at.desc()).all()
+    rows = [{
+        'email': u.email or '—',
+        'verified': u.verified_at is not None,
+        'joined': u.created_at,
+        'last_login': last_login_by_user.get(u.id),
+        'email_updates_enabled': u.email_updates_enabled,
+        'episode_count': episode_count_by_user.get(u.id, 0),
+    } for u in users]
+
+    return render_template('admin_users.html', rows=rows, now=datetime.utcnow())
 
 
 # ---------------------------------------------------------------------------

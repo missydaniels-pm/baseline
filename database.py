@@ -21,6 +21,7 @@ class User(db.Model):
     has_seen_tour = db.Column(db.Boolean, default=False, nullable=False)
     verified_at = db.Column(db.DateTime, nullable=True)
     is_admin = db.Column(db.Boolean, default=False, nullable=False)
+    email_updates_enabled = db.Column(db.Boolean, default=True, nullable=False)
 
     episodes = db.relationship('Episode', backref='user', lazy=True, cascade='all, delete-orphan')
     protocols = db.relationship('Protocol', backref='user', lazy=True, cascade='all, delete-orphan')

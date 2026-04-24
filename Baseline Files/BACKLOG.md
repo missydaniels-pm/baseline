@@ -1,6 +1,6 @@
 # Baseline — Product Backlog
 
-Last updated: April 22, 2026 | 5 active users
+Last updated: April 24, 2026 | 5 active users (open registration)
 
 **Priority:** P0 = fix now, P1 = next sprint, P2 = soon, P3 = later
 **Size:** S = small (<2hrs), M = medium (half day), L = large (1+ days)
@@ -47,6 +47,7 @@ High-value improvements targeting user satisfaction, retention, and portfolio re
 | UX | Dashboard empty states for new users | Internal | M | ✅ Complete 3/18/26 — per-section empty states with SVG placeholders and action links |
 | UX | Experiments page empty state with assessment preview | Internal | S | ✅ Complete 3/18/26 — full two-column assessment preview using real assess-*/decision-* classes at 50% opacity |
 | Analytics | Internal event logging to PostgreSQL (privacy-safe instrumentation) | Internal | M | ✅ Complete 4/22/26 — UserActivity model (signup/login/page_view events), admin-only /admin/analytics dashboard with DAU/WAU/feature usage/retention, is_admin flag on User, privacy policy updated. |
+| Email & Admin | Email opt-in preference + unsubscribe + Resend contacts sync + admin user view | Missy | M | ✅ Complete 4/24/26 — `email_updates_enabled` on User (default True), Settings → Email Preferences auto-save toggle, public `/unsubscribe/<token>` (HMAC-SHA256, no expiry, enumeration-safe, rate-limited 30/hour), welcome email footer with unsubscribe link, Resend audience sync on verify/email-change/preference-toggle/unsubscribe/account-delete (gated on `RESEND_AUDIENCE_ID`, log-and-swallow), `/admin/users` read-only directory (email/verified/joined/last login/email pref/episode count) guarded by `is_admin`. Privacy policy updated to disclose admin access + Resend as email processor. AI Logging toggle also auto-saves; `ANTHROPIC_API_KEY` dev diagnostic removed from user-facing settings. |
 | Portfolio | Prepare repo for public GitHub launch — clean dev routes, write README | Internal | M | ✅ Complete — dev routes cleaned 3/5/26, README written, repo public 3/4/26 |
 | Reporting | Neurologist insurance report — auto-generated PDF matching standard migraine calendar form. Day, category (M/H/P), pain score 0-10, medication codes, monthly totals. Required for insurance approval of triptans/gepants. Baseline already captures all needed data. | Missy | L | DEFER TO POST-REACT REBUILD — backend logic transfers cleanly, but PDF generation layer will be cleaner in API-first architecture. Spec the backend now, build properly during React rebuild. |
 
@@ -78,7 +79,7 @@ Important but not urgent. Build once P0 and P1 are clear.
 | Infrastructure | GitHub Actions: basic automated testing | Internal | M | |
 | Privacy | Consult health tech lawyer — Washington MHMD obligations | Legal | S | Before paid tier or significant user growth |
 | Privacy & Legal | Update privacy policy to describe transactional email (verification + welcome) and temporary storage of unverified accounts (48h TTL) | Internal | S | ✅ Complete 4/14/26 — `templates/privacy.html` updated (in-app page is single source of truth). |
-| Auth & Security | Add CSRF protection (Flask-WTF) to all auth forms | Code Review | S | Pre-existing gap surfaced during self-serve reg review. Rate limiting currently mitigates. |
+| Auth & Security | Add CSRF protection (Flask-WTF) to all auth forms | Code Review | S | Pre-existing gap surfaced during self-serve reg review. Rate limiting currently mitigates. With open registration now live, also covers `/settings/email-preferences`, `/settings/email`, `/settings/password`, `/settings/delete-account`. |
 | Auth & Security | Switch Flask-Limiter to Redis backend once Railway Redis is provisioned | Code Review | S | In-memory backend resets on each deploy and is per-worker — acceptable at current scale but documented gap. |
 
 ---
@@ -157,6 +158,23 @@ Longer-term vision. Architecture decision point: React rebuild is the gateway to
 
 ### Email Sending — Resend API over Gmail SMTP
 **April 14, 2026:** Migrated transactional email from Gmail SMTP (smtplib) to Resend API after verification emails failed silently in production. Root cause: Railway blocks outbound SMTP (errno 101 network unreachable). Resend uses HTTPS, works from Railway. From address hardcoded to `Baseline <hello@mybaselineapp.com>` — requires domain verification in Resend. New env var `RESEND_API_KEY` replaces `MAIL_USERNAME`/`MAIL_PASSWORD`. Local dev still fails silently when key unset. HTML + plain text email content unchanged.
+
+### Email Opt-In, Unsubscribe & Admin User View
+**April 24, 2026:** Added `email_updates_enabled` boolean (default True) to User and shipped:
+(1) Settings → Email Preferences toggle (auto-saves on change — no Save button needed; mirrors AI Logging toggle behavior).
+(2) Welcome email carries an unsubscribe link in its footer; verification email stays purely transactional.
+(3) `GET /unsubscribe/<token>` is publicly accessible — token is a stateless HMAC-SHA256 over `SECRET_KEY` (salt `baseline-email-unsubscribe-v1`, no expiry by design — old emails should still work years later). Trade-off: rotating `SECRET_KEY` invalidates all in-flight tokens; affected users must use Settings.
+(4) Resend audience contacts kept in sync on verify, settings toggle, email change, unsubscribe, and account delete — gated on `RESEND_AUDIENCE_ID`, log-and-swallow on failure, contacts keyed by email (not stored ID).
+(5) Read-only `/admin/users` directory (email, verified, joined, last login, email-updates state, episode count) guarded by `user.is_admin`. Unauthorized access logs a warning. Excluded from analytics tracking.
+(6) Admin link surfaced in Settings (above Account, only when `is_admin`) — replaces the previous "only via sidebar" pattern.
+
+Decisions:
+- Reused existing `is_admin` flag instead of hardcoded email check on `/admin/users` for consistency with `/admin/analytics`.
+- Chose HMAC-SHA256 (per spec) over itsdangerous unsigned-serializer; same security, simpler.
+- Kept episode count in admin view despite open registration — single aggregate integer (engagement signal) rather than health content. Privacy policy explicitly discloses admin can see this.
+- Removed the `ANTHROPIC_API_KEY` env-var diagnostic from user-facing Settings (was leaking dev info to non-developer users).
+
+Known follow-ups: CSRF on `/settings/email-preferences` rolls into the existing site-wide CSRF backlog item.
 
 ### Self-Serve Registration with Email Verification
 **April 14, 2026:** Replaced invite-only registration with self-serve registration gated by email verification. Chose email-verification-only (vs. fully open or invite+verify) to support LinkedIn launch without manual invite issuance. Implementation: itsdangerous signed tokens (HMAC over SECRET_KEY, 24h TTL) sent via existing Gmail SMTP pipeline; SHA-256 hash of consumed tokens stored in `used_verify_tokens` to prevent replay (chosen over "verified_at check only" for defense in depth); Flask-Limiter (in-memory) applied to `/register` 5/hour, `/resend-verification` 5/hour, `/login` 20/hour; small hardcoded disposable-email blocklist; required privacy-policy acknowledgment checkbox on the form (server-enforced); stale unverified accounts deleted at startup after 48h so the email can be re-registered. Login leaks no password-validity oracle for unverified accounts (unverified banner shown before bcrypt check). Welcome email moved from registration to post-verification. `InviteCode` model retained for admin use via `/dev/create-invite`. Known follow-ups in backlog: CSRF protection (pre-existing gap), Redis backend for rate limiter. In-app privacy policy (`templates/privacy.html`) updated in the same commit to describe transactional email (verification + welcome), 48-hour unverified-account retention, and the shift away from invite-only.

@@ -9,11 +9,11 @@
 <div class="settings-section">
   <h2 class="section-title" style="margin-bottom:20px;">AI Logging</h2>
 
-  <form method="POST">
+  <form method="POST" data-autosave>
 
-    <div class="settings-row" style="margin-bottom:20px;">
+    <div class="settings-row">
       <div>
-        <div class="settings-row-label">Enable AI logging</div>
+        <div class="settings-row-label" id="ai-logging-label">Enable AI logging</div>
         <div class="settings-row-desc">
           When enabled, you can describe your day in plain language on the Check-in page
           and Claude will automatically log episodes and medication compliance for you.
@@ -21,24 +21,48 @@
         </div>
       </div>
       <label class="toggle-label" style="flex-shrink:0; margin-top:2px;">
-        <input type="checkbox" name="ai_logging" {% if user.ai_logging_enabled %}checked{% endif %}>
+        <input type="checkbox" name="ai_logging" aria-labelledby="ai-logging-label" {% if user.ai_logging_enabled %}checked{% endif %}>
         <span class="toggle-track"><span class="toggle-thumb"></span></span>
       </label>
     </div>
-
-    <div style="margin-bottom:20px; padding:12px 16px; background:var(--surface2); border-radius:8px; font-size:13px; color:var(--text-muted);">
-      ANTHROPIC_API_KEY:
-      {% if api_key_set %}
-        <span style="color:var(--low); font-weight:600;">&#10003; configured</span>
-      {% else %}
-        <span style="color:var(--high); font-weight:600;">&#10007; not set</span>
-        &mdash; add it to your <code>.env</code> file and restart.
-      {% endif %}
-    </div>
-
-    <button type="submit" class="btn btn-primary">Save settings</button>
   </form>
 </div>
+
+<hr class="divider">
+
+<div class="settings-section">
+  <h2 class="section-title" style="margin-bottom:20px;">Email Preferences</h2>
+  <form method="POST" action="{{ url_for('email_preferences') }}" data-autosave>
+    <div class="settings-row">
+      <div>
+        <div class="settings-row-label" id="email-updates-label">Send me app updates and tips</div>
+        <div class="settings-row-desc">
+          Occasional non-urgent emails about new features, tips, and product updates.
+          Account and security emails (like verification) are always sent.
+        </div>
+      </div>
+      <label class="toggle-label" style="flex-shrink:0; margin-top:2px;">
+        <input type="checkbox" name="email_updates" aria-labelledby="email-updates-label" {% if user.email_updates_enabled %}checked{% endif %}>
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+      </label>
+    </div>
+  </form>
+</div>
+
+{% if user.is_admin %}
+<hr class="divider">
+
+<div class="settings-section">
+  <h2 class="section-title" style="margin-bottom:12px;">Admin</h2>
+  <div class="settings-row-desc" style="margin-bottom:16px;">
+    Dashboards for monitoring app health and user activity.
+  </div>
+  <div style="display:flex; gap:16px; flex-wrap:wrap;">
+    <a href="{{ url_for('admin_analytics') }}" class="btn btn-secondary">Analytics</a>
+    <a href="{{ url_for('admin_users') }}" class="btn btn-secondary">Users</a>
+  </div>
+</div>
+{% endif %}
 
 <hr class="divider">
 
@@ -63,7 +87,7 @@
         <label for="current_password_email">Current password</label>
         <input type="password" id="current_password_email" name="current_password_email" placeholder="Verify your identity" autocomplete="current-password">
       </div>
-      <button type="submit" class="btn btn-secondary">Update email</button>
+      <button type="submit" class="btn btn-primary">Update email</button>
     </form>
   </div>
 
@@ -88,7 +112,7 @@
         <input type="password" id="confirm_new_password" name="confirm_new_password" placeholder="Repeat new password" autocomplete="new-password">
         <div class="inline-error" id="pw-match-error" style="display:none;">Passwords do not match</div>
       </div>
-      <button type="submit" class="btn btn-secondary" id="pw-submit-btn" disabled>Update password</button>
+      <button type="submit" class="btn btn-primary" id="pw-submit-btn" disabled>Update password</button>
     </form>
   </div>
 </div>
@@ -136,6 +160,14 @@
     </form>
   </div>
 </div>
+
+<script>
+// Auto-save: any toggle inside a form marked data-autosave submits on change.
+// The flash banner at the top of the reloaded page is the save confirmation.
+document.querySelectorAll('form[data-autosave] input[type="checkbox"]').forEach(function(cb) {
+  cb.addEventListener('change', function() { cb.form.submit(); });
+});
+</script>
 
 <script>
 (function() {

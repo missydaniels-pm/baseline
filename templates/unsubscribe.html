@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% if status == 'success' %}Unsubscribed{% else %}Unsubscribe{% endif %} — Baseline</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v=CSS_VERSION) }}">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+  <meta name="theme-color" content="#0f0f13">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+</head>
+<body>
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-brand">Base<span>line</span></div>
+    {% if status == 'success' %}
+      <h1 class="auth-title">You've been unsubscribed</h1>
+      <p style="color:var(--text-muted); line-height:1.6; margin-bottom:20px;">
+        You won't receive any more Baseline app updates or tips. You'll still get account and
+        security emails (like verification) when needed.
+      </p>
+      <p style="color:var(--text-muted); line-height:1.6; margin-bottom:20px;">
+        Changed your mind? You can re-enable updates anytime from Settings &rarr; Email Preferences.
+      </p>
+      <a href="{{ url_for('login') }}" class="btn btn-primary auth-submit" style="display:block; text-align:center;">Back to Baseline</a>
+    {% elif status == 'error' %}
+      <h1 class="auth-title">Something went wrong</h1>
+      <p style="color:var(--text-muted); line-height:1.6; margin-bottom:20px;">
+        We couldn't process your request right now. Please try the link again later, or update
+        your preferences from Settings once logged in.
+      </p>
+      <a href="{{ url_for('login') }}" class="btn btn-primary auth-submit" style="display:block; text-align:center;">Back to Baseline</a>
+    {% else %}
+      <h1 class="auth-title">Invalid unsubscribe link</h1>
+      <p style="color:var(--text-muted); line-height:1.6; margin-bottom:20px;">
+        This link is invalid or has been altered. If you'd like to stop receiving Baseline
+        updates, log in and adjust your preferences in Settings.
+      </p>
+      <a href="{{ url_for('login') }}" class="btn btn-primary auth-submit" style="display:block; text-align:center;">Back to log in</a>
+    {% endif %}
+  </div>
+</div>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(function() {});
+  }
+</script>
+</body>
+</html>

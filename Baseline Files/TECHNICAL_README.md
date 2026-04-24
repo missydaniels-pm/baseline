@@ -1,6 +1,6 @@
 # Baseline — Technical README
 
-Last updated: April 22, 2026
+Last updated: April 24, 2026
 
 ---
 
@@ -73,7 +73,7 @@ templates/privacy.html          — in-app privacy policy (single source of trut
 
 | Model | Description |
 |---|---|
-| User | email, password_hash, invite_code_used (legacy), is_active, verified_at, onboarding_complete, baseline data, ai_logging_enabled, has_seen_tour, is_admin |
+| User | email, password_hash, invite_code_used (legacy), is_active, verified_at, onboarding_complete, baseline data, ai_logging_enabled, has_seen_tour, is_admin, email_updates_enabled |
 | InviteCode | code, created_at, used_at, used_by_user_id (legacy — admin use only) |
 | UsedVerifyToken | token_hash (SHA-256), used_at — prevents email-verification token replay |
 | Symptom | user-defined trackable items (name, description, is_active). Displayed as "What I Track" in UI. No hard post-onboarding limit. |
@@ -98,6 +98,7 @@ templates/privacy.html          — in-app privacy policy (single source of trut
 | `DEBUG` | No | `true` locally only, `false` in production |
 | `DATABASE_URL` | Production only | Set automatically by Railway PostgreSQL reference |
 | `RESEND_API_KEY` | No | Resend API key for transactional email. From address is hardcoded to `Baseline <hello@mybaselineapp.com>` (domain must be verified in Resend). If unset, email sends fail silently — used in local dev. Replaces the prior Gmail SMTP flow (Railway blocks outbound SMTP — errno 101). |
+| `RESEND_AUDIENCE_ID` | No | Resend audience UUID for contact-list sync. When set (alongside `RESEND_API_KEY`), verify/unsubscribe/email-change/account-delete events upsert or remove the user's contact in this audience with the current `email_updates_enabled` state. Unset locally → all sync calls are no-ops. |
 | `APP_URL` | No | Base URL for email links (defaults to `https://baseline-health.up.railway.app`) |
 | `ADMIN_EMAIL` | No | Email address to grant admin access on startup (defaults to `daniels.missy@gmail.com`) |
 
@@ -145,6 +146,7 @@ claude --resume                         # resume previous session
 | `/verify/<token>` | GET | Email verification callback. Signed itsdangerous token, 24h TTL, SHA-256 replay protection via `used_verify_tokens`. |
 | `/verify/sent` | GET | "Check your email" confirmation page. |
 | `/resend-verification` | GET, POST | Resend verification email (rate-limited 5/hour POST). Enumeration-safe. |
+| `/unsubscribe/<token>` | GET | One-click unsubscribe from app-update emails. Stateless HMAC-SHA256 token over SECRET_KEY (no expiry). Rate-limited 30/hour/IP. Sets `email_updates_enabled=False` and syncs Resend contact. Enumeration-safe — invalid token, tampered token, and unknown-email all return the same generic error. |
 | `/logout` | GET | Logout |
 | `/sw.js` | GET | Service worker (must be served from root scope) |
 | `/offline` | GET | PWA offline fallback |
@@ -162,10 +164,12 @@ claude --resume                         # resume previous session
 | `/assess_experiment/<id>` | GET, POST | Experiment assessment |
 | `/settings` | GET, POST | User settings |
 | `/settings/change-password` | POST | Change password |
-| `/settings/change-email` | POST | Change email |
-| `/settings/delete-account` | POST | Delete account and all data (MHMD compliance) |
+| `/settings/change-email` | POST | Change email. Also updates Resend contact (delete old, upsert new with current `email_updates_enabled`). |
+| `/settings/email-preferences` | POST | Toggle `email_updates_enabled`. Mirrors the new state to Resend audience. |
+| `/settings/delete-account` | POST | Delete account and all data (MHMD compliance). Removes Resend contact before DB delete. |
 | `/help` | GET | Help and documentation |
 | `/admin/analytics` | GET | Admin-only usage analytics dashboard (signups, logins, DAU/WAU, feature usage, retention) |
+| `/admin/users` | GET | Admin-only read-only user directory: email, verified, joined, last login, email_updates_enabled, episode count. Unauthorized access logs a warning. Excluded from `SKIP_TRACKING` so admin browsing doesn't pollute analytics. |
 | `/tour/complete` | POST | Mark welcome tour as seen (JSON response) |
 | `/tour/restart` | GET | Reset tour flag and redirect to dashboard |
 
@@ -232,6 +236,7 @@ python generate_icons.py
 - **Privacy acknowledgment:** `/register` requires a checkbox acknowledging the Privacy Policy (server-enforced).
 - **Stale unverified cleanup:** accounts with `verified_at IS NULL` and `created_at` older than 48 hours are deleted at app startup, freeing the email for re-registration.
 - Welcome email sent on successful email verification via Resend API (`resend` package). From address `Baseline <hello@mybaselineapp.com>` (domain verified in Resend). Fails silently if `RESEND_API_KEY` not configured. HTML + plain text. Previously used Gmail SMTP — retired because Railway blocks outbound SMTP (errno 101 network unreachable).
+- **Email opt-in / unsubscribe:** `email_updates_enabled` boolean on User (default True). Welcome email footer carries an unsubscribe link with a stateless HMAC-SHA256 token over `SECRET_KEY` (salt `baseline-email-unsubscribe-v1`, no expiry — old emails should still work years later). The verification email stays purely transactional and has no unsubscribe footer. Trade-off: rotating `SECRET_KEY` invalidates all in-flight unsubscribe tokens; users must use Settings instead. Resend audience contacts are kept in sync on verify, settings toggle, email change, unsubscribe, and account delete; sync gated on `RESEND_AUDIENCE_ID` and log-and-swallow on failure (never blocks user flows). The Resend SDK accepts email as the contact identifier on update, so the upsert pattern (try create → fall back to update on any 4xx/5xx) is valid.
 - Welcome tour modal shown on first dashboard visit after onboarding (`has_seen_tour` flag on User model). Replayable from Help page via `/tour/restart`.
 
 ---

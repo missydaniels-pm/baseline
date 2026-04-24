@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Users — Baseline{% endblock %}
+
+{% block head_extra %}
+<style>
+  .admin-users-wrap { overflow-x:auto; }
+  .admin-users-table { width:100%; font-size:13px; border-collapse:collapse; }
+  .admin-users-table th, .admin-users-table td { padding:10px 12px; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap; }
+  .admin-users-table th { color:var(--text-muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
+  .admin-users-table td.num { text-align:right; }
+  .admin-users-table th.num { text-align:right; }
+  .admin-users-table td.email { max-width:220px; overflow:hidden; text-overflow:ellipsis; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; line-height:1.5; }
+  .pill-on { background:rgba(52, 211, 153, 0.15); color:var(--low); }
+  .pill-off { background:rgba(148, 163, 184, 0.15); color:var(--text-muted); }
+  .pill-warn { background:rgba(251, 191, 36, 0.15); color:var(--mid); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Users</h1>
+  <p style="color:var(--text-muted); font-size:13px; margin-top:4px;">
+    {{ rows|length }} total &middot; read-only admin view
+  </p>
+</div>
+
+<div class="card">
+  {% if rows %}
+  <div class="admin-users-wrap">
+    <table class="admin-users-table">
+      <thead>
+        <tr>
+          <th scope="col">Email</th>
+          <th scope="col">Verified</th>
+          <th scope="col">Joined</th>
+          <th scope="col">Last login</th>
+          <th scope="col">Email updates</th>
+          <th scope="col" class="num">Episodes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td class="email" title="{{ r.email }}">{{ r.email }}</td>
+          <td>
+            {% if r.verified %}
+              <span class="pill pill-on">Verified</span>
+            {% else %}
+              <span class="pill pill-warn">Pending</span>
+            {% endif %}
+          </td>
+          <td>{% if r.joined %}{{ r.joined.strftime('%Y-%m-%d') }}{% else %}—{% endif %}</td>
+          <td>{% if r.last_login %}{{ r.last_login.strftime('%Y-%m-%d %H:%M') }} UTC{% else %}—{% endif %}</td>
+          <td>
+            {% if r.email_updates_enabled %}
+              <span class="pill pill-on">On</span>
+            {% else %}
+              <span class="pill pill-off">Off</span>
+            {% endif %}
+          </td>
+          <td class="num">{{ r.episode_count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p style="color:var(--text-muted); font-size:13px;">No users yet.</p>
+  {% endif %}
+</div>
+{% endblock %}
