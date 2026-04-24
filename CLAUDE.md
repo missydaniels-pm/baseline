@@ -93,6 +93,7 @@ Required in .env locally and in Railway variables in production:
 - `APP_URL` — base URL for email links (production: `https://mybaselineapp.com`)
 - `RESEND_API_KEY` — Resend API key for transactional email (verification + welcome). From address is `Baseline <hello@mybaselineapp.com>`. Unset locally → email sends fail silently.
 - `RESEND_AUDIENCE_ID` — Resend audience UUID for contact-list sync. Verify/unsubscribe/email-change/account-delete events upsert or remove the user's contact carrying their current `email_updates_enabled` state. Unset locally → all sync calls are no-ops.
+- `BACKFILL_RESEND_CONTACTS` — set to `1` for a single deploy to upsert every active verified user into the Resend audience at startup, then unset. Idempotent.
 - `ADMIN_EMAIL` — email address to grant admin access on startup (defaults to `daniels.missy@gmail.com`)
 
 ---

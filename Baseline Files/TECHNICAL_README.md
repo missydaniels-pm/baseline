@@ -99,6 +99,7 @@ templates/privacy.html          — in-app privacy policy (single source of trut
 | `DATABASE_URL` | Production only | Set automatically by Railway PostgreSQL reference |
 | `RESEND_API_KEY` | No | Resend API key for transactional email. From address is hardcoded to `Baseline <hello@mybaselineapp.com>` (domain must be verified in Resend). If unset, email sends fail silently — used in local dev. Replaces the prior Gmail SMTP flow (Railway blocks outbound SMTP — errno 101). |
 | `RESEND_AUDIENCE_ID` | No | Resend audience UUID for contact-list sync. When set (alongside `RESEND_API_KEY`), verify/unsubscribe/email-change/account-delete events upsert or remove the user's contact in this audience with the current `email_updates_enabled` state. Unset locally → all sync calls are no-ops. |
+| `BACKFILL_RESEND_CONTACTS` | No | Set to `1` for one deploy to upsert every active verified user into the Resend audience at startup, then unset. Idempotent (re-running just patches the `unsubscribed` flag). Logs a warning and skips if `RESEND_AUDIENCE_ID`/`RESEND_API_KEY` not configured. |
 | `APP_URL` | No | Base URL for email links (defaults to `https://baseline-health.up.railway.app`) |
 | `ADMIN_EMAIL` | No | Email address to grant admin access on startup (defaults to `daniels.missy@gmail.com`) |
 

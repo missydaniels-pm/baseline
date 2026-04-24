@@ -477,6 +477,29 @@ def backfill_verified_existing_users():
     db.session.commit()
 
 
+def backfill_resend_contacts():
+    """One-shot: upsert every active verified user into the Resend audience.
+    Gated by BACKFILL_RESEND_CONTACTS=1 — set the env var on the next deploy,
+    then unset it so subsequent restarts don't re-hit the Resend API.
+    Idempotent: a re-run just patches each contact's unsubscribed state."""
+    if os.environ.get('BACKFILL_RESEND_CONTACTS') != '1':
+        return
+    if not _resend_audience_configured():
+        app.logger.warning(
+            'BACKFILL_RESEND_CONTACTS=1 but RESEND_API_KEY/RESEND_AUDIENCE_ID not set — skipping'
+        )
+        return
+    users = User.query.filter(
+        User.is_active == True,
+        User.verified_at.isnot(None),
+        User.email.isnot(None),
+    ).all()
+    app.logger.info('Resend backfill: syncing %d users to audience', len(users))
+    for u in users:
+        resend_contact_upsert(u.email, unsubscribed=not u.email_updates_enabled)
+    app.logger.info('Resend backfill: complete')
+
+
 def ensure_admin_user():
     """Grant admin to the app owner on startup."""
     try:
@@ -2836,6 +2859,7 @@ with app.app_context():
     run_data_migrations()
     migrate_episode_interventions()
     ensure_admin_user()
+    backfill_resend_contacts()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True)
