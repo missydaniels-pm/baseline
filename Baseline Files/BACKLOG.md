@@ -1,6 +1,6 @@
 # Baseline — Product Backlog
 
-Last updated: April 22, 2026 | 5 active users
+Last updated: April 23, 2026 | 5 active users
 
 **Priority:** P0 = fix now, P1 = next sprint, P2 = soon, P3 = later
 **Size:** S = small (<2hrs), M = medium (half day), L = large (1+ days)
@@ -36,6 +36,10 @@ High-value improvements targeting user satisfaction, retention, and portfolio re
 | UX | App-wide naming overhaul — rename "Symptoms" to "What I Track", rename "Rescue Medications" to "Interventions", update Protocols description from medication-centric copy to "Ongoing practices, medications, supplements, and routines that support your health". Impacts: nav labels, page headers, onboarding flow, help page, welcome modal, empty states, dashboard headers, CLAUDE.md, README, backlog. | Kiersten/Missy | M | ✅ Complete 4/12/26 |
 | Episode Logging | Allow multiple rescue options per episode | Mackenzie | M | ✅ Complete 4/12/26 — EpisodeIntervention junction table, multi-intervention forms, AI prompt updated |
 | Protocol Tracking | Manual compliance logging without AI check-in | Mackenzie | S | For users who opted out of AI |
+| Protocol Tracking | Rework daily compliance tracking UX (pre-React-rebuild) | Missy | M | Current daily tracking is too subtle — unclear whether the app is assuming compliance or waiting for input, and it isn't driving daily usage. Make the assumed-compliance model legible (e.g. visible "assumed taken" state with one-tap exception logging), surface today's protocols on the dashboard, and tie into the dashboard check-in shortcut. Build in monolith before React rebuild so the interaction model is settled before frontend rewrite. Related to "Manual compliance logging without AI check-in" above — consider scoping together. |
+| Episode Logging | Structured trigger tracking | Missy | M | Pre-rebuild. Add a first-class trigger field to episode logging (vs. free-text notes) so triggers become a queryable dimension. Unlocks dashboard breakdowns and feeds the P2 AI trigger-analysis item. Decide: user-defined trigger list (like Symptoms) vs. curated global list vs. hybrid — raise trade-offs before building. |
+| Help & Onboarding | YouTube feature update videos | Missy | S | Pre-rebuild. Record short feature walkthrough/update videos and surface them in-app (Help page) and in update emails. Lightweight — no app changes required to start; embed once videos exist. |
+| Help & Onboarding | Email opt-in for product updates | Missy | S | Pre-rebuild. Add an opt-in checkbox (registration + Settings) for product update emails, separate from transactional verification/welcome mail. Store preference on User, respect in any future broadcast send. Start sending updates once opt-in is live. Privacy policy update required. |
 | Dashboard | Chart time range selector (days / weeks / months) | Mackenzie/Missy | M | Build before React rebuild — understand the requirement fully before rebuilding frontend. |
 | Help & Onboarding | Full Help page with Dashboard explanation + check-in tutorial | Internal | M | ✅ Complete 3/21/26 |
 | Help & Onboarding | Welcome email for new users | Internal | S | ✅ Complete 3/21/26 — uses Gmail SMTP, requires MAIL_USERNAME and MAIL_PASSWORD env vars in Railway |
@@ -93,6 +97,8 @@ Longer-term vision. Architecture decision point: React rebuild is the gateway to
 | Architecture | MCP server layer — expose Baseline as agent-accessible backend | Internal | L | Build during or after React rebuild. API-first architecture makes this natural. See Decision Log. |
 | Platform | React Native iOS + Android apps | Internal | L | Follows React rebuild — not a parallel track |
 | Platform | Apple Health / HealthKit integration | Mackenzie | L | Requires native iOS app |
+| Platform | HRV correlation with episodes | Missy | L | Post-rebuild. Pull HRV from Apple Health and correlate against episode onset/severity — surface as a dashboard signal. Depends on HealthKit integration above. |
+| Platform | Blood glucose correlation with episodes | Missy | L | Post-rebuild. Pull blood glucose from Apple Health (incl. CGM sources like Dexcom/Libre that write to Health) and correlate against episode onset/severity. Depends on HealthKit integration above. |
 | Monetization | Freemium tier definition and paywall | Internal | L | FTC/MHMD compliance required before paid tier |
 | Monetization | Sponsored protocol library with clear labeling | Internal | L | Secondary revenue stream |
 | Community | Anonymized aggregate experiment outcomes | Internal | L | |
