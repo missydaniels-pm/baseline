@@ -392,6 +392,8 @@ def run_migrations():
         ('users',                 'verified_at',               'ALTER TABLE users ADD COLUMN verified_at TIMESTAMP'),
         ('users',                 'is_admin',                  'ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT FALSE'),
         ('users',                 'email_updates_enabled',     'ALTER TABLE users ADD COLUMN email_updates_enabled BOOLEAN NOT NULL DEFAULT TRUE'),
+        ('symptoms',              'input_type',                "ALTER TABLE symptoms ADD COLUMN input_type VARCHAR(10) NOT NULL DEFAULT 'scale'"),
+        ('symptom_scores',        'value_bool',                'ALTER TABLE symptom_scores ADD COLUMN value_bool BOOLEAN'),
     ]
 
     # Widen symptoms.name from varchar(100) to varchar(200) on PostgreSQL
@@ -418,7 +420,6 @@ def run_migrations():
         )
         if peak_col and peak_col.get('nullable') is False:
             print("Migrating episodes.peak_severity to nullable...")
-            is_sqlite = str(db.engine.url).startswith('sqlite')
             if is_sqlite:
                 conn.execute(text('PRAGMA foreign_keys=OFF'))
                 conn.execute(text('''
@@ -445,6 +446,91 @@ def run_migrations():
                 conn.execute(text('ALTER TABLE episodes ALTER COLUMN peak_severity DROP NOT NULL'))
             conn.commit()
             print("Migration complete.")
+
+        # Make symptom_scores.score nullable so binary entries can leave it null.
+        score_col = next(
+            (c for c in inspector.get_columns('symptom_scores') if c['name'] == 'score'),
+            None,
+        )
+        if score_col and score_col.get('nullable') is False:
+            print("Migrating symptom_scores.score to nullable...")
+            if is_sqlite:
+                conn.execute(text('PRAGMA foreign_keys=OFF'))
+                conn.execute(text('''
+                    CREATE TABLE symptom_scores_new (
+                        id INTEGER NOT NULL PRIMARY KEY,
+                        episode_id INTEGER NOT NULL,
+                        symptom_id INTEGER NOT NULL,
+                        score INTEGER,
+                        value_bool BOOLEAN,
+                        FOREIGN KEY(episode_id) REFERENCES episodes(id),
+                        FOREIGN KEY(symptom_id) REFERENCES symptoms(id)
+                    )
+                '''))
+                conn.execute(text(
+                    'INSERT INTO symptom_scores_new (id, episode_id, symptom_id, score, value_bool) '
+                    'SELECT id, episode_id, symptom_id, score, value_bool FROM symptom_scores'
+                ))
+                conn.execute(text('DROP TABLE symptom_scores'))
+                conn.execute(text('ALTER TABLE symptom_scores_new RENAME TO symptom_scores'))
+                conn.execute(text('PRAGMA foreign_keys=ON'))
+            else:
+                conn.execute(text('ALTER TABLE symptom_scores ALTER COLUMN score DROP NOT NULL'))
+            conn.commit()
+            print("Migration complete.")
+
+        # Add CHECK constraint on symptoms.input_type so 'scale' / 'binary' is
+        # enforced at the DB level. Application code already validates, but the
+        # discriminator is load-bearing for which column SymptomScore reads, so
+        # we want the invariant self-enforcing against future code changes or
+        # direct DB edits.
+        if is_sqlite:
+            create_sql = conn.execute(text(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='symptoms'"
+            )).scalar() or ''
+            if 'input_type IN' not in create_sql:
+                print("Migrating symptoms: adding CHECK constraint on input_type...")
+                conn.execute(text('PRAGMA foreign_keys=OFF'))
+                conn.execute(text('''
+                    CREATE TABLE symptoms_new (
+                        id INTEGER NOT NULL PRIMARY KEY,
+                        user_id INTEGER NOT NULL,
+                        name VARCHAR(200) NOT NULL,
+                        description TEXT,
+                        is_active BOOLEAN NOT NULL DEFAULT 1,
+                        baseline_score INTEGER,
+                        input_type VARCHAR(10) NOT NULL DEFAULT 'scale'
+                            CHECK (input_type IN ('scale', 'binary')),
+                        created_at DATETIME,
+                        FOREIGN KEY(user_id) REFERENCES users(id)
+                    )
+                '''))
+                conn.execute(text(
+                    'INSERT INTO symptoms_new '
+                    '(id, user_id, name, description, is_active, baseline_score, input_type, created_at) '
+                    'SELECT id, user_id, name, description, is_active, baseline_score, input_type, created_at '
+                    'FROM symptoms'
+                ))
+                conn.execute(text('DROP TABLE symptoms'))
+                conn.execute(text('ALTER TABLE symptoms_new RENAME TO symptoms'))
+                conn.execute(text('PRAGMA foreign_keys=ON'))
+                conn.commit()
+                print("Migration complete.")
+        else:
+            exists = conn.execute(text(
+                "SELECT 1 FROM information_schema.table_constraints "
+                "WHERE table_name = 'symptoms' "
+                "AND constraint_type = 'CHECK' "
+                "AND constraint_name = 'symptoms_input_type_check'"
+            )).first()
+            if not exists:
+                print("Migrating symptoms: adding CHECK constraint on input_type...")
+                conn.execute(text(
+                    "ALTER TABLE symptoms ADD CONSTRAINT symptoms_input_type_check "
+                    "CHECK (input_type IN ('scale', 'binary'))"
+                ))
+                conn.commit()
+                print("Migration complete.")
 
 
 def cleanup_stale_unverified_users():
@@ -902,14 +988,17 @@ def onboarding_step1():
 
     if request.method == 'POST':
         # Collect submitted names first
-        new_names = []
+        new_rows = []
         for i in range(1, 4):
             name = request.form.get(f'name_{i}', '').strip()[:200]
             if name:
                 desc = request.form.get(f'description_{i}', '').strip()[:500] or None
-                new_names.append((name, desc))
+                input_type = request.form.get(f'input_type_{i}', 'scale').strip()
+                if input_type not in ('scale', 'binary'):
+                    input_type = 'scale'
+                new_rows.append((name, desc, input_type))
 
-        if not new_names:
+        if not new_rows:
             flash('Add at least one thing to track.', 'error')
             symptoms = Symptom.query.filter_by(user_id=user.id).all()
             return render_template('onboarding_step1.html', symptoms=symptoms)
@@ -920,8 +1009,8 @@ def onboarding_step1():
                 db.session.delete(sym)
         db.session.flush()
 
-        for name, desc in new_names:
-            db.session.add(Symptom(user_id=user.id, name=name, description=desc))
+        for name, desc, input_type in new_rows:
+            db.session.add(Symptom(user_id=user.id, name=name, description=desc, input_type=input_type))
 
         db.session.commit()
         return redirect(url_for('onboarding_step2'))
@@ -946,6 +1035,8 @@ def onboarding_step2():
             user.baseline_episodes_per_month = None
 
         for symptom in symptoms:
+            if symptom.input_type == 'binary':
+                continue  # No 1-10 baseline for yes/no items.
             score_str = request.form.get(f'score_{symptom.id}', '').strip()
             if score_str:
                 try:
@@ -956,7 +1047,11 @@ def onboarding_step2():
         db.session.commit()
         return redirect(url_for('onboarding_step3'))
 
-    return render_template('onboarding_step2.html', symptoms=symptoms)
+    # Edge case: every tracked item is binary, so step 2's per-symptom baseline
+    # sliders are empty. Auto-skip to step 3 unless we still need the bad-days
+    # baseline (we still ask that one regardless).
+    return render_template('onboarding_step2.html', symptoms=symptoms,
+                           has_scale_symptoms=any(s.input_type == 'scale' for s in symptoms))
 
 
 @app.route('/onboarding/step3', methods=['GET', 'POST'])
@@ -1350,9 +1445,25 @@ def build_system_prompt(user, client_time=None):
     active_exp = get_active_experiment(user.id)
 
     symptom_list = '\n'.join(
-        f'  - id={s.id}, name="{s.name}"' + (f', description="{s.description}"' if s.description else '')
+        f'  - id={s.id}, name="{s.name}", type={s.input_type}'
+        + (f', description="{s.description}"' if s.description else '')
         for s in symptoms
     ) or '  (none)'
+
+    # Per-type guidance fragments — only include sentences that apply to
+    # the user's current symptom mix.
+    has_scale = any(s.input_type == 'scale' for s in symptoms)
+    has_binary = any(s.input_type == 'binary' for s in symptoms)
+    score_format_lines = []
+    if has_scale:
+        score_format_lines.append(
+            'For symptoms with type=scale, the value is an integer 1-10.'
+        )
+    if has_binary:
+        score_format_lines.append(
+            'For symptoms with type=binary, the value is a JSON boolean: true if present, false if absent. Never output a number for a binary symptom.'
+        )
+    score_format_block = '\n'.join(score_format_lines) or 'All symptoms use integer 1-10 scores.'
 
     preventative_list = '\n'.join(
         f'  - id={p.id}, name="{p.name}", dose="{p.dose_frequency or "not specified"}"'
@@ -1367,6 +1478,12 @@ def build_system_prompt(user, client_time=None):
     exp_text = ''
     if active_exp:
         exp_text = f'\nActive experiment: "{active_exp.name}" (started {active_exp.start_date}).'
+
+    rate_prompt_line = (
+        'If the user describes experiencing a scale-type symptom but does not give a severity score, still set had_episode to true and omit the score — but in suggested_response warmly ask them to rate it on a scale of 1–10 so it can be logged accurately.'
+        if has_scale else
+        'If a tracked symptom is mentioned but the user did not indicate yes/no clearly, omit it from symptom_scores and ask warmly in suggested_response.'
+    )
 
     return f"""You are a warm, empathetic health companion helping someone track their migraines and health.
 Today is {today}, current local time is approximately {current_time}.{exp_text}
@@ -1384,6 +1501,9 @@ The user will describe how they are feeling or what happened today. Parse their 
 
 For the episode onset field: if the user mentions a specific time (e.g. "around 2pm", "this morning at 8"), infer the full datetime. Otherwise use the current date and time ({today}T{current_time}) as the onset. Never return null for onset when had_episode is true.
 
+Symptom value format (read carefully — symptoms have different types):
+{score_format_block}
+
 Always match intervention names to the user's existing interventions listed above. Use your knowledge of brand/generic medication names, common misspellings, and colloquial terms to map to the correct one (e.g., "muscle relaxer" → the user's muscle relaxant if they have one, "ondansetren" → Ondansetron). If the user mentions multiple interventions, create a separate entry for each. If an intervention is genuinely new (not in the list), use the correct pharmacological or common name.
 
 Use this exact schema:
@@ -1392,7 +1512,7 @@ Use this exact schema:
   "had_episode": true or false,
   "episode_data": {{
     "onset": "YYYY-MM-DDTHH:MM or null",
-    "symptom_scores": {{"<symptom_id_as_string>": <1-10 integer>}},
+    "symptom_scores": {{"<symptom_id_as_string>": <integer 1-10 for scale OR boolean for binary>}},
     "functional_impairment": "working_normally or working_reduced or cannot_work or completely_incapacitated or null",
     "interventions": [
       {{
@@ -1409,7 +1529,7 @@ Use this exact schema:
 }}
 
 If no episode occurred, set had_episode to false and episode_data fields to null/empty.
-If the user describes experiencing a tracked symptom but does not give a severity score, still set had_episode to true and omit the score — but in suggested_response warmly ask them to rate it on a scale of 1–10 so it can be logged accurately.
+{rate_prompt_line}
 If no interventions were used, set interventions to an empty array [].
 Always populate suggested_response with a warm, brief reply."""
 
@@ -1507,20 +1627,45 @@ def checkin():
                 db.session.flush()
                 episode_id = episode.id
 
-                user_symptom_ids = {s.id for s in Symptom.query.filter_by(user_id=user.id).all()}
-                for sym_id_str, score in (ep_data.get('symptom_scores') or {}).items():
+                user_symptoms = {s.id: s for s in Symptom.query.filter_by(user_id=user.id).all()}
+                for sym_id_str, value in (ep_data.get('symptom_scores') or {}).items():
                     try:
                         sid = int(sym_id_str)
-                        sc = int(score)
                     except (ValueError, TypeError):
                         continue
-                    if sid not in user_symptom_ids or not (1 <= sc <= 10):
+                    sym = user_symptoms.get(sid)
+                    if sym is None:
                         continue
-                    db.session.add(SymptomScore(
-                        episode_id=episode.id,
-                        symptom_id=sid,
-                        score=sc,
-                    ))
+                    if sym.input_type == 'binary':
+                        # Accept JSON true/false. Also accept common string/int spellings
+                        # since LLMs occasionally drift from the schema.
+                        if isinstance(value, bool):
+                            bv = value
+                        elif isinstance(value, (int, float)) and value in (0, 1):
+                            bv = bool(value)
+                        elif isinstance(value, str) and value.strip().lower() in ('true', 'yes', 'y', '1'):
+                            bv = True
+                        elif isinstance(value, str) and value.strip().lower() in ('false', 'no', 'n', '0'):
+                            bv = False
+                        else:
+                            continue
+                        db.session.add(SymptomScore(
+                            episode_id=episode.id,
+                            symptom_id=sid,
+                            value_bool=bv,
+                        ))
+                    else:
+                        try:
+                            sc = int(value)
+                        except (ValueError, TypeError):
+                            continue
+                        if not (1 <= sc <= 10):
+                            continue
+                        db.session.add(SymptomScore(
+                            episode_id=episode.id,
+                            symptom_id=sid,
+                            score=sc,
+                        ))
 
                 # Handle interventions — new array format
                 interventions_list = ep_data.get('interventions') or []
@@ -1643,33 +1788,37 @@ def new_symptom():
     if request.method == 'POST':
         name = request.form.get('name', '').strip()
         description = request.form.get('description', '').strip() or None
+        input_type = request.form.get('input_type', 'scale').strip()
+        if input_type not in ('scale', 'binary'):
+            input_type = 'scale'
         if not name:
             return redirect(url_for('symptoms'))
         if len(name) > 200:
             flash('Name must be 200 characters or fewer.', 'error')
-            return render_template('new_symptom.html')
+            return render_template('new_symptom.html', form_input_type=input_type)
         if description and len(description) > 500:
             flash('Description must be 500 characters or fewer.', 'error')
-            return render_template('new_symptom.html')
+            return render_template('new_symptom.html', form_input_type=input_type)
         # Case-insensitive duplicate check
         existing = Symptom.query.filter(Symptom.user_id == user.id,
                                         db.func.lower(Symptom.name) == name.lower()).first()
         if existing:
             flash(f'"{existing.name}" already exists.', 'error')
-            return render_template('new_symptom.html')
-        symptom = Symptom(user_id=user.id, name=name, description=description)
+            return render_template('new_symptom.html', form_input_type=input_type)
+        symptom = Symptom(user_id=user.id, name=name, description=description, input_type=input_type)
         db.session.add(symptom)
         db.session.commit()
         flash(f'"{name}" added.', 'success')
         return redirect(url_for('symptoms'))
 
-    return render_template('new_symptom.html')
+    return render_template('new_symptom.html', form_input_type='scale')
 
 
 @app.route('/symptoms/<int:symptom_id>/edit', methods=['GET', 'POST'])
 def edit_symptom(symptom_id):
     user = get_user()
     symptom = Symptom.query.filter_by(id=symptom_id, user_id=user.id).first_or_404()
+    has_entries = db.session.query(SymptomScore.id).filter_by(symptom_id=symptom.id).first() is not None
 
     if request.method == 'POST':
         name = request.form.get('name', '').strip()
@@ -1678,24 +1827,30 @@ def edit_symptom(symptom_id):
             return redirect(url_for('symptoms'))
         if len(name) > 200:
             flash('Name must be 200 characters or fewer.', 'error')
-            return render_template('edit_symptom.html', symptom=symptom)
+            return render_template('edit_symptom.html', symptom=symptom, has_entries=has_entries)
         if description and len(description) > 500:
             flash('Description must be 500 characters or fewer.', 'error')
-            return render_template('edit_symptom.html', symptom=symptom)
+            return render_template('edit_symptom.html', symptom=symptom, has_entries=has_entries)
         # Case-insensitive duplicate check (exclude this symptom)
         existing = Symptom.query.filter(Symptom.user_id == user.id,
                                         Symptom.id != symptom.id,
                                         db.func.lower(Symptom.name) == name.lower()).first()
         if existing:
             flash(f'"{existing.name}" already exists.', 'error')
-            return render_template('edit_symptom.html', symptom=symptom)
+            return render_template('edit_symptom.html', symptom=symptom, has_entries=has_entries)
         symptom.name = name
         symptom.description = description
+        # Type can only change when no entries exist. Locked otherwise to keep
+        # historical SymptomScore rows semantically valid.
+        if not has_entries:
+            input_type = request.form.get('input_type', symptom.input_type).strip()
+            if input_type in ('scale', 'binary'):
+                symptom.input_type = input_type
         db.session.commit()
         flash('Updated.', 'success')
         return redirect(url_for('symptoms'))
 
-    return render_template('edit_symptom.html', symptom=symptom)
+    return render_template('edit_symptom.html', symptom=symptom, has_entries=has_entries)
 
 
 @app.route('/symptoms/<int:symptom_id>/deactivate', methods=['POST'])
@@ -1876,20 +2031,45 @@ def assess_experiment(exp_id):
     freq_before = round(len(episodes_before) / weeks_before, 1)
     freq_during = round(len(episodes_during) / weeks_during, 1)
 
-    # Per-symptom avg before vs during
+    # Per-symptom avg before vs during. Binary symptoms compare yes-rates instead.
     active_symptoms = Symptom.query.filter_by(user_id=user.id, is_active=True).all()
     symptom_comparison = []
     for symptom in active_symptoms:
+        if symptom.input_type == 'binary':
+            before_vals = [
+                ss.value_bool for ep in episodes_before
+                for ss in ep.symptom_scores
+                if ss.symptom_id == symptom.id and ss.value_bool is not None
+            ]
+            during_vals = [
+                ss.value_bool for ep in episodes_during
+                for ss in ep.symptom_scores
+                if ss.symptom_id == symptom.id and ss.value_bool is not None
+            ]
+            before_rate = round(sum(1 for v in before_vals if v) / len(before_vals) * 100) if before_vals else None
+            during_rate = round(sum(1 for v in during_vals if v) / len(during_vals) * 100) if during_vals else None
+            symptom_comparison.append({
+                'name': symptom.name,
+                'is_binary': True,
+                'yes_pct_before': before_rate,
+                'yes_pct_during': during_rate,
+                'avg_before': None,
+                'avg_during': None,
+            })
+            continue
         before_scores = [
             ss.score for ep in episodes_before
-            for ss in ep.symptom_scores if ss.symptom_id == symptom.id
+            for ss in ep.symptom_scores
+            if ss.symptom_id == symptom.id and ss.score is not None
         ]
         during_scores = [
             ss.score for ep in episodes_during
-            for ss in ep.symptom_scores if ss.symptom_id == symptom.id
+            for ss in ep.symptom_scores
+            if ss.symptom_id == symptom.id and ss.score is not None
         ]
         symptom_comparison.append({
             'name': symptom.name,
+            'is_binary': False,
             'avg_before': round(sum(before_scores) / len(before_scores), 1) if before_scores else None,
             'avg_during': round(sum(during_scores) / len(during_scores), 1) if during_scores else None,
         })
@@ -1905,7 +2085,10 @@ def assess_experiment(exp_id):
     all_window_episodes = episodes_before + episodes_during
     symptom_colors = ['#a07de0', '#4caf78', '#e8a838', '#e05252', '#5c9dbf', '#bf5ca0']
     assess_chart_datasets = []
-    for idx, symptom in enumerate(active_symptoms):
+    chart_idx = 0
+    for symptom in active_symptoms:
+        if symptom.input_type == 'binary':
+            continue  # Binary symptoms are summarized in the comparison table, not the 1-10 line chart.
         weekly_data = []
         for i in range(total_weeks):
             ws = window_start + timedelta(weeks=i)
@@ -1913,14 +2096,15 @@ def assess_experiment(exp_id):
             week_scores = [
                 ss.score for ep in all_window_episodes
                 for ss in ep.symptom_scores
-                if ss.symptom_id == symptom.id and ws <= ep.onset.date() < we
+                if ss.symptom_id == symptom.id and ss.score is not None and ws <= ep.onset.date() < we
             ]
             weekly_data.append(round(sum(week_scores) / len(week_scores), 1) if week_scores else None)
         assess_chart_datasets.append({
             'label': symptom.name,
             'data': weekly_data,
-            'color': symptom_colors[idx % len(symptom_colors)]
+            'color': symptom_colors[chart_idx % len(symptom_colors)]
         })
+        chart_idx += 1
 
     exp_start_week_index = (exp_start - window_start).days / 7.0
     has_before_data = len(episodes_before) >= 2
@@ -1934,7 +2118,9 @@ def assess_experiment(exp_id):
         'chart_datasets': assess_chart_datasets,
         'exp_start_week_index': round(exp_start_week_index, 1),
         'has_before_data': has_before_data,
-        'has_chart_data': len(all_window_episodes) >= 2,
+        # Suppress the 1-10 line chart when there are no scale-symptom datasets
+        # to plot (e.g. user only tracks Yes/No items).
+        'has_chart_data': len(all_window_episodes) >= 2 and bool(assess_chart_datasets),
     }
 
     return render_template('assess_experiment.html', experiment=experiment, assess_data=assess_data)
@@ -2004,15 +2190,37 @@ def index():
     today = date.today()
     active_preventatives = Protocol.query.filter_by(user_id=user.id, type='preventative', status='active').all()
 
-    # ── Symptom cards: avg this month + pct change from baseline ──
+    # ── Symptom cards: scale → avg this month vs baseline. Binary → yes/no count this month. ──
     month_start = today.replace(day=1)
     active_symptoms = Symptom.query.filter_by(user_id=user.id, is_active=True).all()
     symptom_stats = []
     for symptom in active_symptoms:
+        if symptom.input_type == 'binary':
+            # Tally yes / no counts for binary symptoms. `score` is always null here.
+            rows = (
+                db.session.query(SymptomScore.value_bool)
+                .join(Episode, SymptomScore.episode_id == Episode.id)
+                .filter(Episode.user_id == user.id, SymptomScore.symptom_id == symptom.id,
+                        SymptomScore.value_bool.isnot(None),
+                        Episode.onset >= datetime.combine(month_start, datetime.min.time()))
+                .all()
+            )
+            yes_count = sum(1 for r in rows if r[0] is True)
+            no_count = sum(1 for r in rows if r[0] is False)
+            symptom_stats.append({
+                'symptom': symptom, 'is_binary': True,
+                'yes_count': yes_count, 'no_count': no_count,
+                'total_count': yes_count + no_count,
+                'avg_score': None, 'baseline_score': None,
+                'trend': None, 'pct_change': None,
+            })
+            continue
+        # Scale: avg score, % change vs baseline
         scores = (
             db.session.query(SymptomScore.score)
             .join(Episode, SymptomScore.episode_id == Episode.id)
             .filter(Episode.user_id == user.id, SymptomScore.symptom_id == symptom.id,
+                    SymptomScore.score.isnot(None),
                     Episode.onset >= datetime.combine(month_start, datetime.min.time()))
             .all()
         )
@@ -2029,8 +2237,9 @@ def index():
             else:
                 trend = 'neutral'
         symptom_stats.append({
-            'symptom': symptom, 'avg_score': avg, 'baseline_score': baseline,
-            'trend': trend, 'pct_change': pct_change
+            'symptom': symptom, 'is_binary': False,
+            'avg_score': avg, 'baseline_score': baseline,
+            'trend': trend, 'pct_change': pct_change,
         })
 
     # ── Episode frequency: weekly counts for last 12 weeks + current partial week ──
@@ -2059,14 +2268,18 @@ def index():
         count = sum(1 for ep in all_episodes_12w if ws <= ep.onset.date() < we)
         episode_counts.append(count)
 
-    # ── Symptom trend datasets: weekly avg per symptom ──
+    # ── Symptom trend datasets: weekly avg per scale symptom. Binary symptoms render as a separate dot strip below. ──
     symptom_colors = ['#a07de0', '#4caf78', '#e8a838', '#e05252', '#5c9dbf', '#bf5ca0']
     symptom_trend_datasets = []
-    for idx, symptom in enumerate(active_symptoms):
+    scale_idx = 0
+    for symptom in active_symptoms:
+        if symptom.input_type == 'binary':
+            continue
         scores_12w = (
             db.session.query(SymptomScore.score, Episode.onset)
             .join(Episode, SymptomScore.episode_id == Episode.id)
             .filter(Episode.user_id == user.id, SymptomScore.symptom_id == symptom.id,
+                    SymptomScore.score.isnot(None),
                     Episode.onset >= datetime.combine(twelve_weeks_ago, datetime.min.time()))
             .all()
         )
@@ -2079,8 +2292,51 @@ def index():
         symptom_trend_datasets.append({
             'label': symptom.name,
             'data': weekly_data,
-            'color': symptom_colors[idx % len(symptom_colors)]
+            'color': symptom_colors[scale_idx % len(symptom_colors)]
         })
+        scale_idx += 1
+
+    # ── Binary symptom history: last 20 episodes, yes/no/none per episode ──
+    binary_symptoms = [s for s in active_symptoms if s.input_type == 'binary']
+    binary_history = []
+    if binary_symptoms:
+        recent_episodes = (
+            Episode.query.filter_by(user_id=user.id)
+            .order_by(Episode.onset.desc())
+            .limit(20)
+            .all()
+        )
+        # In chronological order (oldest → newest) so the strip reads left-to-right.
+        recent_episodes = list(reversed(recent_episodes))
+        recent_episode_ids = [ep.id for ep in recent_episodes]
+        for sym in binary_symptoms:
+            # Bound to the 20 episodes we'll actually paint, and join Episode for
+            # defense-in-depth on user scoping (Symptom.user_id already filters,
+            # but we don't want this pattern to leak if copied without that guard).
+            scores_by_ep = {
+                ss.episode_id: ss.value_bool
+                for ss in (
+                    db.session.query(SymptomScore)
+                    .join(Episode, SymptomScore.episode_id == Episode.id)
+                    .filter(
+                        Episode.user_id == user.id,
+                        SymptomScore.symptom_id == sym.id,
+                        SymptomScore.episode_id.in_(recent_episode_ids),
+                        SymptomScore.value_bool.isnot(None),
+                    )
+                    .all()
+                )
+            }
+            dots = []
+            for ep in recent_episodes:
+                val = scores_by_ep.get(ep.id)
+                if val is True:
+                    dots.append({'state': 'yes', 'date': ep.onset.strftime('%b %-d')})
+                elif val is False:
+                    dots.append({'state': 'no', 'date': ep.onset.strftime('%b %-d')})
+                else:
+                    dots.append({'state': 'none', 'date': ep.onset.strftime('%b %-d')})
+            binary_history.append({'symptom': sym, 'dots': dots})
 
     # ── Protocol annotations: vertical lines at start dates ──
     protocol_annotations = []
@@ -2142,6 +2398,7 @@ def index():
                            week_labels=week_labels,
                            episode_counts=episode_counts,
                            symptom_trend_datasets=symptom_trend_datasets,
+                           binary_history=binary_history,
                            protocol_annotations=protocol_annotations,
                            rescue_stats=rescue_stats,
                            has_chart_data=has_chart_data,
@@ -2153,6 +2410,35 @@ def index():
 # ---------------------------------------------------------------------------
 # Episodes
 # ---------------------------------------------------------------------------
+
+def _save_symptom_entries_from_form(episode_id, symptoms, form):
+    """Persist SymptomScore rows for an episode from the logging form.
+
+    Form contract per symptom s:
+      - score_{s.id}_rated = '1' if the user included this symptom.
+      - input_type='scale':  score_{s.id}  = '1'..'10'.
+      - input_type='binary': binary_{s.id} = 'yes' | 'no'.
+    """
+    for s in symptoms:
+        if form.get(f'score_{s.id}_rated') != '1':
+            continue
+        if s.input_type == 'binary':
+            val = (form.get(f'binary_{s.id}', '') or '').strip().lower()
+            if val == 'yes':
+                db.session.add(SymptomScore(episode_id=episode_id, symptom_id=s.id, value_bool=True))
+            elif val == 'no':
+                db.session.add(SymptomScore(episode_id=episode_id, symptom_id=s.id, value_bool=False))
+            # rated=1 but no choice made -> skip (treated as unlogged for this episode)
+        else:
+            score_str = (form.get(f'score_{s.id}', '') or '').strip()
+            if not score_str:
+                continue
+            try:
+                score = max(1, min(10, int(score_str)))
+            except ValueError:
+                continue
+            db.session.add(SymptomScore(episode_id=episode_id, symptom_id=s.id, score=score))
+
 
 @app.route('/episodes')
 def episodes():
@@ -2191,15 +2477,7 @@ def new_episode():
         db.session.add(episode)
         db.session.flush()
 
-        for symptom in symptoms:
-            if request.form.get(f'score_{symptom.id}_rated') != '1':
-                continue
-            score_str = request.form.get(f'score_{symptom.id}', '').strip()
-            if score_str:
-                try:
-                    db.session.add(SymptomScore(episode_id=episode.id, symptom_id=symptom.id, score=max(1, min(10, int(score_str)))))
-                except ValueError:
-                    pass
+        _save_symptom_entries_from_form(episode.id, symptoms, request.form)
 
         # Save interventions from repeatable form fields
         for i in range(5):
@@ -2251,16 +2529,16 @@ def edit_episode(episode_id):
 
         if new_onset > datetime.now():
             flash('Onset date cannot be in the future.', 'error')
-            existing_scores = {ss.symptom_id: ss.score for ss in episode.symptom_scores}
+            existing_entries = {ss.symptom_id: ss for ss in episode.symptom_scores}
             return render_template('edit_episode.html', episode=episode, rescue_options=rescue_options,
-                                   symptoms=symptoms, existing_scores=existing_scores)
+                                   symptoms=symptoms, existing_entries=existing_entries)
 
         notes_val = request.form.get('notes', '').strip()
         if notes_val and len(notes_val) > 500:
             flash('Notes must be 500 characters or fewer.', 'error')
-            existing_scores = {ss.symptom_id: ss.score for ss in episode.symptom_scores}
+            existing_entries = {ss.symptom_id: ss for ss in episode.symptom_scores}
             return render_template('edit_episode.html', episode=episode, rescue_options=rescue_options,
-                                   symptoms=symptoms, existing_scores=existing_scores)
+                                   symptoms=symptoms, existing_entries=existing_entries)
 
         episode.onset = new_onset
         episode.duration_hours = _safe_float(request.form.get('duration_hours'), min_val=0)
@@ -2272,15 +2550,7 @@ def edit_episode(episode_id):
             db.session.delete(ss)
         db.session.flush()
 
-        for symptom in symptoms:
-            if request.form.get(f'score_{symptom.id}_rated') != '1':
-                continue
-            score_str = request.form.get(f'score_{symptom.id}', '').strip()
-            if score_str:
-                try:
-                    db.session.add(SymptomScore(episode_id=episode.id, symptom_id=symptom.id, score=max(1, min(10, int(score_str)))))
-                except ValueError:
-                    pass
+        _save_symptom_entries_from_form(episode.id, symptoms, request.form)
 
         # Replace interventions
         for ei in list(episode.interventions):
@@ -2320,9 +2590,9 @@ def edit_episode(episode_id):
         flash('Episode updated.', 'success')
         return redirect(url_for('episodes'))
 
-    existing_scores = {ss.symptom_id: ss.score for ss in episode.symptom_scores}
+    existing_entries = {ss.symptom_id: ss for ss in episode.symptom_scores}
     return render_template('edit_episode.html', episode=episode, rescue_options=rescue_options,
-                           symptoms=symptoms, existing_scores=existing_scores)
+                           symptoms=symptoms, existing_entries=existing_entries)
 
 
 @app.route('/episodes/<int:episode_id>/delete', methods=['POST'])

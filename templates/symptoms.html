@@ -15,7 +15,10 @@
         <div class="symptom-name">{{ symptom.name }}</div>
         <div class="symptom-meta">
           {% if symptom.description %}<span>{{ symptom.description }}</span>{% endif %}
-          {% if symptom.baseline_score %}<span>baseline {{ symptom.baseline_score }}/10</span>{% endif %}
+          <span class="symptom-type-tag symptom-type-{{ symptom.input_type }}">
+            {% if symptom.input_type == 'binary' %}Yes / No{% else %}Scale 1–10{% endif %}
+          </span>
+          {% if symptom.input_type == 'scale' and symptom.baseline_score %}<span>baseline {{ symptom.baseline_score }}/10</span>{% endif %}
         </div>
       </div>
       <div class="symptom-actions">

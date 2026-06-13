@@ -974,6 +974,238 @@ input[type="range"]::-moz-range-thumb {
   align-items: flex-start;
 }
 
+.symptom-type-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  background: rgba(124, 92, 191, 0.18);
+  color: #a07de0;
+}
+
+.symptom-type-binary {
+  background: rgba(76, 175, 120, 0.18);
+  color: #66c98a;
+}
+
+.input-type-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.input-type-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  background: rgba(46, 46, 62, 0.3);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.input-type-option:hover {
+  border-color: rgba(124, 92, 191, 0.6);
+}
+
+.input-type-option input[type="radio"] {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.input-type-option:has(input[type="radio"]:checked) {
+  border-color: #7c5cbf;
+  background: rgba(124, 92, 191, 0.12);
+}
+
+.input-type-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.input-type-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.input-type-locked {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.input-type-locked:hover {
+  border-color: var(--border);
+}
+
+.binary-toggle {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.binary-toggle-btn {
+  flex: 1;
+  padding: 14px 12px;
+  border: 2px solid var(--border);
+  background: rgba(46, 46, 62, 0.3);
+  color: var(--text);
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.05s;
+  text-align: center;
+  min-height: 48px;
+  user-select: none;
+}
+
+.binary-toggle-btn:hover {
+  border-color: rgba(124, 92, 191, 0.6);
+}
+
+.binary-toggle-btn:active {
+  transform: scale(0.98);
+}
+
+.binary-toggle-btn:focus-visible {
+  outline: 2px solid #a07de0;
+  outline-offset: 2px;
+}
+
+.binary-toggle-btn.selected-yes {
+  background: rgba(76, 175, 120, 0.25);
+  border-color: #4caf78;
+  color: #d4f0dc;
+}
+
+.binary-toggle-btn.selected-no {
+  background: rgba(180, 100, 100, 0.22);
+  border-color: #b46464;
+  color: #f0d4d4;
+}
+
+.binary-toggle-btn::before {
+  content: "○";
+  display: inline-block;
+  margin-right: 8px;
+  font-size: 16px;
+  opacity: 0.8;
+}
+
+.binary-toggle-btn.selected-yes::before,
+.binary-toggle-btn.selected-no::before {
+  content: "●";
+}
+
+.onboarding-type-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+.onboarding-type-label {
+  font-weight: 500;
+}
+
+.onboarding-type-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  cursor: pointer;
+  background: rgba(46, 46, 62, 0.3);
+  color: var(--text);
+  font-size: 13px;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.onboarding-type-pill:has(input[type="radio"]:checked) {
+  border-color: #7c5cbf;
+  background: rgba(124, 92, 191, 0.15);
+}
+
+.onboarding-type-pill input[type="radio"] {
+  margin: 0;
+  width: 13px;
+  height: 13px;
+}
+
+.binary-history-strip {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.binary-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.binary-dot-yes {
+  background: #4caf78;
+}
+
+.binary-dot-no {
+  background: #b46464;
+}
+
+.binary-dot-none {
+  background: transparent;
+  border: 1px dashed var(--border);
+}
+
+.binary-history-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 0;
+}
+
+.binary-history-row-divider {
+  border-bottom: 1px solid var(--border);
+}
+
+.binary-history-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  min-width: 140px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 600px) {
+  .binary-history-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .binary-history-name {
+    min-width: 0;
+  }
+}
+
 .symptom-inactive {
   opacity: 0.6;
 }

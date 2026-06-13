@@ -195,7 +195,12 @@
 <section class="help-section" id="managing-tracking">
   <h2 class="help-heading">Managing What You Track</h2>
   <p>You set up what you're tracking during onboarding, but you can always change it. Go to <a href="{{ url_for('symptoms') }}">What I Track</a> to add new items, edit existing ones, or pause items you no longer want to track.</p>
-  <p>Pausing an item removes it from your episode logging form but preserves all your historical data. You can resume it at any time.</p>
+  <p><strong>Two types of tracked items.</strong> When you add a new item you choose how to log it:</p>
+  <ul class="help-list">
+    <li><strong>Scale (1–10)</strong> — a slider for severity or intensity. Best for things that come in degrees, like pain or fatigue. Your starting baseline and the dashboard's "vs baseline" change are based on this scale.</li>
+    <li><strong>Yes / No</strong> — one tap. Best for things that either happen or they don't on a given day, like "bowel movement today," "hair shedding," or "brain fog present." Yes/No items don't have a 1–10 baseline. On the dashboard, they show as a row of dots (green = Yes, red = No, outline = not recorded for that episode) so you can see patterns at a glance.</li>
+  </ul>
+  <p>The type is locked once you've logged at least one entry for that item — that keeps your historical data consistent. If you picked the wrong type at first, you can pause the original item and add a fresh one with the right type. Pausing removes an item from your episode logging form but preserves all your historical data; you can resume it at any time.</p>
 </section>
 
 <hr class="divider">

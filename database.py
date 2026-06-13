@@ -42,8 +42,15 @@ class Symptom(db.Model):
     name = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text, nullable=True)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
-    baseline_score = db.Column(db.Integer, nullable=True)  # 1-10
+    baseline_score = db.Column(db.Integer, nullable=True)  # 1-10; null for binary
+    # 'scale' (1-10 slider) or 'binary' (yes/no). Locked once any SymptomScore exists.
+    input_type = db.Column(db.String(10), nullable=False, default='scale')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.CheckConstraint("input_type IN ('scale', 'binary')",
+                           name='symptoms_input_type_check'),
+    )
 
     def __repr__(self):
         return f'<Symptom {self.name}>'
@@ -75,8 +82,9 @@ class Episode(db.Model):
 
     @property
     def max_score(self):
-        if self.symptom_scores:
-            return max(ss.score for ss in self.symptom_scores)
+        scale_scores = [ss.score for ss in self.symptom_scores if ss.score is not None]
+        if scale_scores:
+            return max(scale_scores)
         return self.peak_severity
 
     @property
@@ -108,11 +116,18 @@ class SymptomScore(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     episode_id = db.Column(db.Integer, db.ForeignKey('episodes.id'), nullable=False)
     symptom_id = db.Column(db.Integer, db.ForeignKey('symptoms.id'), nullable=False)
-    score = db.Column(db.Integer, nullable=False)  # 1-10
+    # Exactly one of score / value_bool is populated, determined by Symptom.input_type.
+    # Filtering on `score IS NOT NULL` excludes binary entries from scale-only aggregates;
+    # filtering on `value_bool IS NOT NULL` excludes scale entries from binary aggregates.
+    # PDF/CSV export should join Symptom and branch on input_type.
+    score = db.Column(db.Integer, nullable=True)  # 1-10 for scale symptoms
+    value_bool = db.Column(db.Boolean, nullable=True)  # True/False for binary symptoms
 
     symptom = db.relationship('Symptom')
 
     def __repr__(self):
+        if self.value_bool is not None:
+            return f'<SymptomScore episode={self.episode_id} symptom={self.symptom_id} bool={self.value_bool}>'
         return f'<SymptomScore episode={self.episode_id} symptom={self.symptom_id} score={self.score}>'
 
 

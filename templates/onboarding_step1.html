@@ -25,50 +25,39 @@
 
     <div id="symptom-rows">
 
-      <div class="symptom-row" id="row-1">
+      {% for idx, ph_name, ph_desc in [
+        (1, 'Pain', 'Head and neck pain intensity'),
+        (2, 'Fatigue', 'Energy and ability to function'),
+        (3, 'Nausea', 'Nausea and stomach upset'),
+      ] %}
+      {% set existing = symptoms[idx-1] if symptoms|length >= idx else None %}
+      {% set existing_type = existing.input_type if existing else 'scale' %}
+      <div class="symptom-row" id="row-{{ idx }}" {% if not existing %}style="display:none;"{% endif %}>
         <div class="symptom-row-fields">
           <div class="form-group" style="flex:1;">
-            <label for="name_1">Name</label>
-            <input type="text" id="name_1" name="name_1" placeholder="e.g. Pain"
-                   value="{{ symptoms[0].name if symptoms|length > 0 else '' }}" required>
+            <label for="name_{{ idx }}">Name</label>
+            <input type="text" id="name_{{ idx }}" name="name_{{ idx }}" placeholder="e.g. {{ ph_name }}"
+                   value="{{ existing.name if existing else '' }}"{% if idx == 1 %} required{% endif %}>
           </div>
           <div class="form-group" style="flex:1.4;">
-            <label for="description_1">Description <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
-            <input type="text" id="description_1" name="description_1" placeholder="e.g. Head and neck pain intensity"
-                   value="{{ symptoms[0].description if symptoms|length > 0 and symptoms[0].description else '' }}">
+            <label for="description_{{ idx }}">Description <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+            <input type="text" id="description_{{ idx }}" name="description_{{ idx }}" placeholder="e.g. {{ ph_desc }}"
+                   value="{{ existing.description if existing and existing.description else '' }}">
           </div>
         </div>
-      </div>
-
-      <div class="symptom-row" id="row-2" {% if symptoms|length < 2 %}style="display:none;"{% endif %}>
-        <div class="symptom-row-fields">
-          <div class="form-group" style="flex:1;">
-            <label for="name_2">Name</label>
-            <input type="text" id="name_2" name="name_2" placeholder="e.g. Fatigue"
-                   value="{{ symptoms[1].name if symptoms|length > 1 else '' }}">
-          </div>
-          <div class="form-group" style="flex:1.4;">
-            <label for="description_2">Description <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
-            <input type="text" id="description_2" name="description_2" placeholder="e.g. Energy and ability to function"
-                   value="{{ symptoms[1].description if symptoms|length > 1 and symptoms[1].description else '' }}">
-          </div>
+        <div class="onboarding-type-row">
+          <span class="onboarding-type-label">How to log:</span>
+          <label class="onboarding-type-pill">
+            <input type="radio" name="input_type_{{ idx }}" value="scale" {% if existing_type != 'binary' %}checked{% endif %}>
+            <span>Scale 1–10</span>
+          </label>
+          <label class="onboarding-type-pill">
+            <input type="radio" name="input_type_{{ idx }}" value="binary" {% if existing_type == 'binary' %}checked{% endif %}>
+            <span>Yes / No</span>
+          </label>
         </div>
       </div>
-
-      <div class="symptom-row" id="row-3" {% if symptoms|length < 3 %}style="display:none;"{% endif %}>
-        <div class="symptom-row-fields">
-          <div class="form-group" style="flex:1;">
-            <label for="name_3">Name</label>
-            <input type="text" id="name_3" name="name_3" placeholder="e.g. Nausea"
-                   value="{{ symptoms[2].name if symptoms|length > 2 else '' }}">
-          </div>
-          <div class="form-group" style="flex:1.4;">
-            <label for="description_3">Description <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
-            <input type="text" id="description_3" name="description_3" placeholder="e.g. Nausea and stomach upset"
-                   value="{{ symptoms[2].description if symptoms|length > 2 and symptoms[2].description else '' }}">
-          </div>
-        </div>
-      </div>
+      {% endfor %}
 
     </div>
 

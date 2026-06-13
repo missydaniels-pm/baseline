@@ -24,6 +24,28 @@
       <div class="char-counter"><span id="description_count">0</span>/500</div>
     </div>
 
+    {% set selected_type = form_input_type or 'scale' %}
+    <div class="form-group">
+      <label>How do you want to log this?</label>
+      <div class="field-hint">You can't change this after the first time you log it.</div>
+      <div class="input-type-options">
+        <label class="input-type-option">
+          <input type="radio" name="input_type" value="scale" {% if selected_type != 'binary' %}checked{% endif %}>
+          <span class="input-type-label">
+            <strong>Scale (1–10)</strong>
+            <span class="input-type-desc">A slider for severity or intensity.</span>
+          </span>
+        </label>
+        <label class="input-type-option">
+          <input type="radio" name="input_type" value="binary" {% if selected_type == 'binary' %}checked{% endif %}>
+          <span class="input-type-label">
+            <strong>Yes / No</strong>
+            <span class="input-type-desc">One tap. Best for "did it happen today?" items.</span>
+          </span>
+        </label>
+      </div>
+    </div>
+
     <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:8px;">
       <a href="{{ url_for('symptoms') }}" class="btn btn-secondary">Cancel</a>
       <button type="submit" class="btn btn-primary">Save</button>

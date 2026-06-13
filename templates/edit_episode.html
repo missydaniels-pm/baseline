@@ -28,21 +28,38 @@
 
     <div id="symptom-rows">
       {% for symptom in symptoms %}
-      {% set has_score = symptom.id in existing_scores %}
-      <div class="form-group symptom-score-group" data-sid="{{ symptom.id }}" data-name="{{ symptom.name }}"{% if not has_score %} hidden{% endif %}>
-        <label for="score_{{ symptom.id }}">{{ symptom.name }}</label>
+      {% set entry = existing_entries.get(symptom.id) %}
+      {% set has_entry = entry is not none %}
+      <div class="form-group symptom-score-group" data-sid="{{ symptom.id }}" data-name="{{ symptom.name }}" data-type="{{ symptom.input_type }}"{% if not has_entry %} hidden{% endif %}>
+        <label{% if symptom.input_type != 'binary' %} for="score_{{ symptom.id }}"{% endif %}>{{ symptom.name }}</label>
         {% if symptom.description %}
           <div class="field-hint">{{ symptom.description }}</div>
         {% endif %}
-        <div class="slider-wrap">
-          <input type="range" id="score_{{ symptom.id }}" name="score_{{ symptom.id }}"
-                 min="1" max="10" value="{{ existing_scores.get(symptom.id, 5) }}"
-                 aria-label="{{ symptom.name }} severity, 1 to 10">
-          <span class="slider-value" id="score_{{ symptom.id }}_display">{{ existing_scores.get(symptom.id, 5) }}</span>
-          <button type="button" class="symptom-remove"
-                  aria-label="Remove {{ symptom.name }} from this episode">✕</button>
-          <input type="hidden" name="score_{{ symptom.id }}_rated" value="{{ '1' if has_score else '0' }}" id="score_{{ symptom.id }}_rated">
-        </div>
+        {% if symptom.input_type == 'binary' %}
+          {% set yes_sel = has_entry and entry.value_bool is sameas true %}
+          {% set no_sel  = has_entry and entry.value_bool is sameas false %}
+          <div class="binary-wrap" style="display:flex; align-items:center; gap:10px;">
+            <div class="binary-toggle" aria-label="{{ symptom.name }}: yes or no" style="flex:1;">
+              <button type="button" class="binary-toggle-btn{% if yes_sel %} selected-yes{% endif %}" data-bsid="{{ symptom.id }}" data-bval="yes" aria-pressed="{{ 'true' if yes_sel else 'false' }}">Yes</button>
+              <button type="button" class="binary-toggle-btn{% if no_sel %} selected-no{% endif %}" data-bsid="{{ symptom.id }}" data-bval="no" aria-pressed="{{ 'true' if no_sel else 'false' }}">No</button>
+            </div>
+            <button type="button" class="symptom-remove"
+                    aria-label="Remove {{ symptom.name }} from this episode">✕</button>
+            <input type="hidden" name="binary_{{ symptom.id }}" id="binary_{{ symptom.id }}" value="{% if yes_sel %}yes{% elif no_sel %}no{% endif %}">
+            <input type="hidden" name="score_{{ symptom.id }}_rated" value="{{ '1' if has_entry else '0' }}" id="score_{{ symptom.id }}_rated">
+          </div>
+        {% else %}
+          {% set start_score = (entry.score if entry and entry.score is not none else 5) %}
+          <div class="slider-wrap">
+            <input type="range" id="score_{{ symptom.id }}" name="score_{{ symptom.id }}"
+                   min="1" max="10" value="{{ start_score }}"
+                   aria-label="{{ symptom.name }} severity, 1 to 10">
+            <span class="slider-value" id="score_{{ symptom.id }}_display">{{ start_score }}</span>
+            <button type="button" class="symptom-remove"
+                    aria-label="Remove {{ symptom.name }} from this episode">✕</button>
+            <input type="hidden" name="score_{{ symptom.id }}_rated" value="{{ '1' if has_entry else '0' }}" id="score_{{ symptom.id }}_rated">
+          </div>
+        {% endif %}
       </div>
       {% endfor %}
     </div>
@@ -53,7 +70,7 @@
         <select id="symptomAddSelect">
           <option value="">— select —</option>
           {% for symptom in symptoms %}
-            {% if symptom.id not in existing_scores %}
+            {% if symptom.id not in existing_entries %}
               <option value="{{ symptom.id }}">{{ symptom.name }}</option>
             {% endif %}
           {% endfor %}
@@ -107,12 +124,39 @@
 </div>
 
 <script>
-  // Symptom sliders — live display update.
+  // Symptom sliders — live display update. Scale rows only.
   document.querySelectorAll('.symptom-score-group').forEach(function(group) {
+    if (group.getAttribute('data-type') === 'binary') return;
     var sid = group.getAttribute('data-sid');
     var slider = document.getElementById('score_' + sid);
     var display = document.getElementById('score_' + sid + '_display');
-    slider.addEventListener('input', function() { display.textContent = slider.value; });
+    if (slider && display) {
+      slider.addEventListener('input', function() { display.textContent = slider.value; });
+    }
+  });
+
+  // Binary Yes/No tap targets. Tapping the selected button deselects it.
+  function paintBinary(sid, val) {
+    var hidden = document.getElementById('binary_' + sid);
+    if (hidden) hidden.value = (val === 'yes' || val === 'no') ? val : '';
+    var btns = document.querySelectorAll('.binary-toggle-btn[data-bsid="' + sid + '"]');
+    btns.forEach(function(b) {
+      var bv = b.getAttribute('data-bval');
+      b.classList.remove('selected-yes', 'selected-no');
+      var pressed = (bv === val);
+      b.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+      if (pressed && bv === 'yes') b.classList.add('selected-yes');
+      if (pressed && bv === 'no')  b.classList.add('selected-no');
+    });
+  }
+  document.querySelectorAll('.binary-toggle-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var sid = btn.getAttribute('data-bsid');
+      var bval = btn.getAttribute('data-bval');
+      var hidden = document.getElementById('binary_' + sid);
+      var current = hidden ? hidden.value : '';
+      paintBinary(sid, current === bval ? '' : bval);
+    });
   });
 
   // Remove / add-back symptoms for this episode.

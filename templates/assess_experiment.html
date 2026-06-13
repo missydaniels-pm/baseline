@@ -53,11 +53,20 @@
         <div class="assess-symptom-row">
           <span class="assess-symptom-name">{{ sc.name }}</span>
           <span class="assess-symptom-scores">
-            {% if assess_data.has_before_data %}
-              <span class="assess-score-before">{{ sc.avg_before if sc.avg_before is not none else '—' }}</span>
-              <span style="color:var(--text-muted);">→</span>
+            {% if sc.is_binary %}
+              {% if assess_data.has_before_data %}
+                <span class="assess-score-before">{{ (sc.yes_pct_before ~ '%') if sc.yes_pct_before is not none else '—' }}</span>
+                <span style="color:var(--text-muted);">→</span>
+              {% endif %}
+              <span class="assess-score-during">{{ (sc.yes_pct_during ~ '%') if sc.yes_pct_during is not none else '—' }}</span>
+              <span style="color:var(--text-muted); font-size:11px; margin-left:6px;">yes-rate</span>
+            {% else %}
+              {% if assess_data.has_before_data %}
+                <span class="assess-score-before">{{ sc.avg_before if sc.avg_before is not none else '—' }}</span>
+                <span style="color:var(--text-muted);">→</span>
+              {% endif %}
+              <span class="assess-score-during">{{ sc.avg_during if sc.avg_during is not none else '—' }}</span>
             {% endif %}
-            <span class="assess-score-during">{{ sc.avg_during if sc.avg_during is not none else '—' }}</span>
           </span>
         </div>
         {% endfor %}

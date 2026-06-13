@@ -26,6 +26,51 @@
       <div class="char-counter"><span id="description_count">0</span>/500</div>
     </div>
 
+    <div class="form-group">
+      <label>How you log this</label>
+      {% if has_entries %}
+        <div class="field-hint">Type can't be changed once you've logged entries.</div>
+        {# Disabled radios are not submitted. The hidden field below keeps the
+           existing input_type in the POST payload as defense-in-depth, even
+           though the server already preserves it via `if not has_entries:`. #}
+        <input type="hidden" name="input_type" value="{{ symptom.input_type }}">
+        <div class="input-type-options">
+          <label class="input-type-option input-type-locked">
+            <input type="radio" disabled {% if symptom.input_type == 'scale' %}checked{% endif %}>
+            <span class="input-type-label">
+              <strong>Scale (1–10)</strong>
+              <span class="input-type-desc">A slider for severity or intensity.</span>
+            </span>
+          </label>
+          <label class="input-type-option input-type-locked">
+            <input type="radio" disabled {% if symptom.input_type == 'binary' %}checked{% endif %}>
+            <span class="input-type-label">
+              <strong>Yes / No</strong>
+              <span class="input-type-desc">One tap. Best for "did it happen today?" items.</span>
+            </span>
+          </label>
+        </div>
+      {% else %}
+        <div class="field-hint">You can still change this — you haven't logged any entries yet.</div>
+        <div class="input-type-options">
+          <label class="input-type-option">
+            <input type="radio" name="input_type" value="scale" {% if symptom.input_type != 'binary' %}checked{% endif %}>
+            <span class="input-type-label">
+              <strong>Scale (1–10)</strong>
+              <span class="input-type-desc">A slider for severity or intensity.</span>
+            </span>
+          </label>
+          <label class="input-type-option">
+            <input type="radio" name="input_type" value="binary" {% if symptom.input_type == 'binary' %}checked{% endif %}>
+            <span class="input-type-label">
+              <strong>Yes / No</strong>
+              <span class="input-type-desc">One tap. Best for "did it happen today?" items.</span>
+            </span>
+          </label>
+        </div>
+      {% endif %}
+    </div>
+
   </form>
 
   <div class="form-actions">

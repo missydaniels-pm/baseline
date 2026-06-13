@@ -70,9 +70,9 @@ Baseline Files/
 - **User** — email, password_hash, invite_code_used (legacy), is_active, verified_at, onboarding_complete, baseline data, ai_logging_enabled, has_seen_tour, is_admin, email_updates_enabled
 - **InviteCode** — code, created_at, used_at, used_by_user_id (legacy — admin use only via /dev/create-invite)
 - **UsedVerifyToken** — token_hash (SHA-256), used_at. Prevents email-verification token replay.
-- **Symptom** — user-defined trackable items (name, description, is_active). Displayed as "What I Track" in UI. No hard limit on count post-onboarding.
+- **Symptom** — user-defined trackable items (name, description, is_active, input_type). Displayed as "What I Track" in UI. No hard limit on count post-onboarding. `input_type` is `'scale'` (1–10 slider) or `'binary'` (Yes/No). Type is locked once any SymptomScore for the symptom exists.
 - **Episode** — health episodes with onset timestamp, duration, functional_impairment, notes
-- **SymptomScore** — severity score per symptom per episode (1-10)
+- **SymptomScore** — per-episode entry. For scale symptoms `score` (1–10) is set and `value_bool` is null; for binary symptoms `value_bool` is set and `score` is null. Aggregations must filter `score IS NOT NULL` (scale) or `value_bool IS NOT NULL` (binary) so the two types never mix.
 - **EpisodeIntervention** — junction table linking episodes to interventions (Protocol type='rescue') with per-intervention effectiveness (1-10) and time_to_relief_hours
 - **Protocol** — preventative protocols with name, start_date, dose, frequency, status
 - **ProtocolCompliance** — daily compliance log per protocol

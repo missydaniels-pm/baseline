@@ -76,9 +76,9 @@ templates/privacy.html          — in-app privacy policy (single source of trut
 | User | email, password_hash, invite_code_used (legacy), is_active, verified_at, onboarding_complete, baseline data, ai_logging_enabled, has_seen_tour, is_admin, email_updates_enabled |
 | InviteCode | code, created_at, used_at, used_by_user_id (legacy — admin use only) |
 | UsedVerifyToken | token_hash (SHA-256), used_at — prevents email-verification token replay |
-| Symptom | user-defined trackable items (name, description, is_active). Displayed as "What I Track" in UI. No hard post-onboarding limit. |
+| Symptom | user-defined trackable items (name, description, is_active, input_type). Displayed as "What I Track" in UI. No hard post-onboarding limit. `input_type` is `'scale'` (1-10 slider) or `'binary'` (Yes/No), enforced by a DB CHECK constraint (`symptoms_input_type_check`). Type is locked once any SymptomScore for that symptom exists. |
 | Episode | onset timestamp, duration, functional_impairment, notes |
-| SymptomScore | severity score (1-10) per symptom per episode |
+| SymptomScore | One row per (episode, symptom). For scale symptoms `score` (1-10) is set and `value_bool` is null. For binary symptoms `value_bool` is set and `score` is null. The `Symptom.input_type` discriminator decides which column to read. Aggregations should filter `score IS NOT NULL` (scale) or `value_bool IS NOT NULL` (binary) so the two types never mix. |
 | EpisodeIntervention | junction table: episode_id, protocol_id (rescue), effectiveness (1-10), time_to_relief_hours. Supports multiple interventions per episode. |
 | Protocol | name, start_date, dose, frequency, status (preventative) |
 | ProtocolCompliance | daily compliance log per protocol |

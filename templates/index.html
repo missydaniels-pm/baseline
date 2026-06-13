@@ -35,7 +35,7 @@
 <div class="section-header">
   <div>
     <div class="section-title">What You're Tracking</div>
-    <div class="section-sub">{% if symptom_stats %}Average scores this month vs baseline{% else %}Track your health over time{% endif %}</div>
+    <div class="section-sub">{% if symptom_stats %}This month vs your baseline{% else %}Track your health over time{% endif %}</div>
   </div>
 </div>
 {% if symptom_stats %}
@@ -43,25 +43,36 @@
   {% for stat in symptom_stats %}
   <div class="symptom-stat-card">
     <div class="symptom-stat-name">{{ stat.symptom.name }}</div>
-    {% if stat.avg_score is not none %}
-      <div class="symptom-stat-score">{{ stat.avg_score }}<span>/10</span></div>
-      <div class="symptom-stat-meta">avg this month</div>
+    {% if stat.is_binary %}
+      {% if stat.total_count > 0 %}
+        <div class="symptom-stat-score">{{ stat.yes_count }}<span> / {{ stat.total_count }}</span></div>
+        <div class="symptom-stat-meta">yes this month</div>
+      {% else %}
+        <div class="symptom-stat-score" style="font-size:18px; color:var(--text-muted);">—</div>
+        <div class="symptom-stat-meta">no entries this month</div>
+      {% endif %}
+      <div class="symptom-stat-baseline"><span class="symptom-type-tag symptom-type-binary">Yes / No</span></div>
     {% else %}
-      <div class="symptom-stat-score" style="font-size:18px; color:var(--text-muted);">—</div>
-      <div class="symptom-stat-meta">no episodes this month</div>
-    {% endif %}
-    {% if stat.baseline_score is not none %}
-      <div class="symptom-stat-baseline">baseline {{ stat.baseline_score }}/10
-        {% if stat.pct_change is not none %}
-          {% if stat.trend == 'up' %}
-            <span class="symptom-stat-pct worse">↑ {{ stat.pct_change }}%</span>
-          {% elif stat.trend == 'down' %}
-            <span class="symptom-stat-pct better">↓ {{ stat.pct_change|abs }}%</span>
-          {% elif stat.trend == 'neutral' %}
-            <span class="symptom-stat-pct stable">— stable</span>
+      {% if stat.avg_score is not none %}
+        <div class="symptom-stat-score">{{ stat.avg_score }}<span>/10</span></div>
+        <div class="symptom-stat-meta">avg this month</div>
+      {% else %}
+        <div class="symptom-stat-score" style="font-size:18px; color:var(--text-muted);">—</div>
+        <div class="symptom-stat-meta">no episodes this month</div>
+      {% endif %}
+      {% if stat.baseline_score is not none %}
+        <div class="symptom-stat-baseline">baseline {{ stat.baseline_score }}/10
+          {% if stat.pct_change is not none %}
+            {% if stat.trend == 'up' %}
+              <span class="symptom-stat-pct worse">↑ {{ stat.pct_change }}%</span>
+            {% elif stat.trend == 'down' %}
+              <span class="symptom-stat-pct better">↓ {{ stat.pct_change|abs }}%</span>
+            {% elif stat.trend == 'neutral' %}
+              <span class="symptom-stat-pct stable">— stable</span>
+            {% endif %}
           {% endif %}
-        {% endif %}
-      </div>
+        </div>
+      {% endif %}
     {% endif %}
   </div>
   {% endfor %}
@@ -139,6 +150,27 @@
 </div>
 {% if show_episode_chart or show_symptom_chart %}
 <div class="chart-footnote">* Current week (in progress)</div>
+{% endif %}
+
+{% if binary_history %}
+<div class="section-header" style="margin-top:18px;">
+  <div>
+    <div class="section-title">Yes / No items</div>
+    <div class="section-sub">Each dot is one episode (oldest left, newest right). Green = yes, red = no, outline = not recorded.</div>
+  </div>
+</div>
+<div class="card" style="padding:14px 16px;">
+  {% for row in binary_history %}
+  <div class="binary-history-row{% if not loop.last %} binary-history-row-divider{% endif %}">
+    <div class="binary-history-name">{{ row.symptom.name }}</div>
+    <div class="binary-history-strip" aria-label="{{ row.symptom.name }} history">
+      {% for d in row.dots %}
+        <span class="binary-dot binary-dot-{{ d.state }}" title="{{ d.date }}: {% if d.state == 'yes' %}Yes{% elif d.state == 'no' %}No{% else %}not recorded{% endif %}"></span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
 {% endif %}
 
 {# ── Protocol Impact Note ────────────────────────────────────── #}
