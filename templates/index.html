@@ -31,6 +31,84 @@
 </div>
 {% endif %}
 
+{# ── Today's Protocols ─────────────────────────────────────────── #}
+{% if tp_data %}
+<div class="card tp-card" id="tpCard">
+  <div class="tp-header">
+    <div class="section-title">Today's Protocols</div>
+    <div class="tp-header-right">
+      <span class="tp-status-chip" id="tpStatusChip">Unconfirmed</span>
+      <a href="{{ url_for('protocols') }}" class="tp-manage-link">Manage →</a>
+    </div>
+  </div>
+
+  <div class="tp-dots" role="group" aria-label="Protocol log, last 7 days">
+    {% for d in tp_data.days %}
+    {% if d.is_today %}
+    <span class="tp-dot-btn" data-date="{{ d.iso }}" role="img"
+          aria-label="Today: {{ {'green': 'all taken', 'amber': 'logged, some missed', 'hollow': 'not yet logged — use the list below'}[d.status] }}">
+      <span class="tp-dot tp-dot-{{ d.status }} tp-dot-today"></span>
+    </span>
+    {% else %}
+    <button type="button" class="tp-dot-btn" data-date="{{ d.iso }}"
+            aria-label="{{ d.label }}: {{ {'green': 'all taken', 'amber': 'logged, some missed', 'hollow': 'not logged — tap to fill in'}[d.status] }}">
+      <span class="tp-dot tp-dot-{{ d.status }}"></span>
+    </button>
+    {% endif %}
+    {% endfor %}
+    <span class="tp-dots-label">last 7 days</span>
+  </div>
+
+  {% if tp_data.days[-1].protocols %}
+  <div id="tpTodayRows">
+    {% for e in tp_data.days[-1].protocols %}
+    <div class="tp-row">
+      <div class="tp-row-info">
+        <div class="tp-name"><a href="{{ url_for('protocol_detail', protocol_id=e.id) }}">{{ e.name }}</a></div>
+        {% if e.dose %}<div class="tp-dose">{{ e.dose }}</div>{% endif %}
+      </div>
+      <div class="tp-pair">
+        <button type="button" class="tp-pill" data-pid="{{ e.id }}" data-val="taken" aria-pressed="false">Taken</button>
+        <button type="button" class="tp-pill" data-pid="{{ e.id }}" data-val="missed" aria-pressed="false">Missed</button>
+      </div>
+    </div>
+    <div class="tp-note" id="tpNote_{{ e.id }}" hidden>
+      <input type="text" id="tp_note_{{ e.id }}" maxlength="500"
+             aria-label="Note about missing {{ e.name }} (optional)"
+             placeholder="Add a note? (optional) — e.g. ran out, refill coming" value="{{ e.note }}">
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="tp-bulk" id="tpBulk">
+    <button type="button" class="btn btn-primary btn-sm" id="tpConfirm">Confirm</button>
+    <button type="button" class="tp-ghost" id="tpMissedAll">Missed all today</button>
+  </div>
+  {% else %}
+  <div class="tp-dose" style="padding:6px 0;">Nothing to log yet today — your protocols haven't started. You can still fill in past days from the dots above.</div>
+  {% endif %}
+
+  <div class="tp-done" id="tpDone" hidden>
+    <div class="tp-done-check" id="tpDoneCheck">✓</div>
+    <div>
+      <div class="tp-done-title" id="tpDoneTitle">All set for today</div>
+      <div class="tp-done-sub"><span id="tpDoneSummary"></span> · <button type="button" class="tp-edit-link" id="tpChange">change something</button></div>
+    </div>
+  </div>
+
+  <div class="tp-day-editor" id="tpBackfill" hidden>
+    <div class="tp-day-title"><span id="tpBackfillTitle"></span> <span class="tp-day-hint">— fill in what you remember</span></div>
+    <div id="tpBackfillRows"></div>
+    <div class="tp-backfill-actions">
+      <button type="button" class="btn btn-primary btn-sm" id="tpBackfillSave">Save</button>
+      <button type="button" class="tp-ghost" id="tpBackfillCancel">Not sure — leave blank</button>
+    </div>
+  </div>
+
+  <div class="tp-message" id="tpMessage" hidden></div>
+</div>
+{% endif %}
+
 {# ── Symptom Baseline Cards ────────────────────────────────────── #}
 <div class="section-header">
   <div>
@@ -241,29 +319,269 @@
 </div>
 {% endif %}
 
-{# ── Active Protocols ──────────────────────────────────────────── #}
-{% if protocols %}
-<hr class="divider">
-<div class="page-header" style="margin-bottom:16px;">
-  <h2 style="font-size:17px; font-weight:600;">Active Protocols</h2>
-  <a href="{{ url_for('protocols') }}" style="font-size:13px; color:var(--text-muted);">Manage →</a>
-</div>
+{# ── Today's Protocols card behavior ───────────────────────────── #}
+{% if tp_data %}
+<script>
+(function() {
+  var TP = {{ tp_data | tojson }};
+  var todayEntry = TP.days[TP.days.length - 1];
+  // Local working state for today's card: pid -> {took: null|true|false}
+  var state = {};
+  todayEntry.protocols.forEach(function(e) { state[e.id] = { took: e.took }; });
 
-{% for p in protocols %}
-<div class="card">
-  <div class="protocol-card">
-    <div class="protocol-info">
-      <div class="protocol-name">{{ p.name }}</div>
-      <div class="protocol-meta">
-        <span class="tag tag-{{ p.type }}">{{ p.type }}</span>
-        {% if p.dose_frequency %}{{ p.dose_frequency }}{% endif %}
-        {% if p.start_date %} · since {{ p.start_date.strftime('%b %-d, %Y') }}{% endif %}
-      </div>
-    </div>
-    <a href="{{ url_for('edit_protocol', protocol_id=p.id) }}" class="btn btn-secondary btn-sm">Edit</a>
-  </div>
-</div>
-{% endfor %}
+  var card = document.getElementById('tpCard');
+  var rowsEl = document.getElementById('tpTodayRows');
+  var bulkEl = document.getElementById('tpBulk');
+  var doneEl = document.getElementById('tpDone');
+  var msgEl = document.getElementById('tpMessage');
+  var chipEl = document.getElementById('tpStatusChip');
+  var confirmBtn = document.getElementById('tpConfirm');
+
+  function localToday() { return new Date().toLocaleDateString('en-CA'); }
+
+  function showMessage(text, calm) {
+    if (!text) { msgEl.hidden = true; return; }
+    msgEl.textContent = text;
+    msgEl.classList.toggle('tp-message-calm', !!calm);
+    msgEl.hidden = false;
+  }
+
+  function paintPill(pid, took, assumed) {
+    var pills = rowsEl.querySelectorAll('.tp-pill[data-pid="' + pid + '"]');
+    pills.forEach(function(b) {
+      var isTaken = b.getAttribute('data-val') === 'taken';
+      b.classList.remove('selected-taken', 'selected-missed', 'tp-pill-assumed');
+      var on = (took === true && isTaken) || (took === false && !isTaken);
+      b.setAttribute('aria-pressed', on || (assumed && isTaken) ? 'true' : 'false');
+      if (assumed && isTaken) b.classList.add('tp-pill-assumed');
+      else if (on) b.classList.add(isTaken ? 'selected-taken' : 'selected-missed');
+    });
+    var note = document.getElementById('tpNote_' + pid);
+    if (note) note.hidden = (took !== false);
+  }
+
+  function paintToday() {
+    Object.keys(state).forEach(function(pid) {
+      var t = state[pid].took;
+      paintPill(pid, t, t === null);
+    });
+  }
+
+  function firstMissedMessage() {
+    var missedIds = Object.keys(state).filter(function(pid) { return state[pid].took === false; });
+    if (!missedIds.length) return null;
+    if (missedIds.length === Object.keys(state).length) return TP.messages.missed_all;
+    return TP.messages.per_protocol[missedIds[0]];
+  }
+
+  function showDone(allTaken, missedCount, total) {
+    if (rowsEl) rowsEl.hidden = true;
+    if (bulkEl) bulkEl.hidden = true;
+    doneEl.hidden = false;
+    chipEl.textContent = 'Logged';
+    chipEl.classList.add('is-confirmed');
+    var check = document.getElementById('tpDoneCheck');
+    check.textContent = allTaken ? '✓' : '—';
+    check.classList.toggle('tp-done-check-mixed', !allTaken);
+    document.getElementById('tpDoneTitle').textContent = allTaken ? 'All set for today' : 'Logged for today';
+    document.getElementById('tpDoneSummary').textContent = allTaken
+      ? ('All ' + total + ' taken')
+      : (missedCount + ' of ' + total + ' missed');
+    if (TP.returning_after_blank) showMessage(TP.messages.returning_after_blank, false);
+    else if (allTaken) showMessage(TP.messages.all_taken, true);
+    else showMessage(firstMissedMessage(), false);
+  }
+
+  if (rowsEl) rowsEl.addEventListener('click', function(ev) {
+    var pill = ev.target.closest('.tp-pill');
+    if (!pill) return;
+    var pid = pill.getAttribute('data-pid');
+    state[pid].took = pill.getAttribute('data-val') === 'taken';   // flip-only
+    paintPill(pid, state[pid].took, false);
+    showMessage(firstMissedMessage(), false);
+  });
+
+  var missedAllBtn = document.getElementById('tpMissedAll');
+  if (missedAllBtn) missedAllBtn.addEventListener('click', function() {
+    Object.keys(state).forEach(function(pid) { state[pid].took = false; });
+    paintToday();
+    showMessage(TP.messages.missed_all, false);
+  });
+
+  document.getElementById('tpChange').addEventListener('click', function() {
+    doneEl.hidden = true;
+    if (rowsEl) rowsEl.hidden = false;
+    if (bulkEl) bulkEl.hidden = false;
+    msgEl.hidden = true;
+    chipEl.textContent = 'Unconfirmed';
+    chipEl.classList.remove('is-confirmed');
+    paintToday();
+  });
+
+  function postDay(dateIso, entries, onOk, onErr) {
+    fetch('{{ url_for("log_protocol_day") }}', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: dateIso, entries: entries }),
+    }).then(function(r) { return r.json().then(function(j) { return { ok: r.ok && j.ok, j: j }; }); })
+      .then(function(res) { if (res.ok) onOk(res.j); else onErr(res.j); })
+      .catch(function() { onErr({}); });
+  }
+
+  function recolorDot(dateIso, status) {
+    var btn = card.querySelector('.tp-dot-btn[data-date="' + dateIso + '"]');
+    if (!btn) return;
+    var dot = btn.querySelector('.tp-dot');
+    dot.classList.remove('tp-dot-green', 'tp-dot-amber', 'tp-dot-hollow');
+    dot.classList.add('tp-dot-' + status);
+  }
+
+  if (confirmBtn) confirmBtn.addEventListener('click', function() {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Saving…';
+    var entries = Object.keys(state).map(function(pid) {
+      var noteInput = document.getElementById('tp_note_' + pid);
+      return {
+        protocol_id: parseInt(pid, 10),
+        took: state[pid].took !== false,          // assumed counts as taken
+        note: (state[pid].took === false && noteInput) ? noteInput.value.trim() : '',
+      };
+    });
+    postDay(localToday(), entries, function(j) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Confirm';
+      Object.keys(state).forEach(function(pid) {
+        if (state[pid].took === null) state[pid].took = true;
+      });
+      var total = entries.length;
+      var missed = entries.filter(function(e) { return !e.took; }).length;
+      recolorDot(j.date, j.day_status);
+      // Keep the today-dot mapping honest if browser-local and server dates differ.
+      if (j.date !== TP.days[TP.days.length - 1].iso) recolorDot(TP.days[TP.days.length - 1].iso, j.day_status);
+      showDone(missed === 0, missed, total);
+    }, function(j) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Confirm';
+      showMessage(j.error || "Couldn't save just now — try again in a moment.", false);
+    });
+  });
+
+  // ── Backfill editor ──
+  var bfEl = document.getElementById('tpBackfill');
+  var bfRows = document.getElementById('tpBackfillRows');
+  var bfState = {};   // pid -> null|true|false (null = leave blank)
+  var bfDate = null;
+
+  function closeBackfill() {
+    bfEl.hidden = true;
+    bfDate = null;
+    card.querySelectorAll('.tp-dot-editing').forEach(function(d) { d.classList.remove('tp-dot-editing'); });
+  }
+
+  function openBackfill(day) {
+    bfDate = day.iso;
+    bfState = {};
+    bfRows.innerHTML = '';
+    day.protocols.forEach(function(e) {
+      bfState[e.id] = e.took;
+      var row = document.createElement('div');
+      row.className = 'tp-row';
+      var info = document.createElement('div');
+      info.className = 'tp-row-info';
+      var name = document.createElement('div');
+      name.className = 'tp-name';
+      name.textContent = e.name;
+      info.appendChild(name);
+      var pair = document.createElement('div');
+      pair.className = 'tp-pair';
+      ['taken', 'missed'].forEach(function(val) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'tp-pill';
+        b.textContent = val === 'taken' ? 'Taken' : 'Missed';
+        b.setAttribute('aria-pressed', 'false');
+        b.addEventListener('click', function() {
+          var want = (val === 'taken');
+          // Tap-again-to-clear: neutral is meaningful for past days.
+          bfState[e.id] = (bfState[e.id] === want) ? null : want;
+          paintBackfillRow(pair, bfState[e.id]);
+        });
+        pair.appendChild(b);
+      });
+      paintBackfillRow(pair, bfState[e.id]);
+      row.appendChild(info);
+      row.appendChild(pair);
+      bfRows.appendChild(row);
+    });
+    document.getElementById('tpBackfillTitle').textContent = day.label;
+    document.getElementById('tpBackfillSave').textContent = 'Save ' + day.weekday;
+    bfEl.hidden = false;
+  }
+
+  function paintBackfillRow(pair, took) {
+    var pills = pair.querySelectorAll('.tp-pill');
+    pills.forEach(function(b, i) {
+      var isTaken = (i === 0);
+      b.classList.remove('selected-taken', 'selected-missed');
+      var on = (took === true && isTaken) || (took === false && !isTaken);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      if (on) b.classList.add(isTaken ? 'selected-taken' : 'selected-missed');
+    });
+  }
+
+  card.querySelectorAll('button.tp-dot-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var iso = btn.getAttribute('data-date');
+      if (bfDate === iso) { closeBackfill(); return; }
+      var day = TP.days.filter(function(d) { return d.iso === iso; })[0];
+      if (!day) return;
+      closeBackfill();
+      btn.querySelector('.tp-dot').classList.add('tp-dot-editing');
+      openBackfill(day);
+    });
+  });
+
+  document.getElementById('tpBackfillCancel').addEventListener('click', closeBackfill);
+
+  document.getElementById('tpBackfillSave').addEventListener('click', function() {
+    var entries = Object.keys(bfState)
+      .filter(function(pid) { return bfState[pid] !== null; })
+      .map(function(pid) { return { protocol_id: parseInt(pid, 10), took: bfState[pid], note: '' }; });
+    if (!entries.length) { closeBackfill(); return; }
+    var saveBtn = document.getElementById('tpBackfillSave');
+    var saveLabel = saveBtn.textContent;
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+    var savedDate = bfDate;
+    postDay(savedDate, entries, function(j) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = saveLabel;
+      recolorDot(savedDate, j.day_status);
+      var day = TP.days.filter(function(d) { return d.iso === savedDate; })[0];
+      if (day) day.protocols.forEach(function(e) {
+        if (bfState[e.id] !== null && bfState[e.id] !== undefined) e.took = bfState[e.id];
+      });
+      closeBackfill();
+      showMessage('Logged for ' + (day ? day.weekday : 'that day') + '. Only log what you remember — a blank day is better data than a guess.', true);
+    }, function(j) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = saveLabel;
+      showMessage(j.error || "Couldn't save just now — try again in a moment.", false);
+    });
+  });
+
+  // ── Initial paint ──
+  if (TP.confirmed_today) {
+    var entries = todayEntry.protocols;
+    var missed = entries.filter(function(e) { return e.took === false; }).length;
+    showDone(missed === 0, missed, entries.length);
+    msgEl.hidden = true;   // calm on revisit: no message until something changes
+  } else {
+    paintToday();
+    if (TP.returning_after_blank) showMessage(TP.messages.returning_after_blank, false);
+  }
+})();
+</script>
 {% endif %}
 
 {# ── Chart.js initialization ───────────────────────────────────── #}

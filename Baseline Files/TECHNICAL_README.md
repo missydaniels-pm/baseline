@@ -80,8 +80,8 @@ templates/privacy.html          — in-app privacy policy (single source of trut
 | Episode | onset timestamp, duration, functional_impairment, notes |
 | SymptomScore | One row per (episode, symptom). For scale symptoms `score` (1-10) is set and `value_bool` is null. For binary symptoms `value_bool` is set and `score` is null. The `Symptom.input_type` discriminator decides which column to read. Aggregations should filter `score IS NOT NULL` (scale) or `value_bool IS NOT NULL` (binary) so the two types never mix. |
 | EpisodeIntervention | junction table: episode_id, protocol_id (rescue), effectiveness (1-10), time_to_relief_hours. Supports multiple interventions per episode. |
-| Protocol | name, start_date, dose, frequency, status (preventative) |
-| ProtocolCompliance | daily compliance log per protocol |
+| Protocol | name, start_date, dose, frequency, status, `why` (nullable text — "Why I'm doing this", surfaced in compliance messaging) (preventative) |
+| ProtocolCompliance | daily compliance log per protocol: (user_id, protocol_id, date, took bool, notes). One row per (user, protocol, day) enforced by unique index `ux_protocol_compliance_day` (dedup pass + `CREATE UNIQUE INDEX IF NOT EXISTS` in `run_migrations()`, plus a model-level UniqueConstraint for fresh DBs). All writers (dashboard batch confirm, protocol-detail form, AI check-in) go through the shared `_upsert_compliance()` helper — the most recent explicit statement wins. Days with no row = nothing recorded; the dashboard card's "assumed taken" state is UI-only and never written until the user confirms. |
 | RescueOption | interventions (stored as Protocol with type='rescue') |
 | Experiment | hypothesis, protocol_id, start_date, stabilization_weeks (default 3), status, outcome |
 | CheckIn | AI chat history |
@@ -171,6 +171,7 @@ claude --resume                         # resume previous session
 | `/help` | GET | Help and documentation |
 | `/admin/analytics` | GET | Admin-only usage analytics dashboard (signups, logins, DAU/WAU, feature usage, retention) |
 | `/admin/users` | GET | Admin-only read-only user directory: email, verified, joined, last login, email_updates_enabled, episode count. Unauthorized access logs a warning. Excluded from `SKIP_TRACKING` so admin browsing doesn't pollute analytics. |
+| `/protocols/log-day` | POST | JSON batch compliance save for the dashboard Today's Protocols card (confirm + 7-day backfill). Body `{date, entries: [{protocol_id, took, note}]}`. Validates date within `[server_today−7, server_today+1]` (the +1 absorbs browser-local vs UTC skew), ownership of every protocol id, note ≤500 chars. Upserts per entry, single commit, returns `{ok, date, day_status}` where day_status ∈ hollow/amber/green. |
 | `/tour/complete` | POST | Mark welcome tour as seen (JSON response) |
 | `/tour/restart` | GET | Reset tour flag and redirect to dashboard |
 
@@ -245,6 +246,21 @@ python generate_icons.py
 ## Dashboard
 
 The dashboard header contains two primary action buttons: "Start Check-in →" (links to `/checkin`) and "+ Log Episode" (links to `/episodes/new`), giving users immediate access to the two main logging paths without navigating the sidebar.
+
+### Today's Protocols Card
+
+Top-of-dashboard daily compliance card (renders only when the user has active preventative protocols; replaced the old "Active Protocols" list — a "Manage →" link in the card header preserves the path to `/protocols`).
+
+- **Assumed-taken model:** each protocol row renders Taken/Missed pills with Taken pre-selected in a distinct *assumed* style (dashed border, reduced opacity) — visually "our suggestion", not recorded fact. Nothing is written to the DB until the user taps **Confirm**, which saves the whole day via one `POST /protocols/log-day`. Pills are flip-only on the today card (no tap-to-clear); flipping to Missed reveals an optional note input and a supportive message. "Missed all today" is a quiet text button that flips everything but still requires Confirm.
+- **Completion state:** after confirm the card collapses to "All set for today" / "Logged for today (N missed)" with a "change something" link that re-expands with solid confirmed pill styling.
+- **7-day dot strip:** one dot per day, today rightmost with a purple ring. Green = logged, all taken; amber = logged with any miss; hollow dashed = nothing logged. Partial-but-all-taken renders green (positive framing — deliberate). 26px visual inside a ~44px hit area. Tapping a past day opens an inline backfill editor (amber "editing" ring): pills default **neutral** with tap-again-to-clear (deliberate asymmetry — no assumed-taken for remembered days), partial saves allowed, "Not sure — leave blank" exits without writing. Only protocols whose `start_date` was on/before that day are listed (approximation; exact ProtocolEvent replay is a backlog item). Server independently enforces the 7-day window.
+- **Supportive messaging:** server-side catalog (`SUPPORT_MESSAGES` + `pick_support_message()` in app.py) with deterministic daily rotation; per-protocol missed messages resolve `protocol.why` → active experiment hypothesis → generic copy, pre-interpolated in `index()` and embedded via `tojson` so JS only looks up by scenario. Copy rules: no shame, no streak language; misses framed as honest data. Placeholder filling uses `str.replace` (user text may contain braces).
+- **Timezone (interim):** compliance writes use the browser's local date (dashboard sends it in the fetch body; check-in derives it from the existing `client_time` hidden field), validated within ±1 day of server UTC. The card's server-side render also uses the user's local day: base.html stores the browser's IANA zone in a `baseline_tz` cookie (1-year, lax) and `index()` computes the card's "today" via `zoneinfo` — falling back to server UTC on first-ever request or invalid zone. The rest of the dashboard (charts) still uses server date; full per-user timezone support is a backlog item.
+- **Concurrency:** batch saves go through `_commit_compliance()`, which retries once on `IntegrityError` — two near-simultaneous confirms (two tabs, PWA + browser) both pass the upsert's check-then-insert, the unique index rejects the loser, and the retry re-applies it as an update so no write is lost. The AI check-in commit catches the same error and asks the user to resend rather than 500ing.
+
+### AI Check-in Compliance Parity
+
+The check-in JSON schema's `protocol_compliance` is a list of `{id, took, note}` objects (the parser still accepts legacy bare protocol ids as `took=true`). The AI can record misses with the user's stated reason as the note, and its writes go through `_upsert_compliance()` — so "correction: I actually took everything" updates a day already confirmed on the dashboard, and vice versa. When the AI has no note, an existing user note on that row is preserved (`preserve_note_if_none`).
 
 ### Empty States
 

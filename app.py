@@ -13,9 +13,11 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from database import db, User, Episode, Protocol, Symptom, SymptomScore, EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode, UsedVerifyToken, UserActivity
 from collections import defaultdict
 from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -394,6 +396,7 @@ def run_migrations():
         ('users',                 'email_updates_enabled',     'ALTER TABLE users ADD COLUMN email_updates_enabled BOOLEAN NOT NULL DEFAULT TRUE'),
         ('symptoms',              'input_type',                "ALTER TABLE symptoms ADD COLUMN input_type VARCHAR(10) NOT NULL DEFAULT 'scale'"),
         ('symptom_scores',        'value_bool',                'ALTER TABLE symptom_scores ADD COLUMN value_bool BOOLEAN'),
+        ('protocols',             'why',                       'ALTER TABLE protocols ADD COLUMN why TEXT'),
     ]
 
     # Widen symptoms.name from varchar(100) to varchar(200) on PostgreSQL
@@ -412,6 +415,25 @@ def run_migrations():
             if column not in existing:
                 conn.execute(text(ddl))
                 conn.commit()
+
+        # One row per (user, protocol, day): dedup any legacy duplicates
+        # (keep the earliest row), then enforce at the DB level. Both
+        # statements are valid on SQLite and PostgreSQL. Log-and-continue so
+        # a failure here can't block startup.
+        try:
+            conn.execute(text('''
+                DELETE FROM protocol_compliance WHERE id NOT IN
+                  (SELECT MIN(id) FROM protocol_compliance
+                   GROUP BY user_id, protocol_id, date)
+            '''))
+            conn.execute(text('''
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_protocol_compliance_day
+                  ON protocol_compliance (user_id, protocol_id, date)
+            '''))
+            conn.commit()
+        except Exception as exc:
+            app.logger.warning('protocol_compliance unique-index migration failed: %s', exc)
+            conn.rollback()
 
         # Make episodes.peak_severity nullable if it isn't already.
         peak_col = next(
@@ -715,6 +737,63 @@ def get_user():
 def get_active_experiment(user_id):
     """Return the most recent active experiment for the user, or None."""
     return Experiment.query.filter_by(user_id=user_id, status='active').order_by(Experiment.start_date.desc()).first()
+
+
+# ---------------------------------------------------------------------------
+# Supportive compliance messaging
+# ---------------------------------------------------------------------------
+# Copy rules: never shame, never streak-guilt; misses are information; honest
+# logging framed as good science. {protocol} and {why} are placeholders.
+
+SUPPORT_MESSAGES = {
+    'all_taken': [
+        "All set. Small consistent actions are exactly how baselines improve.",
+        "Logged for today — you're building a picture of your health that's actually yours.",
+    ],
+    'missed_one_with_why': [
+        "You started {protocol} {why}. One missed day doesn't undo that progress.",
+        "Still working toward what you started {protocol} for — logging the miss keeps your data honest, and that's the whole point.",
+    ],
+    'missed_one_generic': [
+        "Missed days are data, not failure. You're still building your baseline.",
+        "Logged and noted — consistency over perfection, always.",
+    ],
+    'missed_all': [
+        "Rough days happen — they're data, not failure. Tomorrow's a fresh start.",
+        "You still showed up and logged it. That's the habit that matters most.",
+    ],
+    'returning_after_blank': [
+        "Welcome back. The last few days are blank — tap a hollow dot to fill in what you remember. No pressure either way.",
+    ],
+}
+
+
+def pick_support_message(scenario, **ctx):
+    """Pick today's message for a scenario and fill placeholders.
+
+    Deterministic daily rotation so the copy changes day to day but stays
+    stable within a day. Placeholder filling uses str.replace, not
+    str.format — user-entered text may contain braces.
+    """
+    pool = SUPPORT_MESSAGES[scenario]
+    msg = pool[date.today().toordinal() % len(pool)]
+    for key, val in ctx.items():
+        msg = msg.replace('{' + key + '}', val)
+    return msg
+
+
+def _missed_message_for(protocol, hypothesis=None):
+    """Resolve the missed-protocol message: why → experiment hypothesis → generic."""
+    if protocol.why:
+        why = protocol.why.strip()
+        # Read naturally after the protocol name: "started X to…/because…"
+        if not why.lower().startswith(('to ', 'because ', 'so ', 'for ', 'hoping')):
+            why = 'because ' + why[0].lower() + why[1:] if why else why
+        return pick_support_message('missed_one_with_why', protocol=protocol.name, why=why)
+    if hypothesis:
+        return (f"You're testing whether this helps — “{hypothesis.strip()}”. "
+                "Honest logging, including misses, is what makes that answer real.")
+    return pick_support_message('missed_one_generic', protocol=protocol.name)
 
 
 # ---------------------------------------------------------------------------
@@ -1523,7 +1602,13 @@ Use this exact schema:
     ],
     "notes": "<string or null>"
   }},
-  "protocol_compliance": [<list of preventative protocol IDs taken today>],
+  "protocol_compliance": [
+    {{
+      "id": <preventative protocol ID>,
+      "took": true or false,
+      "note": "<brief reason if the user gave one, else null>"
+    }}
+  ],
   "general_notes": "<string or null>",
   "suggested_response": "<warm 1-3 sentence reply to the user>"
 }}
@@ -1531,6 +1616,7 @@ Use this exact schema:
 If no episode occurred, set had_episode to false and episode_data fields to null/empty.
 {rate_prompt_line}
 If no interventions were used, set interventions to an empty array [].
+For protocol_compliance: include an entry for every preventative protocol the user explicitly or implicitly addressed — "took everything" means every listed preventative with took=true; "I missed my magnesium" means that protocol with took=false (include their reason as the note if they gave one). Only include protocols the user actually addressed; leave out ones they didn't mention. Never treat a missed protocol as a failure in your reply — misses are useful data.
 Always populate suggested_response with a warm, brief reply."""
 
 
@@ -1724,27 +1810,36 @@ def checkin():
                         suggestion += f" I've added {n} as a new intervention."
                     parsed['suggested_response'] = suggestion
 
-            # Log protocol compliance (deduplicate)
-            today_date = date.today()
-            user_protocol_ids = {p.id for p in Protocol.query.filter_by(user_id=user.id).all()}
-            for proto_id in (parsed.get('protocol_compliance') or []):
+            # Log protocol compliance. Prefer the browser's local date over the
+            # server's (Railway runs UTC — evening check-ins would land on
+            # tomorrow otherwise). Upsert so an explicit statement to the AI
+            # updates a day that was already confirmed on the dashboard.
+            compliance_date = date.today()
+            if client_time:
                 try:
-                    pid = int(proto_id)
+                    compliance_date = datetime.strptime(client_time, '%Y-%m-%dT%H:%M').date()
+                except ValueError:
+                    pass
+            if abs((compliance_date - date.today()).days) > 1:
+                compliance_date = date.today()
+
+            user_protocol_ids = {p.id for p in Protocol.query.filter_by(user_id=user.id, type='preventative').all()}
+            for item in (parsed.get('protocol_compliance') or []):
+                # New schema: {"id": int, "took": bool, "note": str|null}.
+                # Legacy schema (bare protocol id) still accepted as took=True.
+                if isinstance(item, dict):
+                    raw_id, took = item.get('id'), bool(item.get('took', True))
+                    note = (item.get('note') or '').strip()[:500] or None
+                else:
+                    raw_id, took, note = item, True, None
+                try:
+                    pid = int(raw_id)
                 except (ValueError, TypeError):
                     continue
                 if pid not in user_protocol_ids:
                     continue
-                exists = ProtocolCompliance.query.filter_by(
-                    user_id=user.id,
-                    protocol_id=pid,
-                    date=today_date,
-                ).first()
-                if not exists:
-                    db.session.add(ProtocolCompliance(
-                        user_id=user.id,
-                        protocol_id=pid,
-                        date=today_date,
-                    ))
+                _upsert_compliance(user.id, pid, compliance_date, took, note,
+                                   preserve_note_if_none=True)
 
             assistant_content = parsed.get('suggested_response') or 'Got it, thanks for the update!'
 
@@ -1756,7 +1851,14 @@ def checkin():
             content=assistant_content,
             episode_id=episode_id,
         ))
-        db.session.commit()
+        try:
+            db.session.commit()
+        except IntegrityError:
+            # A dashboard confirm can race this commit on the same
+            # (user, protocol, day) — the unique index rejects the loser.
+            # Roll back and ask the user to resend rather than 500.
+            db.session.rollback()
+            flash("That didn't save — please send it again.", 'error')
         return redirect(url_for('checkin'))
 
     # GET
@@ -1930,6 +2032,12 @@ def new_experiment():
                 return render_template('new_experiment.html', preventatives=preventatives,
                                        prefill_protocol_id=prefill_protocol_id, today=date.today(),
                                        active_experiment=active_experiment)
+            new_proto_why = request.form.get('new_protocol_why', '').strip()
+            if new_proto_why and len(new_proto_why) > 500:
+                flash('"Why I\'m doing this" must be 500 characters or fewer.', 'error')
+                return render_template('new_experiment.html', preventatives=preventatives,
+                                       prefill_protocol_id=prefill_protocol_id, today=date.today(),
+                                       active_experiment=active_experiment)
             protocol = Protocol(
                 user_id=user.id,
                 name=new_proto_name,
@@ -1937,6 +2045,7 @@ def new_experiment():
                 start_date=start,
                 dose_frequency=request.form.get('new_protocol_dose') or None,
                 status='active',
+                why=new_proto_why or None,
             )
             db.session.add(protocol)
             db.session.flush()
@@ -2391,7 +2500,97 @@ def index():
 
     show_tour = not user.has_seen_tour
 
+    # ── Today's Protocols card: 7-day compliance + supportive messages ──
+    # The card's "today" is the user's local day, not the server's (Railway
+    # runs UTC — for US users the server date rolls over mid-evening). The
+    # browser stores its IANA zone in a cookie (set in base.html); fall back
+    # to the server date when absent (first-ever request) or invalid.
+    tp_today = today
+    tz_name = request.cookies.get('baseline_tz', '')
+    if tz_name:
+        try:
+            tp_today = datetime.now(ZoneInfo(tz_name)).date()
+        except Exception:
+            pass
+
+    tp_data = None
+    if active_preventatives:
+        week_start = tp_today - timedelta(days=6)
+        rows = ProtocolCompliance.query.filter(
+            ProtocolCompliance.user_id == user.id,
+            ProtocolCompliance.date >= week_start,
+        ).all()
+        by_day = {}
+        for r in rows:
+            by_day.setdefault(r.date, {})[r.protocol_id] = r
+
+        proto_ids = [p.id for p in active_preventatives]
+        active_exps = Experiment.query.filter(
+            Experiment.user_id == user.id,
+            Experiment.status == 'active',
+            Experiment.protocol_id.in_(proto_ids),
+        ).all()
+        hypothesis_by_proto = {e.protocol_id: e.hypothesis for e in active_exps if e.hypothesis}
+
+        days = []
+        for offset in range(6, -1, -1):
+            day = tp_today - timedelta(days=offset)
+            day_rows = by_day.get(day, {})
+            day_protos = [p for p in active_preventatives
+                          if p.start_date is None or p.start_date <= day]
+            entries = []
+            for p in day_protos:
+                row = day_rows.get(p.id)
+                entries.append({
+                    'id': p.id,
+                    'name': p.name,
+                    'dose': p.dose_frequency or '',
+                    'took': row.took if row else None,
+                    'note': (row.notes or '') if row else '',
+                })
+            logged = [e for e in entries if e['took'] is not None]
+            if not logged:
+                status = 'hollow'
+            elif any(e['took'] is False for e in logged):
+                status = 'amber'
+            else:
+                status = 'green'  # partial-but-all-taken counts as green (positive framing)
+            days.append({
+                'iso': day.isoformat(),
+                'weekday': day.strftime('%A'),
+                'label': 'Today' if day == tp_today else day.strftime('%A, %B %-d'),
+                'status': status,
+                'is_today': day == tp_today,
+                'protocols': entries,
+            })
+
+        today_entry = days[-1]
+        confirmed_today = bool(today_entry['protocols']) and all(
+            e['took'] is not None for e in today_entry['protocols'])
+        returning_after_blank = (
+            len(days) >= 3 and days[-2]['status'] == 'hollow'
+            and days[-3]['status'] == 'hollow'
+            and bool(days[-2]['protocols'])
+        )
+
+        tp_data = {
+            'today': tp_today.isoformat(),
+            'days': days,
+            'confirmed_today': confirmed_today,
+            'returning_after_blank': returning_after_blank,
+            'messages': {
+                'all_taken': pick_support_message('all_taken'),
+                'missed_all': pick_support_message('missed_all'),
+                'returning_after_blank': pick_support_message('returning_after_blank'),
+                'per_protocol': {
+                    str(p.id): _missed_message_for(p, hypothesis_by_proto.get(p.id))
+                    for p in active_preventatives
+                },
+            },
+        }
+
     return render_template('index.html',
+                           tp_data=tp_data,
                            protocols=active_preventatives,
                            symptom_stats=symptom_stats,
                            experiments_ready=experiments_ready,
@@ -2626,11 +2825,15 @@ def new_protocol():
     if request.method == 'POST':
         name_val = request.form.get('name', '').strip()
         notes_val = request.form.get('notes', '').strip()
+        why_val = request.form.get('why', '').strip()
         if name_val and len(name_val) > 200:
             flash('Name must be 200 characters or fewer.', 'error')
             return render_template('new_protocol.html', active_experiment=active_experiment)
         if notes_val and len(notes_val) > 500:
             flash('Notes must be 500 characters or fewer.', 'error')
+            return render_template('new_protocol.html', active_experiment=active_experiment)
+        if why_val and len(why_val) > 500:
+            flash('"Why I\'m doing this" must be 500 characters or fewer.', 'error')
             return render_template('new_protocol.html', active_experiment=active_experiment)
         start_date_str = request.form.get('start_date')
         protocol = Protocol(
@@ -2640,6 +2843,7 @@ def new_protocol():
             start_date=datetime.strptime(start_date_str, '%Y-%m-%d').date() if start_date_str else None,
             dose_frequency=request.form.get('dose_frequency') or None,
             status=request.form.get('status', 'active'),
+            why=why_val or None,
             notes=notes_val or None,
         )
         db.session.add(protocol)
@@ -2670,11 +2874,15 @@ def edit_protocol(protocol_id):
     if request.method == 'POST':
         name_val = request.form.get('name', '').strip()
         notes_val = request.form.get('notes', '').strip()
+        why_val = request.form.get('why', '').strip()
         if name_val and len(name_val) > 200:
             flash('Name must be 200 characters or fewer.', 'error')
             return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment)
         if notes_val and len(notes_val) > 500:
             flash('Notes must be 500 characters or fewer.', 'error')
+            return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment)
+        if why_val and len(why_val) > 500:
+            flash('"Why I\'m doing this" must be 500 characters or fewer.', 'error')
             return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment)
         old_status = protocol.status
         old_dose = protocol.dose_frequency
@@ -2684,6 +2892,7 @@ def edit_protocol(protocol_id):
         protocol.start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date() if start_date_str else None
         protocol.dose_frequency = request.form.get('dose_frequency') or None
         protocol.status = request.form.get('status', protocol.status)
+        protocol.why = why_val or None
         protocol.notes = notes_val or None
 
         if old_status != protocol.status:
@@ -2741,6 +2950,49 @@ def protocol_detail(protocol_id):
                            protocol=protocol, timeline=timeline, today_log=today_log, today=date.today())
 
 
+def _commit_compliance(user_id, day, cleaned_entries):
+    """Apply validated (protocol_id, took, note) entries for one day and commit.
+
+    Retries once on IntegrityError: two near-simultaneous confirms (two tabs,
+    PWA + browser, dashboard + check-in) can both pass the upsert's
+    check-then-insert; the unique index rejects the loser, and the retry
+    re-applies it as an update so no write is silently lost.
+    """
+    def apply():
+        for pid, took, note in cleaned_entries:
+            _upsert_compliance(user_id, pid, day, took, note)
+
+    try:
+        apply()
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        apply()
+        db.session.commit()
+
+
+def _upsert_compliance(user_id, protocol_id, day, took, notes, preserve_note_if_none=False):
+    """One row per (user, protocol, day) — update it if present, insert otherwise.
+
+    Shared by the dashboard batch confirm, the per-protocol detail form, and
+    the AI check-in, so every entry point agrees: the most recent explicit
+    statement wins. `preserve_note_if_none` keeps an existing note when the
+    caller has nothing to say about it (the AI check-in path).
+    """
+    existing = ProtocolCompliance.query.filter_by(
+        protocol_id=protocol_id, user_id=user_id, date=day,
+    ).first()
+    if existing:
+        existing.took = took
+        if not (preserve_note_if_none and notes is None):
+            existing.notes = notes
+    else:
+        db.session.add(ProtocolCompliance(
+            user_id=user_id, protocol_id=protocol_id,
+            date=day, took=took, notes=notes,
+        ))
+
+
 @app.route('/protocols/<int:protocol_id>/log', methods=['POST'])
 def log_protocol_today(protocol_id):
     user = get_user()
@@ -2749,20 +3001,64 @@ def log_protocol_today(protocol_id):
     took = request.form.get('took') == 'yes'
     notes = request.form.get('notes', '').strip() or None
 
-    existing = ProtocolCompliance.query.filter_by(
-        protocol_id=protocol_id, user_id=user.id, date=date.today()
-    ).first()
-    if existing:
-        existing.took = took
-        existing.notes = notes
-    else:
-        db.session.add(ProtocolCompliance(
-            user_id=user.id, protocol_id=protocol_id,
-            date=date.today(), took=took, notes=notes,
-        ))
-    db.session.commit()
+    _commit_compliance(user.id, date.today(), [(protocol_id, took, notes)])
     flash('Logged.', 'success')
     return redirect(url_for('protocol_detail', protocol_id=protocol_id))
+
+
+@app.route('/protocols/log-day', methods=['POST'])
+def log_protocol_day():
+    """Batch-save one day's compliance from the dashboard card (confirm or backfill).
+
+    Body: {"date": "YYYY-MM-DD", "entries": [{"protocol_id": int, "took": bool, "note": str}]}
+    The window allows [today-7, today+1] so a browser's local date can differ
+    from the server's UTC date by a day in either direction.
+    """
+    user = get_user()
+    data = request.get_json(silent=True) or {}
+
+    try:
+        day = datetime.strptime(str(data.get('date', '')), '%Y-%m-%d').date()
+    except ValueError:
+        return {'ok': False, 'error': 'Invalid date.'}, 400
+    server_today = date.today()
+    if not (server_today - timedelta(days=7)) <= day <= (server_today + timedelta(days=1)):
+        return {'ok': False, 'error': 'Date outside the editable window.'}, 400
+
+    entries = data.get('entries')
+    if not isinstance(entries, list) or not entries:
+        return {'ok': False, 'error': 'No entries.'}, 400
+
+    # Validate everything before touching the session, so an invalid entry
+    # can't leave earlier upserts staged.
+    owned_ids = {p.id for p in Protocol.query.filter_by(user_id=user.id, type='preventative').all()}
+    cleaned = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            return {'ok': False, 'error': 'Invalid entry.'}, 400
+        try:
+            pid = int(entry.get('protocol_id'))
+        except (ValueError, TypeError):
+            return {'ok': False, 'error': 'Invalid protocol.'}, 400
+        if pid not in owned_ids:
+            return {'ok': False, 'error': 'Invalid protocol.'}, 400
+        note = (entry.get('note') or '').strip()
+        if len(note) > 500:
+            return {'ok': False, 'error': 'Notes must be 500 characters or fewer.'}, 400
+        cleaned.append((pid, bool(entry.get('took')), note or None))
+
+    _commit_compliance(user.id, day, cleaned)
+
+    # Recompute the day's dot status (same rule as the dashboard).
+    day_rows = ProtocolCompliance.query.filter_by(user_id=user.id, date=day).all()
+    if not day_rows:
+        day_status = 'hollow'
+    elif any(r.took is False for r in day_rows):
+        day_status = 'amber'
+    else:
+        day_status = 'green'
+
+    return {'ok': True, 'date': day.isoformat(), 'day_status': day_status}
 
 
 # ---------------------------------------------------------------------------

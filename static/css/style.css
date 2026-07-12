@@ -2920,3 +2920,232 @@ input[type="range"]::-moz-range-thumb {
     margin-top: 0;
   }
 }
+
+/* ── Today's Protocols card ─────────────────────────────────────── */
+
+.tp-card { margin-bottom: 24px; }
+
+.tp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.tp-header-right { display: flex; align-items: baseline; gap: 14px; }
+
+.tp-status-chip {
+  font-size: 12px;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1px 10px;
+}
+
+.tp-status-chip.is-confirmed {
+  color: var(--low);
+  border-color: rgba(76, 175, 120, 0.4);
+  background: rgba(76, 175, 120, 0.08);
+}
+
+.tp-manage-link { font-size: 13px; color: var(--text-muted); }
+
+/* Dot strip — 26px visual inside a 44px touch target */
+.tp-dots {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 0 10px -9px;
+}
+
+.tp-dot-btn {
+  background: none;
+  border: none;
+  padding: 9px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tp-dot-btn:focus-visible { outline: 2px solid #a07de0; outline-offset: 2px; border-radius: 50%; }
+button.tp-dot-btn:hover .tp-dot { transform: scale(1.12); }
+span.tp-dot-btn { cursor: default; }
+
+.tp-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  transition: transform 0.12s, box-shadow 0.15s;
+}
+
+.tp-dot-green  { background: var(--low); }
+.tp-dot-amber  { background: var(--mid); }
+.tp-dot-hollow { background: transparent; border: 2px dashed var(--border); }
+.tp-dot-today  { box-shadow: 0 0 0 3px rgba(160, 125, 224, 0.55); }
+.tp-dot-editing { box-shadow: 0 0 0 3px rgba(232, 168, 56, 0.6); }
+
+.tp-dots-label { font-size: 12px; color: var(--text-muted); margin-left: 8px; }
+
+/* Protocol rows */
+.tp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.tp-row:last-of-type { border-bottom: none; }
+.tp-row-info { min-width: 0; }
+.tp-name { font-weight: 600; font-size: 15px; }
+.tp-name a { color: var(--text); }
+.tp-dose { font-size: 13px; color: var(--text-muted); }
+
+.tp-pair { display: flex; gap: 8px; flex-shrink: 0; }
+
+.tp-pill {
+  min-height: 44px;
+  padding: 8px 18px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 500;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s, opacity 0.15s;
+}
+
+.tp-pill:focus-visible { outline: 2px solid #a07de0; outline-offset: 2px; }
+
+.tp-pill.selected-taken {
+  border-color: #4caf78;
+  background: rgba(76, 175, 120, 0.25);
+  color: #d4f0dc;
+}
+
+.tp-pill.selected-missed {
+  border-color: #b46464;
+  background: rgba(180, 100, 100, 0.22);
+  color: #f0d4d4;
+}
+
+/* Assumed-taken: our suggestion, not yet the user's statement */
+.tp-pill-assumed {
+  border: 1px dashed rgba(76, 175, 120, 0.55);
+  background: rgba(76, 175, 120, 0.08);
+  color: rgba(212, 240, 220, 0.66);
+}
+
+.tp-card .btn:disabled { opacity: 0.55; cursor: default; }
+
+/* Optional note revealed under a missed row */
+.tp-note { margin: 2px 0 10px; }
+.tp-note input { font-size: 16px; padding: 8px 10px; }
+
+/* Bulk actions — anchored directly under the rows, message renders below */
+.tp-bulk {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.tp-ghost {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-family: var(--font);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 12px 8px;
+}
+
+.tp-ghost:focus-visible { outline: 2px solid #a07de0; outline-offset: 2px; }
+
+.tp-message {
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(124, 92, 191, 0.12);
+  border: 1px solid rgba(124, 92, 191, 0.3);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.tp-message-calm {
+  background: rgba(76, 175, 120, 0.08);
+  border-color: rgba(76, 175, 120, 0.25);
+}
+
+/* Collapsed completion state */
+.tp-done { display: flex; align-items: center; gap: 12px; padding: 6px 0; }
+
+.tp-done-check {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(76, 175, 120, 0.16);
+  color: var(--low);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.tp-done-check-mixed { background: rgba(232, 168, 56, 0.14); color: var(--mid); }
+.tp-done-title { font-size: 14px; font-weight: 600; }
+.tp-done-sub { font-size: 13px; color: var(--text-muted); }
+
+.tp-edit-link {
+  background: none;
+  border: none;
+  padding: 10px 4px;
+  margin: -10px -4px;
+  font-size: 13px;
+  font-family: var(--font);
+  color: var(--text-muted);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Inline backfill editor */
+.tp-day-editor {
+  margin-top: 12px;
+  padding: 14px 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.tp-day-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.tp-day-hint { font-weight: 400; color: var(--text-muted); }
+.tp-backfill-actions { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
+
+/* Why line on protocol detail */
+.tp-why-text { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+
+@media (max-width: 768px) {
+  .tp-row { flex-wrap: wrap; }
+  .tp-pair { flex: 1 1 100%; }
+  .tp-pair .tp-pill { flex: 1; }
+  .tp-dots { margin-left: -6px; gap: 0; }
+  .tp-dot-btn { padding: 7px 5px; }
+  .tp-dot { width: 24px; height: 24px; }
+  .tp-bulk { flex-wrap: wrap; }
+  .tp-dots-label { display: none; }
+}
+
+/* display rules above would otherwise defeat the hidden attribute */
+.tp-done[hidden], .tp-bulk[hidden], .tp-day-editor[hidden],
+.tp-message[hidden], .tp-note[hidden], #tpTodayRows[hidden] { display: none; }

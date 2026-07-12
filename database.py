@@ -160,6 +160,7 @@ class Protocol(db.Model):
     dose_frequency = db.Column(db.String(200), nullable=True)
     status = db.Column(db.String(20), nullable=False, default='active')  # active, paused, stopped, removed (rescue only)
     available = db.Column(db.Boolean, nullable=False, default=True)  # rescue options only
+    why = db.Column(db.Text, nullable=True)  # "Why I'm doing this" — surfaced in compliance messaging
     notes = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -236,6 +237,9 @@ class CheckIn(db.Model):
 
 class ProtocolCompliance(db.Model):
     __tablename__ = 'protocol_compliance'
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'protocol_id', 'date', name='ux_protocol_compliance_day'),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)

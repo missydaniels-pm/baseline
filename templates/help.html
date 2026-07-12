@@ -89,7 +89,7 @@
   <ul class="help-list">
     <li><strong>Episodes</strong> — if you describe a significant health event, an episode is created with onset time, duration, and functional impairment</li>
     <li><strong>Severity scores</strong> — ratings are attached to the episode for each thing you're tracking</li>
-    <li><strong>Protocol compliance</strong> — if you mention taking or missing a medication/supplement, a compliance record is logged for that protocol</li>
+    <li><strong>Protocol compliance</strong> — if you mention taking or missing a medication/supplement, a compliance record is logged for that protocol. Misses count too — "I missed my magnesium because I ran out" records the miss with your reason. If you already confirmed today on the dashboard, telling the check-in something different updates it (your most recent word wins).</li>
     <li><strong>Intervention use</strong> — if you used one or more interventions, each is recorded separately on the episode with its own effectiveness rating and time to relief</li>
   </ul>
   <p>After processing, the AI confirms exactly what it logged. Review the confirmation — if everything looks right, you're done.</p>
@@ -137,8 +137,16 @@
   <h2 class="help-heading">Protocols</h2>
 
   <h3 class="help-subheading">Preventative protocols</h3>
-  <p>These are the ongoing interventions you're using to manage your condition — medications, supplements, lifestyle changes, dietary protocols. Add them in the <a href="{{ url_for('protocols') }}">Protocols</a> section with a start date and notes.</p>
-  <p>Each protocol has a detail page where you can log daily compliance and see a full history timeline. The timeline shows every taken and missed entry alongside status changes — when you started, paused, stopped, or changed the dose — all in reverse chronological order. If you've already logged today, the form collapses so you can update it without losing what you entered.</p>
+  <p>These are the ongoing interventions you're using to manage your condition — medications, supplements, lifestyle changes, dietary protocols. Add them in the <a href="{{ url_for('protocols') }}">Protocols</a> section with a start date and notes. There's also an optional <strong>"Why I'm doing this"</strong> field — if you fill it in, Baseline uses your own words to keep you connected to your goal on days that don't go to plan.</p>
+
+  <h3 class="help-subheading">Today's Protocols — daily logging on your dashboard</h3>
+  <p>Your dashboard opens with a <strong>Today's Protocols</strong> card listing each active protocol. Baseline assumes you took everything — that's the dashed "Taken" state — but nothing is saved until you tap <strong>Confirm</strong>. Most days that's one tap. If you missed something, tap <strong>Missed</strong> on that protocol first (you can add a quick optional note), then Confirm. A missed day isn't a failure — logging it honestly is exactly what makes your experiments trustworthy.</p>
+  <ul class="help-list">
+    <li><strong>The 7-day dots</strong> above the list show your last week: green means you logged everything as taken, amber means you logged the day with some misses, and a hollow dot means nothing was recorded.</li>
+    <li><strong>Tap a hollow dot</strong> to fill in a day you missed — only log what you actually remember, and use "Not sure — leave blank" freely. A blank day is better data than a guess.</li>
+    <li><strong>Changed your mind?</strong> After confirming, tap "change something" to edit today.</li>
+  </ul>
+  <p>Each protocol also has a detail page where you can log or correct a single day and see a full history timeline. The timeline shows every taken and missed entry alongside status changes — when you started, paused, stopped, or changed the dose — all in reverse chronological order.</p>
   <p>You can also add protocols with a future start date to plan what you want to try next. This is useful for keeping a running list of things you want to experiment with.</p>
 
   <h3 class="help-subheading">Interventions</h3>

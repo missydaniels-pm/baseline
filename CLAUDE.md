@@ -74,8 +74,8 @@ Baseline Files/
 - **Episode** — health episodes with onset timestamp, duration, functional_impairment, notes
 - **SymptomScore** — per-episode entry. For scale symptoms `score` (1–10) is set and `value_bool` is null; for binary symptoms `value_bool` is set and `score` is null. Aggregations must filter `score IS NOT NULL` (scale) or `value_bool IS NOT NULL` (binary) so the two types never mix.
 - **EpisodeIntervention** — junction table linking episodes to interventions (Protocol type='rescue') with per-intervention effectiveness (1-10) and time_to_relief_hours
-- **Protocol** — preventative protocols with name, start_date, dose, frequency, status
-- **ProtocolCompliance** — daily compliance log per protocol
+- **Protocol** — preventative protocols with name, start_date, dose, frequency, status, and optional `why` ("Why I'm doing this" — powers personalized compliance messaging)
+- **ProtocolCompliance** — daily compliance log per protocol. One row per (user, protocol, day), enforced by unique index `ux_protocol_compliance_day`. All writers (dashboard "Today's Protocols" batch confirm via `POST /protocols/log-day`, protocol-detail form, AI check-in) share `_upsert_compliance()` — most recent explicit statement wins. "Assumed taken" is UI-only; nothing is written until the user confirms. Dashboard card supports 7-day backfill; compliance dates use the browser-local date (±1 day server window) as a timezone interim fix.
 - **RescueOption** — interventions (displayed as "Interventions" in UI; stored as Protocol with type='rescue')
 - **Experiment** — hypothesis, protocol_id, start_date, stabilization_weeks (default 3), status, outcome
 - **CheckIn** — AI chat history

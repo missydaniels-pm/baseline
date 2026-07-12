@@ -139,6 +139,13 @@
 </div>
 
 <script>
+  // Store the browser's timezone so server-rendered "today" (dashboard
+  // compliance card) matches the user's local day. Railway runs UTC.
+  try {
+    var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (tz) document.cookie = 'baseline_tz=' + encodeURIComponent(tz) + ';path=/;max-age=31536000;samesite=lax';
+  } catch (e) { /* older browsers: server falls back to UTC */ }
+
   // Live-update slider display values
   document.querySelectorAll('input[type="range"]').forEach(function(slider) {
     var display = document.getElementById(slider.id + '_display');

@@ -38,6 +38,7 @@
         {% if protocol.start_date %}<span> · since {{ protocol.start_date.strftime('%b %-d, %Y') }}</span>{% endif %}
         <span class="status-{{ protocol.status }}"> · {{ protocol.status }}</span>
       </div>
+      {% if protocol.why %}<div class="tp-why-text">Why: {{ protocol.why }}</div>{% endif %}
       {% if protocol.notes %}<div class="notes-text">{{ protocol.notes }}</div>{% endif %}
     </div>
     <a href="{{ url_for('edit_protocol', protocol_id=protocol.id) }}" class="btn btn-secondary btn-sm" style="flex-shrink:0;">Edit</a>
