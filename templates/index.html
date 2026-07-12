@@ -46,7 +46,7 @@
     {% for d in tp_data.days %}
     {% if d.is_today %}
     <button type="button" class="tp-dot-btn" data-date="{{ d.iso }}"
-            aria-label="Today: {{ {'green': 'all taken', 'amber': 'logged, some missed', 'hollow': 'not yet logged — use the list below'}[d.status] }} — tap to jump to today's log">
+            aria-label="Today: {{ {'green': 'all taken', 'amber': 'logged, some missed', 'hollow': 'not yet logged'}[d.status] }} — tap to edit today's log">
       <span class="tp-dot tp-dot-{{ d.status }} tp-dot-today"></span>
     </button>
     {% else %}
@@ -106,7 +106,7 @@
     </div>
   </div>
 
-  <div class="tp-message" id="tpMessage" hidden></div>
+  <div class="tp-message" id="tpMessage" role="status" aria-live="polite" hidden></div>
 </div>
 {% endif %}
 
@@ -375,7 +375,10 @@
     return TP.messages.per_protocol[missedIds[0]];
   }
 
+  var todayDone = false;  // true while the collapsed done-state is today's current view
+
   function showDone(allTaken, missedCount, total) {
+    todayDone = true;
     if (rowsEl) rowsEl.hidden = true;
     if (bulkEl) bulkEl.hidden = true;
     doneEl.hidden = false;
@@ -409,7 +412,8 @@
     showMessage(TP.messages.missed_all, false);
   });
 
-  document.getElementById('tpChange').addEventListener('click', function() {
+  function expandToday() {
+    todayDone = false;
     doneEl.hidden = true;
     if (rowsEl) rowsEl.hidden = false;
     if (bulkEl) bulkEl.hidden = false;
@@ -417,7 +421,37 @@
     chipEl.textContent = 'Unconfirmed';
     chipEl.classList.remove('is-confirmed');
     paintToday();
-  });
+    // Keep keyboard position when the element that had focus gets hidden.
+    var firstPill = rowsEl && rowsEl.querySelector('.tp-pill');
+    if (firstPill) firstPill.focus();
+  }
+
+  document.getElementById('tpChange').addEventListener('click', expandToday);
+
+  // Only one editing surface at a time: the backfill editor replaces the
+  // today section while open, and closing it restores whichever today view
+  // (expanded rows or collapsed done-state) was current.
+  function hideTodaySection() {
+    if (rowsEl) rowsEl.hidden = true;
+    if (bulkEl) bulkEl.hidden = true;
+    doneEl.hidden = true;
+  }
+
+  function restoreTodaySection() {
+    if (todayDone) {
+      doneEl.hidden = false;
+      chipEl.textContent = 'Logged';
+      chipEl.classList.add('is-confirmed');
+    } else {
+      if (rowsEl) rowsEl.hidden = false;
+      if (bulkEl) bulkEl.hidden = false;
+      chipEl.textContent = 'Unconfirmed';
+      chipEl.classList.remove('is-confirmed');
+      // Restore the mid-edit context message (missed-protocol guidance) that
+      // openBackfill hid; callers that have something newer to say override it.
+      showMessage(firstMissedMessage(), false);
+    }
+  }
 
   function postDay(dateIso, entries, onOk, onErr) {
     fetch('{{ url_for("log_protocol_day") }}', {
@@ -478,21 +512,26 @@
     return bfDate !== null && Object.keys(bfState).some(function(k) { return bfState[k] !== bfOrig[k]; });
   }
 
-  // Called before an implicit close (tapping today's dot or another day's dot) —
+  // Computed before an implicit close (tapping today's dot or another day's dot) —
   // explicit exits (Save / "Not sure — leave blank" / tap-again) stay silent.
-  function noteDiscardedBackfill() {
-    if (!hasUnsavedBackfill()) return;
+  function pendingDiscardNote() {
+    if (!hasUnsavedBackfill()) return null;
     var prev = TP.days.filter(function(d) { return d.iso === bfDate; })[0];
-    showMessage((prev ? prev.weekday : 'That day') + " wasn't saved — tap its dot to pick up where you left off.", false);
+    return (prev ? prev.weekday : 'That day') + " wasn't saved — tap its dot to pick up where you left off.";
   }
 
-  function closeBackfill() {
+  function closeBackfill(skipRestore) {
     bfEl.hidden = true;
     bfDate = null;
     card.querySelectorAll('.tp-dot-editing').forEach(function(d) { d.classList.remove('tp-dot-editing'); });
+    if (!skipRestore) restoreTodaySection();
   }
 
   function openBackfill(day) {
+    hideTodaySection();
+    msgEl.hidden = true;
+    chipEl.textContent = 'Editing ' + day.weekday;
+    chipEl.classList.remove('is-confirmed');
     bfDate = day.iso;
     bfState = {};
     bfOrig = {};
@@ -532,6 +571,10 @@
     document.getElementById('tpBackfillTitle').textContent = day.label;
     document.getElementById('tpBackfillSave').textContent = 'Save ' + day.weekday;
     bfEl.hidden = false;
+    // Anchor keyboard/screen-reader context on the day heading.
+    var title = document.getElementById('tpBackfillTitle');
+    title.setAttribute('tabindex', '-1');
+    title.focus();
   }
 
   function paintBackfillRow(pair, took) {
@@ -548,19 +591,32 @@
   card.querySelectorAll('button.tp-dot-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var iso = btn.getAttribute('data-date');
-      // Today's dot returns to the today log (closes any open backfill editor).
-      if (iso === TP.today) { noteDiscardedBackfill(); closeBackfill(); return; }
+      // Today's dot: close any open backfill editor and go straight to editing
+      // today — same as "change something", no extra click. Today keeps its
+      // purple ring rather than the amber editing ring: it's the home position,
+      // and its expanded rows are the default (all-day) editing state.
+      if (iso === TP.today) {
+        var note = pendingDiscardNote();
+        closeBackfill(todayDone);   // expandToday paints the today view itself
+        if (todayDone) expandToday();
+        if (note) showMessage(note, false);
+        return;
+      }
       if (bfDate === iso) { closeBackfill(); return; }
       var day = TP.days.filter(function(d) { return d.iso === iso; })[0];
       if (!day) return;
-      noteDiscardedBackfill();
-      closeBackfill();
+      var prevNote = pendingDiscardNote();
+      closeBackfill(true);          // openBackfill re-hides the today section
       btn.querySelector('.tp-dot').classList.add('tp-dot-editing');
       openBackfill(day);
+      if (prevNote) showMessage(prevNote, false);
     });
   });
 
-  document.getElementById('tpBackfillCancel').addEventListener('click', closeBackfill);
+  document.getElementById('tpBackfillCancel').addEventListener('click', function() {
+    showMessage(null);   // drop any stale save-error before restoring the today view
+    closeBackfill();
+  });
 
   document.getElementById('tpBackfillSave').addEventListener('click', function() {
     var entries = Object.keys(bfState)

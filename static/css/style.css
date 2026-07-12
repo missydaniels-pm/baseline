@@ -3127,7 +3127,8 @@ button.tp-dot-btn:hover .tp-dot { transform: scale(1.12); }
   border-radius: 8px;
 }
 
-.tp-day-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.tp-day-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.tp-day-title [tabindex="-1"]:focus { outline: none; }
 .tp-day-hint { font-size: 13px; font-weight: 400; color: var(--text-muted); }
 .tp-backfill-actions { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
 
