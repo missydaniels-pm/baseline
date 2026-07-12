@@ -3146,10 +3146,23 @@ def delete_protocol(protocol_id):
             flash(f'{protocol.name} has been removed. Historical episode data is preserved.', 'success')
             return redirect(url_for('protocols'))
 
-    # No historical usage (or preventative) — safe to hard delete
-    EpisodeIntervention.query.filter_by(protocol_id=protocol.id).delete()
-    db.session.delete(protocol)
-    db.session.commit()
+    # No historical usage (or preventative) — hard delete, removing children first
+    # (PostgreSQL enforces these FKs; SQLite does not, so local testing won't catch omissions).
+    # Experiments are detached (protocol_id=NULL), not deleted — hypothesis/outcome history
+    # survives the protocol; templates guard with {% if exp.protocol %} and simply omit
+    # the protocol line for detached experiments.
+    try:
+        EpisodeIntervention.query.filter_by(protocol_id=protocol.id).delete()
+        ProtocolCompliance.query.filter_by(protocol_id=protocol.id, user_id=user.id).delete()
+        ProtocolEvent.query.filter_by(protocol_id=protocol.id, user_id=user.id).delete()
+        Experiment.query.filter_by(protocol_id=protocol.id, user_id=user.id).update({'protocol_id': None})
+        db.session.delete(protocol)
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        app.logger.warning('delete_protocol failed for protocol %s', protocol_id, exc_info=True)
+        flash("Couldn't delete this protocol — please try again.", 'error')
+        return redirect(url_for('edit_protocol', protocol_id=protocol_id))
     flash('Deleted.', 'success')
     return redirect(url_for('protocols'))
 
@@ -3171,6 +3184,7 @@ def dev_reset():
         user = get_user()
         CheckIn.query.filter_by(user_id=user.id).delete()
         ProtocolCompliance.query.filter_by(user_id=user.id).delete()
+        ProtocolEvent.query.filter_by(user_id=user.id).delete()
         Experiment.query.filter_by(user_id=user.id).delete()
         episode_ids = db.session.query(Episode.id).filter_by(user_id=user.id)
         EpisodeIntervention.query.filter(
