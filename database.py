@@ -1,7 +1,21 @@
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta, date
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 
 db = SQLAlchemy()
+
+
+@event.listens_for(Engine, 'connect')
+def _enforce_sqlite_foreign_keys(dbapi_connection, connection_record):
+    # SQLite doesn't enforce foreign keys by default; production PostgreSQL
+    # always does. Enforcing them locally makes delete-path bugs reproducible
+    # in dev instead of surfacing as production IntegrityErrors (root cause of
+    # the 7/12/26 protocol-delete incident).
+    if type(dbapi_connection).__module__.startswith('sqlite3'):
+        cursor = dbapi_connection.cursor()
+        cursor.execute('PRAGMA foreign_keys=ON')
+        cursor.close()
 
 
 class User(db.Model):

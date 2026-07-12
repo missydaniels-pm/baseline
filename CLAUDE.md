@@ -202,7 +202,8 @@ After every code change, Claude Code must follow this 4-phase workflow automatic
 
 1. Build the requested feature or fix
 2. Verify the app loads locally without errors (`python app.py` or check for import/syntax issues)
-3. Confirm the change works as intended
+3. Confirm the change works as intended (happy path)
+4. **Adversarial verification** — users rarely follow happy paths. Drive the real UI in the browser and actively try to break the change: do steps out of order (edit after confirm, open B while A is mid-edit), interrupt mid-flow (navigate away, back button, reload with unsaved state), repeat actions (double-tap, re-open after close), revisit completed states, and interleave every entry point that writes the same data (form vs. AI check-in vs. dashboard). For anything that writes new rows referencing existing tables, exercise the *delete paths of the parent records* — local SQLite now enforces FKs (`PRAGMA foreign_keys=ON` in database.py) so these failures reproduce in dev.
 
 ### Phase 2 — Parallel Review
 
@@ -220,10 +221,13 @@ Launch review agents in parallel using the Task tool with `subagent_type: "gener
 
 All agents run in parallel. Wait for all to complete before proceeding.
 
+**Prompt framing:** every review prompt must (a) describe what changed and what it is *supposed* to do, and (b) explicitly instruct the agent to **attempt to falsify** that description — hunt for inputs, sequences, and states where it breaks — and to widen from the diff to its blast radius (unchanged code whose behavior shifts because of new data or state the change writes).
+
 ### Phase 3 — Fix & Document
 
 1. **Present findings** — Show Missy a summary of all agent reports (blockers, warnings, architecture decisions)
 2. **Fix blockers** — Address any BLOCKER items from QA and Code Review. Re-run affected agents if fixes are significant.
+   - **Triage rule for "pre-existing" findings:** a finding marked pre-existing or out-of-scope that touches a surface *this change makes more prominent or more frequently used* is promoted to an explicit fix-now-vs-accept decision in the Deploy Gate summary — never a footnote. (Lesson from 7/12/26: a QA note about stacked editing surfaces was parked as "pre-existing"; the owner hit it in production hours later.)
 3. **Address architecture decisions** — If the Code Reviewer flagged architecture decisions, present them to Missy with trade-off analysis before proceeding.
 4. **Update documentation** — Reference `.claude/agents/doc-updater.md` checklist and apply updates directly:
    - Update `CLAUDE.md` if project context changed

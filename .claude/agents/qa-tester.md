@@ -38,6 +38,7 @@ For every change, review the following:
 - [ ] Boolean handling — PostgreSQL is strict about True/False vs 1/0
 - [ ] String comparisons — PostgreSQL is case-sensitive by default
 - [ ] Any raw SQL? If so, does it use parameterized queries?
+- [ ] Foreign-key semantics: PostgreSQL always enforces FKs. Local SQLite now enforces them too (`PRAGMA foreign_keys=ON` in database.py), but still reason about every delete/update path as if FKs are strict — especially bulk deletes of parent rows.
 
 ### 4. Edge Cases
 - [ ] What happens with zero data (new user, no episodes, no protocols)?
@@ -56,6 +57,21 @@ For every change, review the following:
 - [ ] Are all new routes decorated with `@login_required`?
 - [ ] Can an unauthenticated user access any new endpoints?
 - [ ] Does the session handle edge cases (expired session, concurrent logins)?
+
+### 7. Blast Radius — data-driven regressions (lesson from 7/12/26 delete incident)
+The diff is not the boundary of the change. Ask: **what UNCHANGED code behaves differently because of the data or state this change writes?**
+- [ ] Does this change write new rows/columns/flags? List every route that reads, aggregates, or deletes those tables — even routes not in the diff — and check each.
+- [ ] New child rows (FK references)? Check **every delete path of the parent** — a delete that worked when children were rare will fail (or silently destroy more) when they're everywhere.
+- [ ] Does this change make an existing surface more prominent or more frequently used? Its pre-existing bugs are now this change's bugs — flag them as in-scope, not "pre-existing."
+
+### 8. Adversarial Sequences — users rarely follow happy paths
+Do not only verify the flow the change was designed for. Actively try to break it:
+- [ ] Do the steps **out of order** (edit after confirm, open B while A is mid-edit, submit twice)
+- [ ] **Interrupt mid-flow** (navigate away with unsaved state, back button, reload)
+- [ ] **Repeat** actions (double-tap buttons, re-open what was just closed, toggle rapidly)
+- [ ] **Revisit after completion** (what does the done state allow? does re-editing work?)
+- [ ] Two entry points writing the same data (form + AI check-in, dashboard + detail page) — interleave them
+State every sequence you tried in your report, including the ones that passed.
 
 ## Output Format
 
@@ -85,6 +101,7 @@ Return your findings in this format:
 
 - You are **read-only**. Do not modify any files.
 - Do not push, commit, or deploy anything.
-- Focus on **what changed** — read the recent git diff if available, or review the files mentioned in the task prompt.
+- Start from **what changed** (git diff / files in the task prompt), then widen to the blast radius (section 7) — the diff is where you start, not where you stop.
+- **Falsify, don't verify.** The task prompt describes what the change is supposed to do; your job is to find inputs, sequences, and states where that description breaks — not to confirm the author's claims.
 - Be specific: cite file names, line numbers, and exact code when flagging issues.
 - Don't flag style preferences — only flag real bugs, data risks, or regressions.

@@ -443,6 +443,10 @@ def run_migrations():
         if peak_col and peak_col.get('nullable') is False:
             print("Migrating episodes.peak_severity to nullable...")
             if is_sqlite:
+                # PRAGMA foreign_keys=OFF is load-bearing here: connections now
+                # default to FK enforcement ON (database.py listener), and these
+                # table-rebuild blocks DROP/RENAME parents of referenced tables.
+                # Removing the OFF/ON pair breaks the rebuild immediately in dev.
                 conn.execute(text('PRAGMA foreign_keys=OFF'))
                 conn.execute(text('''
                     CREATE TABLE episodes_new (
@@ -557,7 +561,7 @@ def run_migrations():
 
 def cleanup_stale_unverified_users():
     """Delete unverified accounts older than 48h so the email can be re-registered.
-    Runs at startup; safe at our scale (5 users) without cron."""
+    Runs at startup; safe at our scale without cron."""
     try:
         cutoff = datetime.utcnow() - timedelta(hours=48)
         stale = User.query.filter(
@@ -565,14 +569,22 @@ def cleanup_stale_unverified_users():
             User.is_active == False,
             User.created_at < cutoff,
         ).all()
-        if not stale:
-            return
-        for u in stale:
-            # Unverified accounts never completed onboarding, so no child data to clean.
-            db.session.delete(u)
-        db.session.commit()
     except Exception:
         db.session.rollback()
+        app.logger.warning('stale-unverified cleanup query failed', exc_info=True)
+        return
+    for u in stale:
+        try:
+            # Unverified accounts have no health data, but registration writes a
+            # signup UserActivity row (FK to users). Anonymize it (user_id=NULL)
+            # so signup analytics stay accurate while the account is removed.
+            # Before 7/12/26 this FK silently aborted the whole cleanup batch.
+            UserActivity.query.filter_by(user_id=u.id).update({'user_id': None})
+            db.session.delete(u)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            app.logger.warning('stale-unverified cleanup failed for user %s', u.id, exc_info=True)
 
 
 def backfill_verified_existing_users():
@@ -2798,8 +2810,18 @@ def edit_episode(episode_id):
 def delete_episode(episode_id):
     user = get_user()
     episode = Episode.query.filter_by(id=episode_id, user_id=user.id).first_or_404()
-    db.session.delete(episode)
-    db.session.commit()
+    try:
+        # Detach any AI check-in messages that reference this episode — chat
+        # history survives, only the link goes. SymptomScores and interventions
+        # are handled by the ORM cascade; CheckIn has no cascade relationship.
+        CheckIn.query.filter_by(episode_id=episode.id, user_id=user.id).update({'episode_id': None})
+        db.session.delete(episode)
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        app.logger.warning('delete_episode failed for episode %s', episode_id, exc_info=True)
+        flash("Couldn't delete this episode — please try again.", 'error')
+        return redirect(url_for('episodes'))
     flash('Episode deleted.', 'success')
     return redirect(url_for('episodes'))
 

@@ -66,6 +66,14 @@ This agent only runs when template files (`.html`) or CSS files (`.css`) are mod
 - [ ] Is the information hierarchy clear without requiring deep reading?
 - [ ] Can the primary action (log episode, check in) be completed in minimal taps?
 
+### 7. Adversarial Sequences — users rarely follow happy paths
+You review statically, so simulate interactions on paper: read the JS/template state handling and walk through sequences step by step, tracking which elements are visible/hidden/focused at each step.
+- [ ] Walk every flow **out of order**: complete → re-edit → start a different flow mid-edit; open panel B while panel A is open.
+- [ ] Enumerate every pair of UI states (panels, editors, messages, modals) that the code allows to be visible **simultaneously** — should they coexist? Stacked or contradictory surfaces are a finding.
+- [ ] Repeat and interrupt: what happens on double-tap, re-open after close, back button, reload mid-edit? Is unsaved state discarded silently?
+- [ ] Compare the tap-cost of equivalent actions: if the most frequent action takes more taps than a rarer one (e.g., editing today vs. a past day), that asymmetry is a finding.
+- [ ] After any completion state, check the path back into editing — is it discoverable and cheap?
+
 ## Output Format
 
 ```
@@ -93,7 +101,8 @@ This agent only runs when template files (`.html`) or CSS files (`.css`) are mod
 
 - You are **read-only**. Do not modify any files.
 - Do not push, commit, or deploy anything.
-- Focus only on templates and CSS that were changed.
+- Start from the templates and CSS that were changed, but review the *interaction* they produce — walk state sequences (section 7), don't just lint markup.
+- **Falsify, don't verify.** The task prompt describes the intended interaction; your job is to find the sequences where it confuses, strands, or silently loses the user's work.
 - Be specific: cite file names, line numbers, and exact code.
 - Think mobile-first. Desktop is secondary for this app.
 - Remember: users may be in pain when using this app. Simplicity and clarity matter more than visual flair.
