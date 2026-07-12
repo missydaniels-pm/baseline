@@ -2971,7 +2971,6 @@ input[type="range"]::-moz-range-thumb {
 
 .tp-dot-btn:focus-visible { outline: 2px solid #a07de0; outline-offset: 2px; border-radius: 50%; }
 button.tp-dot-btn:hover .tp-dot { transform: scale(1.12); }
-span.tp-dot-btn { cursor: default; }
 
 .tp-dot {
   width: 26px;
@@ -3129,7 +3128,7 @@ span.tp-dot-btn { cursor: default; }
 }
 
 .tp-day-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
-.tp-day-hint { font-weight: 400; color: var(--text-muted); }
+.tp-day-hint { font-size: 13px; font-weight: 400; color: var(--text-muted); }
 .tp-backfill-actions { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
 
 /* Why line on protocol detail */
@@ -3140,7 +3139,7 @@ span.tp-dot-btn { cursor: default; }
   .tp-pair { flex: 1 1 100%; }
   .tp-pair .tp-pill { flex: 1; }
   .tp-dots { margin-left: -6px; gap: 0; }
-  .tp-dot-btn { padding: 7px 5px; }
+  .tp-dot-btn { padding: 10px 6px; }  /* 36×44px target — height meets the 44px guideline */
   .tp-dot { width: 24px; height: 24px; }
   .tp-bulk { flex-wrap: wrap; }
   .tp-dots-label { display: none; }

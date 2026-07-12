@@ -45,10 +45,10 @@
   <div class="tp-dots" role="group" aria-label="Protocol log, last 7 days">
     {% for d in tp_data.days %}
     {% if d.is_today %}
-    <span class="tp-dot-btn" data-date="{{ d.iso }}" role="img"
-          aria-label="Today: {{ {'green': 'all taken', 'amber': 'logged, some missed', 'hollow': 'not yet logged — use the list below'}[d.status] }}">
+    <button type="button" class="tp-dot-btn" data-date="{{ d.iso }}"
+            aria-label="Today: {{ {'green': 'all taken', 'amber': 'logged, some missed', 'hollow': 'not yet logged — use the list below'}[d.status] }} — tap to jump to today's log">
       <span class="tp-dot tp-dot-{{ d.status }} tp-dot-today"></span>
-    </span>
+    </button>
     {% else %}
     <button type="button" class="tp-dot-btn" data-date="{{ d.iso }}"
             aria-label="{{ d.label }}: {{ {'green': 'all taken', 'amber': 'logged, some missed', 'hollow': 'not logged — tap to fill in'}[d.status] }}">
@@ -97,7 +97,8 @@
   </div>
 
   <div class="tp-day-editor" id="tpBackfill" hidden>
-    <div class="tp-day-title"><span id="tpBackfillTitle"></span> <span class="tp-day-hint">— fill in what you remember</span></div>
+    <div class="tp-day-title"><span id="tpBackfillTitle"></span></div>
+    <div class="tp-day-hint" style="margin-bottom:8px;">Only log what you remember — a blank day is better data than a guess.</div>
     <div id="tpBackfillRows"></div>
     <div class="tp-backfill-actions">
       <button type="button" class="btn btn-primary btn-sm" id="tpBackfillSave">Save</button>
@@ -470,7 +471,20 @@
   var bfEl = document.getElementById('tpBackfill');
   var bfRows = document.getElementById('tpBackfillRows');
   var bfState = {};   // pid -> null|true|false (null = leave blank)
+  var bfOrig = {};    // snapshot at open, to detect unsaved changes on implicit close
   var bfDate = null;
+
+  function hasUnsavedBackfill() {
+    return bfDate !== null && Object.keys(bfState).some(function(k) { return bfState[k] !== bfOrig[k]; });
+  }
+
+  // Called before an implicit close (tapping today's dot or another day's dot) —
+  // explicit exits (Save / "Not sure — leave blank" / tap-again) stay silent.
+  function noteDiscardedBackfill() {
+    if (!hasUnsavedBackfill()) return;
+    var prev = TP.days.filter(function(d) { return d.iso === bfDate; })[0];
+    showMessage((prev ? prev.weekday : 'That day') + " wasn't saved — tap its dot to pick up where you left off.", false);
+  }
 
   function closeBackfill() {
     bfEl.hidden = true;
@@ -481,9 +495,11 @@
   function openBackfill(day) {
     bfDate = day.iso;
     bfState = {};
+    bfOrig = {};
     bfRows.innerHTML = '';
     day.protocols.forEach(function(e) {
       bfState[e.id] = e.took;
+      bfOrig[e.id] = e.took;
       var row = document.createElement('div');
       row.className = 'tp-row';
       var info = document.createElement('div');
@@ -532,9 +548,12 @@
   card.querySelectorAll('button.tp-dot-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var iso = btn.getAttribute('data-date');
+      // Today's dot returns to the today log (closes any open backfill editor).
+      if (iso === TP.today) { noteDiscardedBackfill(); closeBackfill(); return; }
       if (bfDate === iso) { closeBackfill(); return; }
       var day = TP.days.filter(function(d) { return d.iso === iso; })[0];
       if (!day) return;
+      noteDiscardedBackfill();
       closeBackfill();
       btn.querySelector('.tp-dot').classList.add('tp-dot-editing');
       openBackfill(day);
@@ -562,7 +581,7 @@
         if (bfState[e.id] !== null && bfState[e.id] !== undefined) e.took = bfState[e.id];
       });
       closeBackfill();
-      showMessage('Logged for ' + (day ? day.weekday : 'that day') + '. Only log what you remember — a blank day is better data than a guess.', true);
+      showMessage('Logged for ' + (day ? day.weekday : 'that day') + '.', true);
     }, function(j) {
       saveBtn.disabled = false;
       saveBtn.textContent = saveLabel;
