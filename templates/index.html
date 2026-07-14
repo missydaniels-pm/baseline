@@ -46,12 +46,12 @@
     {% for d in tp_data.days %}
     {% if d.is_today %}
     <button type="button" class="tp-dot-btn" data-date="{{ d.iso }}"
-            aria-label="Today: {{ {'green': 'all taken', 'amber': 'logged, some missed', 'hollow': 'not yet logged'}[d.status] }} — tap to edit today's log">
+            aria-label="Today: {{ {'green': 'all complete', 'amber': 'logged, not all complete', 'hollow': 'not yet logged'}[d.status] }} — tap to edit today's log">
       <span class="tp-dot tp-dot-{{ d.status }} tp-dot-today"></span>
     </button>
     {% else %}
     <button type="button" class="tp-dot-btn" data-date="{{ d.iso }}"
-            aria-label="{{ d.label }}: {{ {'green': 'all taken', 'amber': 'logged, some missed', 'hollow': 'not logged — tap to fill in'}[d.status] }}">
+            aria-label="{{ d.label }}: {{ {'green': 'all complete', 'amber': 'logged, not all complete', 'hollow': 'not logged — tap to fill in'}[d.status] }}">
       <span class="tp-dot tp-dot-{{ d.status }}"></span>
     </button>
     {% endif %}
@@ -68,21 +68,21 @@
         {% if e.dose %}<div class="tp-dose">{{ e.dose }}</div>{% endif %}
       </div>
       <div class="tp-pair">
-        <button type="button" class="tp-pill" data-pid="{{ e.id }}" data-val="taken" aria-pressed="false">Taken</button>
-        <button type="button" class="tp-pill" data-pid="{{ e.id }}" data-val="missed" aria-pressed="false">Missed</button>
+        <button type="button" class="tp-pill" data-pid="{{ e.id }}" data-val="taken" aria-pressed="false" aria-label="Complete — {{ e.name }}">Complete</button>
+        <button type="button" class="tp-pill" data-pid="{{ e.id }}" data-val="missed" aria-pressed="false" aria-label="Not Today — {{ e.name }}">Not Today</button>
       </div>
     </div>
     <div class="tp-note" id="tpNote_{{ e.id }}" hidden>
       <input type="text" id="tp_note_{{ e.id }}" maxlength="500"
-             aria-label="Note about missing {{ e.name }} (optional)"
+             aria-label="Optional note for {{ e.name }}"
              placeholder="Add a note? (optional) — e.g. ran out, refill coming" value="{{ e.note }}">
     </div>
     {% endfor %}
   </div>
 
   <div class="tp-bulk" id="tpBulk">
-    <button type="button" class="btn btn-primary btn-sm" id="tpConfirm">Confirm</button>
-    <button type="button" class="tp-ghost" id="tpMissedAll">Missed all today</button>
+    <button type="button" class="btn btn-primary btn-sm" id="tpConfirm">Confirm all as complete</button>
+    <button type="button" class="tp-ghost" id="tpMissedAll">Mark all Not Today</button>
   </div>
   {% else %}
   <div class="tp-dose" style="padding:6px 0;">Nothing to log yet today — your protocols haven't started. You can still fill in past days from the dots above.</div>
@@ -347,25 +347,43 @@
     msgEl.hidden = false;
   }
 
-  function paintPill(pid, took, assumed) {
+  // Tri-state: took === null is a genuine blank (neither pill pressed).
+  // The assumption "blank = complete" now lives only in the button label
+  // ("Confirm all as complete"), so a cleared pill reads as truly unset.
+  function paintPill(pid, took) {
     var pills = rowsEl.querySelectorAll('.tp-pill[data-pid="' + pid + '"]');
     pills.forEach(function(b) {
       var isTaken = b.getAttribute('data-val') === 'taken';
-      b.classList.remove('selected-taken', 'selected-missed', 'tp-pill-assumed');
+      b.classList.remove('selected-taken', 'selected-missed');
       var on = (took === true && isTaken) || (took === false && !isTaken);
-      b.setAttribute('aria-pressed', on || (assumed && isTaken) ? 'true' : 'false');
-      if (assumed && isTaken) b.classList.add('tp-pill-assumed');
-      else if (on) b.classList.add(isTaken ? 'selected-taken' : 'selected-missed');
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      if (on) b.classList.add(isTaken ? 'selected-taken' : 'selected-missed');
     });
     var note = document.getElementById('tpNote_' + pid);
-    if (note) note.hidden = (took !== false);
+    if (note) {
+      note.hidden = (took !== false);
+      // A note only belongs to a "Not Today" row. If the row is cleared back to
+      // blank (or switched to Complete), drop any typed text so it can't be
+      // silently discarded on save or carried onto a different state.
+      if (took !== false) {
+        var inp = document.getElementById('tp_note_' + pid);
+        if (inp) inp.value = '';
+      }
+    }
   }
 
   function paintToday() {
-    Object.keys(state).forEach(function(pid) {
-      var t = state[pid].took;
-      paintPill(pid, t, t === null);
-    });
+    Object.keys(state).forEach(function(pid) { paintPill(pid, state[pid].took); });
+  }
+
+  function anySelected() {
+    return Object.keys(state).some(function(pid) { return state[pid].took !== null; });
+  }
+
+  // No explicit statement yet → offer the one-tap assumed-compliance path.
+  // Once anything is marked (or cleared from a saved state) → it's a Save.
+  function updateButtonLabel() {
+    if (confirmBtn) confirmBtn.textContent = anySelected() ? 'Save' : 'Confirm all as complete';
   }
 
   function firstMissedMessage() {
@@ -389,8 +407,8 @@
     check.classList.toggle('tp-done-check-mixed', !allTaken);
     document.getElementById('tpDoneTitle').textContent = allTaken ? 'All set for today' : 'Logged for today';
     document.getElementById('tpDoneSummary').textContent = allTaken
-      ? ('All ' + total + ' taken')
-      : (missedCount + ' of ' + total + ' missed');
+      ? ('All ' + total + ' complete')
+      : (missedCount + ' of ' + total + ' not completed');
     if (TP.returning_after_blank) showMessage(TP.messages.returning_after_blank, false);
     else if (allTaken) showMessage(TP.messages.all_taken, true);
     else showMessage(firstMissedMessage(), false);
@@ -400,8 +418,12 @@
     var pill = ev.target.closest('.tp-pill');
     if (!pill) return;
     var pid = pill.getAttribute('data-pid');
-    state[pid].took = pill.getAttribute('data-val') === 'taken';   // flip-only
-    paintPill(pid, state[pid].took, false);
+    var want = pill.getAttribute('data-val') === 'taken';
+    // Tap-again-to-clear: a third, blank state so a protocol can be left
+    // genuinely unmarked rather than assumed complete.
+    state[pid].took = (state[pid].took === want) ? null : want;
+    paintPill(pid, state[pid].took);
+    updateButtonLabel();
     showMessage(firstMissedMessage(), false);
   });
 
@@ -409,6 +431,7 @@
   if (missedAllBtn) missedAllBtn.addEventListener('click', function() {
     Object.keys(state).forEach(function(pid) { state[pid].took = false; });
     paintToday();
+    updateButtonLabel();
     showMessage(TP.messages.missed_all, false);
   });
 
@@ -421,6 +444,7 @@
     chipEl.textContent = 'Unconfirmed';
     chipEl.classList.remove('is-confirmed');
     paintToday();
+    updateButtonLabel();
     // Keep keyboard position when the element that had focus gets hidden.
     var firstPill = rowsEl && rowsEl.querySelector('.tp-pill');
     if (firstPill) firstPill.focus();
@@ -472,31 +496,51 @@
   }
 
   if (confirmBtn) confirmBtn.addEventListener('click', function() {
+    // Nothing marked → "Confirm all as complete" (assumed compliance: every
+    // blank is written taken). Anything marked → "Save" exactly what's set,
+    // and un-log (send null → delete row) anything left blank.
+    var confirmAll = !anySelected();
     confirmBtn.disabled = true;
     confirmBtn.textContent = 'Saving…';
     var entries = Object.keys(state).map(function(pid) {
       var noteInput = document.getElementById('tp_note_' + pid);
+      var t = confirmAll ? true : state[pid].took;   // true | false | null
       return {
         protocol_id: parseInt(pid, 10),
-        took: state[pid].took !== false,          // assumed counts as taken
-        note: (state[pid].took === false && noteInput) ? noteInput.value.trim() : '',
+        took: t,
+        note: (t === false && noteInput) ? noteInput.value.trim() : '',
       };
     });
     postDay(localToday(), entries, function(j) {
       confirmBtn.disabled = false;
-      confirmBtn.textContent = 'Confirm';
-      Object.keys(state).forEach(function(pid) {
-        if (state[pid].took === null) state[pid].took = true;
-      });
-      var total = entries.length;
-      var missed = entries.filter(function(e) { return !e.took; }).length;
+      if (confirmAll) {
+        Object.keys(state).forEach(function(pid) {
+          if (state[pid].took === null) state[pid].took = true;
+        });
+      }
+      updateButtonLabel();
       recolorDot(j.date, j.day_status);
       // Keep the today-dot mapping honest if browser-local and server dates differ.
       if (j.date !== TP.days[TP.days.length - 1].iso) recolorDot(TP.days[TP.days.length - 1].iso, j.day_status);
-      showDone(missed === 0, missed, total);
+      var resolved = Object.keys(state).filter(function(pid) { return state[pid].took !== null; });
+      if (resolved.length === Object.keys(state).length) {
+        var missed = resolved.filter(function(pid) { return state[pid].took === false; }).length;
+        showDone(missed === 0, missed, resolved.length);
+        // The button that had focus was just hidden — hand focus to the done
+        // state's edit link so keyboard/SR users keep their place.
+        var chg = document.getElementById('tpChange');
+        if (chg) chg.focus();
+      } else {
+        // Partial save: some protocols intentionally left open for later today.
+        todayDone = false;
+        chipEl.textContent = 'Partly logged';
+        chipEl.classList.remove('is-confirmed');
+        paintToday();
+        showMessage('Saved. The rest are still open for today.', true);
+      }
     }, function(j) {
       confirmBtn.disabled = false;
-      confirmBtn.textContent = 'Confirm';
+      updateButtonLabel();
       showMessage(j.error || "Couldn't save just now — try again in a moment.", false);
     });
   });
@@ -506,6 +550,7 @@
   var bfRows = document.getElementById('tpBackfillRows');
   var bfState = {};   // pid -> null|true|false (null = leave blank)
   var bfOrig = {};    // snapshot at open, to detect unsaved changes on implicit close
+  var bfNote = {};    // pid -> existing note, carried through unchanged (no note UI here)
   var bfDate = null;
 
   function hasUnsavedBackfill() {
@@ -535,10 +580,12 @@
     bfDate = day.iso;
     bfState = {};
     bfOrig = {};
+    bfNote = {};
     bfRows.innerHTML = '';
     day.protocols.forEach(function(e) {
       bfState[e.id] = e.took;
       bfOrig[e.id] = e.took;
+      bfNote[e.id] = e.note || '';
       var row = document.createElement('div');
       row.className = 'tp-row';
       var info = document.createElement('div');
@@ -553,8 +600,9 @@
         var b = document.createElement('button');
         b.type = 'button';
         b.className = 'tp-pill';
-        b.textContent = val === 'taken' ? 'Taken' : 'Missed';
+        b.textContent = val === 'taken' ? 'Complete' : 'Not Today';
         b.setAttribute('aria-pressed', 'false');
+        b.setAttribute('aria-label', (val === 'taken' ? 'Complete — ' : 'Not Today — ') + e.name);
         b.addEventListener('click', function() {
           var want = (val === 'taken');
           // Tap-again-to-clear: neutral is meaningful for past days.
@@ -619,10 +667,16 @@
   });
 
   document.getElementById('tpBackfillSave').addEventListener('click', function() {
-    var entries = Object.keys(bfState)
-      .filter(function(pid) { return bfState[pid] !== null; })
-      .map(function(pid) { return { protocol_id: parseInt(pid, 10), took: bfState[pid], note: '' }; });
-    if (!entries.length) { closeBackfill(); return; }
+    // Send every protocol as its tri-state value: blank (null) un-logs any
+    // existing row, so clearing a past day removes it rather than silently
+    // leaving the old entry behind.
+    var pids = Object.keys(bfState);
+    if (!pids.length) { closeBackfill(); return; }
+    // Carry each protocol's existing note through unchanged — this editor has no
+    // note field, so it must not blank out a note set elsewhere (detail form / AI).
+    var entries = pids.map(function(pid) {
+      return { protocol_id: parseInt(pid, 10), took: bfState[pid], note: bfNote[pid] || '' };
+    });
     var saveBtn = document.getElementById('tpBackfillSave');
     var saveLabel = saveBtn.textContent;
     saveBtn.disabled = true;
@@ -634,7 +688,10 @@
       recolorDot(savedDate, j.day_status);
       var day = TP.days.filter(function(d) { return d.iso === savedDate; })[0];
       if (day) day.protocols.forEach(function(e) {
-        if (bfState[e.id] !== null && bfState[e.id] !== undefined) e.took = bfState[e.id];
+        if (e.id in bfState) {
+          e.took = bfState[e.id];
+          if (bfState[e.id] === null) e.note = '';   // row was un-logged (deleted)
+        }
       });
       closeBackfill();
       showMessage('Logged for ' + (day ? day.weekday : 'that day') + '.', true);
@@ -653,6 +710,10 @@
     msgEl.hidden = true;   // calm on revisit: no message until something changes
   } else {
     paintToday();
+    updateButtonLabel();
+    // A day that's saved-but-not-complete (some protocols logged, others still
+    // blank) should read "Partly logged" on reload, not the generic default.
+    if (anySelected()) chipEl.textContent = 'Partly logged';
     if (TP.returning_after_blank) showMessage(TP.messages.returning_after_blank, false);
   }
 })();

@@ -140,10 +140,17 @@
   <p>These are the ongoing interventions you're using to manage your condition — medications, supplements, lifestyle changes, dietary protocols. Add them in the <a href="{{ url_for('protocols') }}">Protocols</a> section with a start date and notes. There's also an optional <strong>"Why I'm doing this"</strong> field — if you fill it in, Baseline uses your own words to keep you connected to your goal on days that don't go to plan.</p>
 
   <h3 class="help-subheading">Today's Protocols — daily logging on your dashboard</h3>
-  <p>Your dashboard opens with a <strong>Today's Protocols</strong> card listing each active protocol. Baseline assumes you took everything — that's the dashed "Taken" state — but nothing is saved until you tap <strong>Confirm</strong>. Most days that's one tap. If you missed something, tap <strong>Missed</strong> on that protocol first (you can add a quick optional note), then Confirm. A missed day isn't a failure — logging it honestly is exactly what makes your experiments trustworthy.</p>
+  <p>Your dashboard opens with a <strong>Today's Protocols</strong> card listing each active protocol, each with a <strong>Complete</strong> and a <strong>Not Today</strong> button. Nothing is saved until you act. You have two ways to log:</p>
   <ul class="help-list">
-    <li><strong>The 7-day dots</strong> above the list show your last week: green means you logged everything as taken, amber means you logged the day with some misses, and a hollow dot means nothing was recorded.</li>
-    <li><strong>Tap a hollow dot</strong> to fill in a day you missed — only log what you actually remember, and use "Not sure — leave blank" freely. A blank day is better data than a guess.</li>
+    <li><strong>Did everything?</strong> If you haven't marked anything yet, the button reads <strong>"Confirm all as complete"</strong> — one tap logs every protocol as done. Most days that's all you need.</li>
+    <li><strong>Only did some of them?</strong> Tap <strong>Complete</strong> on the ones you finished (and <strong>Not Today</strong> on any you're skipping — you can add a quick optional note). As soon as you mark anything, the button becomes <strong>Save</strong>. Saving logs exactly what you marked and leaves the rest <em>unmarked</em> — so you can log your morning doses now and come back tonight for the rest.</li>
+    <li><strong>Changed your mind on a button?</strong> Tap <strong>Complete</strong> or <strong>Not Today</strong> a second time to clear it back to unmarked. If you clear everything, the button returns to "Confirm all as complete".</li>
+    <li><strong>Already saved something and want to undo it?</strong> Tap that protocol's button to clear it, then Save — the entry is removed and the protocol goes back to unmarked.</li>
+  </ul>
+  <p>A "Not Today" isn't a failure — logging it honestly is exactly what makes your experiments trustworthy.</p>
+  <ul class="help-list">
+    <li><strong>The 7-day dots</strong> above the list show your last week: green means every protocol that day is logged as complete, amber means you logged the day but it isn't all complete (some marked Not Today, or some still left blank), and a hollow dot means nothing was recorded.</li>
+    <li><strong>Tap a hollow dot</strong> to fill in a past day — only log what you actually remember, and use "Not sure — leave blank" freely. A blank day is better data than a guess. Clearing a past entry and saving removes it.</li>
     <li><strong>Changed your mind?</strong> After confirming, tap "change something" to edit today.</li>
   </ul>
   <p>Each protocol also has a detail page where you can log or correct a single day and see a full history timeline. The timeline shows every taken and missed entry alongside status changes — when you started, paused, stopped, or changed the dose — all in reverse chronological order.</p>

@@ -4,15 +4,15 @@
 {% block content %}
 {% macro _log_form(default_took, default_notes) %}
   <div class="form-group" style="margin-bottom:14px;">
-    <label>Did you take it today?</label>
+    <label>Did you do it today?</label>
     <div style="display:flex; gap:10px; margin-top:6px;">
       <label class="proto-log-option">
         <input type="radio" name="took" value="yes" {% if default_took %}checked{% endif %}>
-        <span class="proto-log-label proto-log-taken">Taken</span>
+        <span class="proto-log-label proto-log-taken">Complete</span>
       </label>
       <label class="proto-log-option">
         <input type="radio" name="took" value="no" {% if not default_took %}checked{% endif %}>
-        <span class="proto-log-label proto-log-missed">Missed</span>
+        <span class="proto-log-label proto-log-missed">Not Today</span>
       </label>
     </div>
   </div>
@@ -57,9 +57,9 @@
     <div style="margin-bottom:12px; font-size:14px;">
       Already logged today:
       {% if today_log.took %}
-        <strong style="color:var(--low);">Taken</strong>
+        <strong style="color:var(--low);">Complete</strong>
       {% else %}
-        <strong style="color:var(--high);">Missed</strong>
+        <strong style="color:var(--high);">Not Today</strong>
       {% endif %}
       {% if today_log.notes %}<span style="color:var(--text-muted);"> — {{ today_log.notes }}</span>{% endif %}
     </div>
@@ -98,8 +98,8 @@
         <div class="proto-timeline-dot"></div>
         <div class="proto-timeline-content">
           <span class="proto-entry-label">
-            {% if entry.type == 'taken' %}Taken
-            {% elif entry.type == 'missed' %}Missed
+            {% if entry.type == 'taken' %}Complete
+            {% elif entry.type == 'missed' %}Not Today
             {% elif entry.type == 'started' %}Started
             {% elif entry.type == 'paused' %}Paused
             {% elif entry.type == 'stopped' %}Stopped

@@ -2563,10 +2563,14 @@ def index():
             logged = [e for e in entries if e['took'] is not None]
             if not logged:
                 status = 'hollow'
-            elif any(e['took'] is False for e in logged):
+            elif len(logged) < len(entries) or any(e['took'] is False for e in logged):
+                # Green means a clean, fully-logged all-complete day. A day that's
+                # only partially logged (some protocols still blank) or has any
+                # "Not Today" reads amber — honest now that partial logging is a
+                # first-class today state, not just a backfill case.
                 status = 'amber'
             else:
-                status = 'green'  # partial-but-all-taken counts as green (positive framing)
+                status = 'green'
             days.append({
                 'iso': day.isoformat(),
                 'weekday': day.strftime('%A'),
@@ -2975,14 +2979,21 @@ def protocol_detail(protocol_id):
 def _commit_compliance(user_id, day, cleaned_entries):
     """Apply validated (protocol_id, took, note) entries for one day and commit.
 
+    `took` is tri-state: True/False upsert the day's row; None un-logs it
+    (deletes any existing row) so a protocol can return to the unmarked state.
+
     Retries once on IntegrityError: two near-simultaneous confirms (two tabs,
     PWA + browser, dashboard + check-in) can both pass the upsert's
     check-then-insert; the unique index rejects the loser, and the retry
-    re-applies it as an update so no write is silently lost.
+    re-applies it as an update so no write is silently lost. Deletes are
+    idempotent, so replaying them on retry is safe.
     """
     def apply():
         for pid, took, note in cleaned_entries:
-            _upsert_compliance(user_id, pid, day, took, note)
+            if took is None:
+                _delete_compliance(user_id, pid, day)
+            else:
+                _upsert_compliance(user_id, pid, day, took, note)
 
     try:
         apply()
@@ -3013,6 +3024,40 @@ def _upsert_compliance(user_id, protocol_id, day, took, notes, preserve_note_if_
             user_id=user_id, protocol_id=protocol_id,
             date=day, took=took, notes=notes,
         ))
+
+
+def _delete_compliance(user_id, protocol_id, day):
+    """Un-log a protocol for a day — remove its row so it reads as unmarked.
+
+    Used by the dashboard card when a protocol is cleared back to the blank
+    state (including after it was already confirmed). A no-op when no row
+    exists, so callers can send a full day of entries without pre-checking.
+    """
+    ProtocolCompliance.query.filter_by(
+        protocol_id=protocol_id, user_id=user_id, date=day,
+    ).delete()
+
+
+def _compute_day_status(user_id, day):
+    """green / amber / hollow dot status for a day — the single source of truth.
+
+    Scoped to the protocols active for that day (status='active' and started
+    on/before it), matching the dashboard render exactly so the dot color a
+    save returns can't diverge from what a page reload shows. Green means every
+    such protocol is logged and Complete; amber means logged-but-incomplete or
+    any Not Today; hollow means nothing logged.
+    """
+    active = Protocol.query.filter_by(
+        user_id=user_id, type='preventative', status='active').all()
+    day_protos = [p for p in active if p.start_date is None or p.start_date <= day]
+    rows = {r.protocol_id: r for r in ProtocolCompliance.query.filter_by(
+        user_id=user_id, date=day).all()}
+    logged = [rows[p.id] for p in day_protos if p.id in rows]
+    if not logged:
+        return 'hollow'
+    if len(logged) < len(day_protos) or any(r.took is False for r in logged):
+        return 'amber'
+    return 'green'
 
 
 @app.route('/protocols/<int:protocol_id>/log', methods=['POST'])
@@ -3064,21 +3109,29 @@ def log_protocol_day():
             return {'ok': False, 'error': 'Invalid protocol.'}, 400
         if pid not in owned_ids:
             return {'ok': False, 'error': 'Invalid protocol.'}, 400
-        note = (entry.get('note') or '').strip()
+        # Tri-state: True/False set the day's row, None un-logs it (blank).
+        # Reject anything else so a stray string can't coerce to a silent False.
+        raw_took = entry.get('took')
+        if raw_took is None:
+            took = None
+        elif isinstance(raw_took, bool):
+            took = raw_took
+        else:
+            return {'ok': False, 'error': 'Invalid entry.'}, 400
+        raw_note = entry.get('note')
+        if raw_note is not None and not isinstance(raw_note, str):
+            return {'ok': False, 'error': 'Invalid entry.'}, 400
+        note = (raw_note or '').strip()
         if len(note) > 500:
             return {'ok': False, 'error': 'Notes must be 500 characters or fewer.'}, 400
-        cleaned.append((pid, bool(entry.get('took')), note or None))
+        cleaned.append((pid, took, note or None))
 
     _commit_compliance(user.id, day, cleaned)
 
-    # Recompute the day's dot status (same rule as the dashboard).
-    day_rows = ProtocolCompliance.query.filter_by(user_id=user.id, date=day).all()
-    if not day_rows:
-        day_status = 'hollow'
-    elif any(r.took is False for r in day_rows):
-        day_status = 'amber'
-    else:
-        day_status = 'green'
+    # Recompute the day's dot status via the shared helper so the color returned
+    # here matches exactly what a page reload renders (same active-protocol scope
+    # and green-only-when-fully-complete rule).
+    day_status = _compute_day_status(user.id, day)
 
     return {'ok': True, 'date': day.isoformat(), 'day_status': day_status}
 
