@@ -3033,13 +3033,6 @@ button.tp-dot-btn:hover .tp-dot { transform: scale(1.12); }
   color: #f0d4d4;
 }
 
-/* Assumed-taken: our suggestion, not yet the user's statement */
-.tp-pill-assumed {
-  border: 1px dashed rgba(76, 175, 120, 0.55);
-  background: rgba(76, 175, 120, 0.08);
-  color: rgba(212, 240, 220, 0.66);
-}
-
 .tp-card .btn:disabled { opacity: 0.55; cursor: default; }
 
 /* Optional note revealed under a missed row */
