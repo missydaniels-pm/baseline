@@ -139,8 +139,7 @@ Required in .env locally and in Railway variables in production:
 
 ## Known Issues / Active Investigation
 
-- Current partial week may not show in dashboard trend charts (Lizz feedback — under investigation)
-- Future episode dates: investigate whether this should be allowed or blocked (currently blocked)
+- None currently open. (Partial-week chart display — resolved; the current week now shows with an asterisk label. Future-episode-dates question — reviewed 7/14/26: keeping them blocked, allowing future-dated episodes isn't needed, no change required.)
 
 ---
 
