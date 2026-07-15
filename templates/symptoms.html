@@ -24,7 +24,7 @@
       <div class="symptom-actions">
         <a href="{{ url_for('edit_symptom', symptom_id=symptom.id) }}" class="btn btn-secondary btn-sm">Edit</a>
         <form method="POST" action="{{ url_for('deactivate_symptom', symptom_id=symptom.id) }}"
-              onsubmit="return confirm('Pause tracking for {{ symptom.name }}? It will stop appearing on the episode form, but all historical data is kept.')">
+              onsubmit='return confirm({{ ("Pause tracking for " ~ symptom.name ~ "? It will stop appearing on the episode form, but all historical data is kept.") | tojson }})'>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-sm btn-muted">Pause</button>
         </form>

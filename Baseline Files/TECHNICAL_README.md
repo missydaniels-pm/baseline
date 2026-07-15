@@ -176,6 +176,9 @@ claude --resume                         # resume previous session
 | `/onboarding` | GET, POST | First-run onboarding wizard |
 | `/checkin` | GET, POST | AI daily check-in. Parses episodes/interventions/compliance and now triggers: matched triggers link (`source='ai'`) via `_apply_ai_triggers()`; unmatched names become session-held suggestions surfaced for confirmation on the episode form. |
 | `/episodes` | GET, POST | Episode log. New/edit episode forms include a trigger chip multi-select + inline "+ add" (match-and-link via `_resolve_trigger()` / `_save_episode_triggers_from_form()`). |
+| `/triggers` | GET | Manage Triggers (linked from Settings, not in nav): rename + pause/resume the user's own custom triggers; globals read-only. |
+| `/triggers/<id>/rename` | POST | Rename an own custom (rejects collision with a global or another own custom; 100-char cap). |
+| `/triggers/<id>/deactivate`, `/triggers/<id>/reactivate` | POST | Soft pause/resume an own custom (history preserved). |
 | `/symptoms` | GET, POST | Symptom management |
 | `/protocols` | GET, POST | Protocol management |
 | `/experiments` | GET, POST | Experiment tracking (supports inline protocol creation) |

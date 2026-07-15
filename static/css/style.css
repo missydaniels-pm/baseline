@@ -1173,6 +1173,13 @@ input[type="range"]::-moz-range-thumb {
 .trigger-add-row input[type="text"] { flex: 1; min-width: 0; }
 .trigger-add-row .btn { flex-shrink: 0; }
 
+/* Manage-triggers page: inline rename form + read-only global chips */
+.trigger-rename-form { display: flex; gap: 8px; align-items: center; }
+.trigger-rename-input { flex: 1; min-width: 0; }
+.trigger-chip-static { cursor: default; }
+.trigger-chip-static:hover { border-color: var(--border); }
+.trigger-chip-static:active { transform: none; }  /* no false tap feedback */
+
 .onboarding-type-row {
   display: flex;
   align-items: center;

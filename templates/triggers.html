@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Manage Triggers — Baseline{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Manage Triggers</h1>
+  <a href="{{ url_for('settings') }}" class="btn btn-secondary">Back to Settings</a>
+</div>
+
+<p class="settings-row-desc" style="margin-bottom:20px;">
+  These are triggers you added yourself. Rename or pause them here. Add new ones while logging an episode.
+  Paused triggers stay off the episode form but past episodes keep them.
+</p>
+
+{% if active_customs %}
+  {% for t in active_customs %}
+  <div class="card">
+    <div class="symptom-card">
+      <div class="symptom-info" style="flex:1;">
+        <form method="POST" action="{{ url_for('rename_trigger', trigger_id=t.id) }}" class="trigger-rename-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="text" name="name" value="{{ t.name }}" maxlength="100"
+                 class="trigger-rename-input" aria-label="Rename trigger {{ t.name }}">
+          <button type="submit" class="btn btn-secondary btn-sm">Save</button>
+        </form>
+      </div>
+      <div class="symptom-actions">
+        <form method="POST" action="{{ url_for('deactivate_trigger', trigger_id=t.id) }}"
+              onsubmit='return confirm({{ ("Pause “" ~ t.name ~ "”? It will stop appearing on the episode form, but past episodes keep it.") | tojson }})'>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-sm btn-muted">Pause</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="empty-state">
+    <p>You haven't added any custom triggers yet.</p>
+    <p class="settings-row-desc">When you log an episode, use “Add your own” under Possible triggers to create one.</p>
+  </div>
+{% endif %}
+
+{% if paused_customs %}
+<hr class="divider">
+<div class="section-header">
+  <div>
+    <div class="section-title">Paused</div>
+    <div class="section-sub">Hidden from episode logging; their history is preserved.</div>
+  </div>
+</div>
+{% for t in paused_customs %}
+<div class="card symptom-inactive">
+  <div class="symptom-card">
+    <div class="symptom-info" style="flex:1;">
+      <form method="POST" action="{{ url_for('rename_trigger', trigger_id=t.id) }}" class="trigger-rename-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="text" name="name" value="{{ t.name }}" maxlength="100"
+               class="trigger-rename-input" aria-label="Rename trigger {{ t.name }}">
+        <button type="submit" class="btn btn-secondary btn-sm">Save</button>
+      </form>
+    </div>
+    <div class="symptom-actions">
+      <form method="POST" action="{{ url_for('reactivate_trigger', trigger_id=t.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-sm btn-reactivate">Resume</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+
+{% if globals %}
+<hr class="divider">
+<div class="section-header">
+  <div>
+    <div class="section-title">Shared triggers</div>
+    <div class="section-sub">Available to everyone on the episode form. Curated by Baseline — not editable here.</div>
+  </div>
+</div>
+<div class="trigger-chips" style="margin-top:12px;">
+  {% for g in globals %}
+  <span class="trigger-chip trigger-chip-static">{{ g.name }}</span>
+  {% endfor %}
+</div>
+{% endif %}
+
+<script>
+  // Guard against silently discarding an unsaved rename: each row is its own
+  // form and any submit reloads the page, so warn before losing a typed-but-
+  // unsaved name in a *different* row (or on navigating away entirely).
+  (function() {
+    var inputs = Array.prototype.slice.call(document.querySelectorAll('.trigger-rename-input'));
+    if (!inputs.length) return;
+    var leaving = false;
+    function otherDirty(exceptForm) {
+      return inputs.some(function(i) {
+        return (!exceptForm || !exceptForm.contains(i)) && i.value !== i.defaultValue;
+      });
+    }
+    document.querySelectorAll('form').forEach(function(f) {
+      f.addEventListener('submit', function(e) {
+        if (otherDirty(f) &&
+            !confirm('You have unsaved changes to another trigger name. Continue and discard them?')) {
+          e.preventDefault();
+          return;
+        }
+        leaving = true;  // an intended submit — don't also fire the unload warning
+      });
+    });
+    window.addEventListener('beforeunload', function(e) {
+      if (!leaving && otherDirty(null)) { e.preventDefault(); e.returnValue = ''; }
+    });
+  })();
+</script>
+{% endblock %}

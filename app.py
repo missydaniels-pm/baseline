@@ -2141,6 +2141,95 @@ def reactivate_symptom(symptom_id):
 
 
 # ---------------------------------------------------------------------------
+# Manage triggers (Settings surface — the user's own custom triggers only;
+# curated globals are shown read-only, v2 will add per-user hide). Mirrors the
+# symptom-management CRUD: soft-deactivate preserves EpisodeTrigger history.
+# ---------------------------------------------------------------------------
+
+@app.route('/triggers')
+def manage_triggers():
+    user = get_user()
+    from sqlalchemy import func
+    active_customs = (Trigger.query
+                      .filter(Trigger.user_id == user.id, Trigger.is_active == True)
+                      .order_by(func.lower(Trigger.name)).all())
+    paused_customs = (Trigger.query
+                      .filter(Trigger.user_id == user.id, Trigger.is_active == False)
+                      .order_by(func.lower(Trigger.name)).all())
+    globals_ = (Trigger.query
+                .filter(Trigger.user_id.is_(None), Trigger.is_active == True)
+                .order_by(Trigger.id).all())
+    return render_template('triggers.html', active_customs=active_customs,
+                           paused_customs=paused_customs, globals=globals_)
+
+
+def _own_custom_trigger_or_404(user_id, trigger_id):
+    """A trigger the user owns (never a global, never another user's)."""
+    return Trigger.query.filter_by(id=trigger_id, user_id=user_id).first_or_404()
+
+
+@app.route('/triggers/<int:trigger_id>/rename', methods=['POST'])
+def rename_trigger(trigger_id):
+    user = get_user()
+    from sqlalchemy import func
+    trigger = _own_custom_trigger_or_404(user.id, trigger_id)
+    name = _normalize_trigger_name(request.form.get('name', ''))
+    if not name:
+        flash('A trigger needs a name.', 'error')
+        return redirect(url_for('manage_triggers'))
+    if len(name) > 100:
+        flash('Trigger name must be 100 characters or fewer.', 'error')
+        return redirect(url_for('manage_triggers'))
+    lname = name.lower()
+    if lname != trigger.name.lower():
+        # Reject a collision with a curated global (would shadow it / split
+        # analytics) or with another of the user's own customs (the partial
+        # unique index enforces this too). No merge in v1 — reuse the Symptom
+        # case-insensitive-unique precedent.
+        clash_global = Trigger.query.filter(
+            Trigger.user_id.is_(None), Trigger.is_active == True,
+            func.lower(Trigger.name) == lname).first()
+        if clash_global:
+            flash(f'"{clash_global.name}" is already a shared trigger — your episodes can use it directly.', 'error')
+            return redirect(url_for('manage_triggers'))
+        clash_custom = Trigger.query.filter(
+            Trigger.user_id == user.id, Trigger.id != trigger.id,
+            func.lower(Trigger.name) == lname).first()
+        if clash_custom:
+            flash(f'You already have a trigger called "{clash_custom.name}".', 'error')
+            return redirect(url_for('manage_triggers'))
+    try:
+        trigger.name = name
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash('That name is already in use.', 'error')
+        return redirect(url_for('manage_triggers'))
+    flash('Trigger renamed.', 'success')
+    return redirect(url_for('manage_triggers'))
+
+
+@app.route('/triggers/<int:trigger_id>/deactivate', methods=['POST'])
+def deactivate_trigger(trigger_id):
+    user = get_user()
+    trigger = _own_custom_trigger_or_404(user.id, trigger_id)
+    trigger.is_active = False
+    db.session.commit()
+    flash(f'"{trigger.name}" paused. It won\'t appear when logging, but past episodes keep it.', 'success')
+    return redirect(url_for('manage_triggers'))
+
+
+@app.route('/triggers/<int:trigger_id>/reactivate', methods=['POST'])
+def reactivate_trigger(trigger_id):
+    user = get_user()
+    trigger = _own_custom_trigger_or_404(user.id, trigger_id)
+    trigger.is_active = True
+    db.session.commit()
+    flash(f'"{trigger.name}" resumed.', 'success')
+    return redirect(url_for('manage_triggers'))
+
+
+# ---------------------------------------------------------------------------
 # Experiments
 # ---------------------------------------------------------------------------
 
