@@ -2750,6 +2750,11 @@ def new_episode():
         onset_str = request.form.get('onset')
         onset = datetime.strptime(onset_str, '%Y-%m-%dT%H:%M') if onset_str else datetime.utcnow()
 
+        # Coarse future-date guard, intentional. `onset` is browser-local-naive and
+        # datetime.now() is server-UTC-naive, so this is fuzzy by the tz offset —
+        # acceptable because future-dating episodes isn't a supported case (decided
+        # 7/14/26: keep blocked, not needed). Exact handling arrives with the P1
+        # per-user-tz / onset-model work; not a standalone bug — don't re-flag.
         if onset > datetime.now():
             flash('Onset date cannot be in the future.', 'error')
             return render_template('new_episode.html', rescue_options=rescue_options, symptoms=symptoms)
@@ -2820,6 +2825,7 @@ def edit_episode(episode_id):
         onset_str = request.form.get('onset')
         new_onset = datetime.strptime(onset_str, '%Y-%m-%dT%H:%M') if onset_str else episode.onset
 
+        # Coarse future-date guard (see new_episode) — intentional, keep-blocked 7/14/26.
         if new_onset > datetime.now():
             flash('Onset date cannot be in the future.', 'error')
             existing_entries = {ss.symptom_id: ss for ss in episode.symptom_scores}

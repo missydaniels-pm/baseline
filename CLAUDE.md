@@ -132,6 +132,12 @@ Two distinct failure modes — keep them separate. **Rule 1 is about *where stat
 
 **Known deviations** (latent at single-instance/low load): (1) transactional email (verification/welcome) runs in-request — P2 "provision Redis + move email to a background job" is the fix; (2) AI check-in runs the Anthropic call in-request — durable fix is the async-job pattern, a natural fit for the React rebuild. Both are throughput items, not per-server state.
 
+### Rule 3 — Converge, Don't Diverge
+
+**Rule:** When you add or change a feature or CRUD action, match the pattern of the **nearest existing sibling** — shared helpers, date/timezone handling, validation, delete-safety, user-scoping, error handling, and response shape. A new one-off pattern for something the codebase already does is a defect in waiting; introduce a divergent approach only with a stated justification, raised as a decision. The canonical patterns live in **`Baseline Files/CONVENTIONS.md`** — read it before building, and update it when a new pattern is genuinely established.
+
+**The test for any new code:** "Does the codebase already do this somewhere, and does my version match it?" If the same kind of thing is done three different ways (three ways to resolve "today," three delete patterns, three validation styles), *that* is the bug — converge. This rule exists because approach-drift across areas is invisible to a non-coding owner and only surfaces as production inconsistency (the 7/14 timezone bug was exactly this: "today" resolved three different ways).
+
 ---
 
 ## Key Architectural Decisions
@@ -209,6 +215,8 @@ Two markdown files live in `Baseline Files/` and must be updated directly as par
 - New bugs or features are identified during a build session
 - Priorities change
 - New decisions are made (add to Decision Log)
+
+**`Baseline Files/CONVENTIONS.md`** — the canonical-patterns reference (Rule 3). Read it before building; update it when a genuinely new canonical pattern is established (e.g. a new shared helper, a standard way to do a class of CRUD action).
 
 ### In-app help page:
 

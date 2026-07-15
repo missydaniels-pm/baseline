@@ -1,0 +1,86 @@
+# Baseline — Conventions / Canonical Patterns
+
+**Purpose:** the single definition of "the way we do things," so features and CRUD
+actions stay consistent across areas as the app grows. Before adding or changing
+code, find the nearest existing sibling and **match these patterns**. A new or
+divergent pattern is a review finding unless it's justified. Enforced by the
+CLAUDE.md rule *"Rule 3 — Converge, Don't Diverge"* and checked by the Code
+Reviewer agent's Consistency section.
+
+Keep this doc alive: when a genuinely new canonical pattern is established, add it
+here in the same commit.
+
+---
+
+## Dates & time
+- **User-facing "day" (which calendar date):** always `user_today()` — never a raw
+  `date.today()` or `datetime.utcnow().date()`. Covers compliance dates,
+  protocol-event dates, the dashboard "today," and anything a user perceives as
+  today/yesterday. Railway runs UTC; `user_today()` resolves the browser's
+  `baseline_tz` cookie (unquoted) and falls back to the server date.
+- **Absolute timestamps / ordering / TTLs:** `datetime.utcnow()` — `created_at`,
+  `verified_at`, cutoffs, rate windows. These are moments in time, not calendar
+  days; UTC is correct and needs no timezone handling.
+- **Rule of thumb:** if you're deciding "is this *today* for the user," use
+  `user_today()`. If you're stamping "when did this happen," use `utcnow()`.
+- Client-sent dates (dashboard card body, check-in `client_time`) are browser-local
+  and preferred where available; the server validates them within a small window
+  anchored on `user_today()`.
+
+## Compliance writes
+- Go through the shared helpers: `_commit_compliance()` → `_upsert_compliance()` /
+  `_delete_compliance()`. Never write `ProtocolCompliance` rows directly.
+- Tri-state `took`: `True`/`False` set the day's row, `None` un-logs it (deletes).
+  Most-recent-explicit-statement wins. Validate every entry before touching the
+  session — no partial writes.
+
+## Deletes (FK-safe)
+- Delete children before parents. Local SQLite enforces FKs
+  (`PRAGMA foreign_keys=ON`), so FK-unsafe deletes fail in dev too, not just prod.
+- **Update BOTH manual delete paths** when you add an owned table: `delete_account`
+  AND `dev_reset` (bulk `.delete()` bypasses ORM cascade).
+- Prefer **soft-deactivate** (`is_active=False`) over hard delete for records with
+  history (triggers, rescue options). Never hard-delete a row others reference.
+- New child table → trace every parent's delete path (blast radius).
+
+## User scoping (privacy)
+- Every query is scoped by `user_id` — directly, or by joining through an owned
+  parent (e.g. Episode). This is health data; a missing scope is a cross-user leak.
+- Never trust a client-supplied `user_id`; derive it from the session (`get_user()`).
+
+## Validation
+- Text caps: name ≤ 200, description/notes ≤ 500 (with a UI counter). Enforce on
+  **every** write path for the same field — form, AI check-in, and dashboard/JSON —
+  not just one.
+- Validate everything before the DB write. JSON endpoints reject invalid input with
+  `{ok: false, error}` + a 4xx **before** any partial write.
+
+## Error handling
+- DB writes in `try/except` with `db.session.rollback()`; retry once on
+  `IntegrityError` where a concurrent race is possible (see `_commit_compliance`).
+- User-facing: friendly `flash()`; log the real detail. Never surface health data
+  or stack traces to the user.
+- **Swallow narrowly.** Catch the specific exception and **log** it. A bare
+  `except: pass` around timezone parsing hid a production bug for months — don't
+  repeat it.
+
+## Migrations
+- Additive columns via `run_migrations()` ALTER, gated by a column-exists check.
+  PostgreSQL-safe booleans: `DEFAULT TRUE/FALSE`, never `1/0`.
+- Seed/index idempotently: `CREATE ... IF NOT EXISTS`, `INSERT ... WHERE NOT EXISTS`.
+  Wrap in try/except log-and-continue so a migration can't block startup.
+- New tables are auto-created by `db.create_all()`; only seed/index needs a migration.
+
+## Architecture rules (full text in CLAUDE.md)
+- **Rule 1** — backend stays stateless. **Rule 2** — slow work off the request path.
+  **Rule 3** — converge, don't diverge (this doc).
+- Raise design decisions (new table? index? new pattern?) with short-term vs
+  long-term trade-offs before proceeding — this is a learning project.
+
+## Adding a feature or CRUD action — checklist
+1. **Find the nearest sibling** — the closest existing CRUD action or feature.
+2. **Match it:** shared helpers, date/tz handling, validation, delete-safety,
+   user-scoping, error handling, and JSON/response shape.
+3. **If you must diverge, say why** — in the commit and raised to the owner. An
+   accidental new pattern is a bug in waiting.
+4. **Update this doc** when a new canonical pattern is genuinely established.

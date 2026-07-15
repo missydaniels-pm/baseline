@@ -91,6 +91,13 @@ When you encounter a design decision point (e.g., "should this be a separate tab
 
 This is a learning project. Missy needs to understand the *why* behind architecture choices.
 
+### 8. Consistency & Convergence (Rule 3 — see `Baseline Files/CONVENTIONS.md`)
+Approach-drift across areas is invisible to a non-coding owner and surfaces as production inconsistency (the 7/14 timezone bug was "today" resolved three different ways). Don't review a new CRUD action or feature only in isolation — check it against how the codebase **already** does the same class of thing.
+- [ ] **Find the nearest sibling.** Is there an existing route/feature that does this kind of thing (a write, a delete, a date resolution, a form validation, a JSON endpoint)? Name it in your report.
+- [ ] **Does the new code match it?** Same shared helpers (`user_today()` for day-boundary dates, `_commit_compliance()` for compliance, `get_user()` scoping), same validation caps (200/500), same delete-safety (children-first, BOTH delete paths, soft-deactivate for history), same error handling (rollback + flash + narrowly-logged except), same response shape.
+- [ ] **Flag divergence as a finding.** A new one-off pattern for something already done elsewhere is a defect in waiting — call it out with the sibling it should match, unless the change carries a stated justification. If the same thing is now done 2–3 different ways, say so explicitly.
+- [ ] If the change establishes a genuinely new canonical pattern, note that `CONVENTIONS.md` should be updated in the same commit.
+
 ## Output Format
 
 ```

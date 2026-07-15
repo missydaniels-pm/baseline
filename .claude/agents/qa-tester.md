@@ -51,6 +51,7 @@ A slow/blocking in-request call ties up a worker → latency and timeouts under 
 - [ ] Could this change cause orphaned records or broken foreign keys?
 - [ ] Are user inputs validated before hitting the database?
 - [ ] Is `current_user` filtering applied to all queries? (users must never see each other's data)
+- [ ] **Cross-path consistency (see `Baseline Files/CONVENTIONS.md`):** does the same field/action enforce the same rules on EVERY write path (form + AI check-in + dashboard/JSON)? A cap or behavior enforced on one path but missing on another is a bug.
 
 ### 3. PostgreSQL Compatibility
 - [ ] Any SQLite-specific syntax that won't work in PostgreSQL?
