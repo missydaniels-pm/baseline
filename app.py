@@ -18,6 +18,7 @@ from database import db, User, Episode, Protocol, Symptom, SymptomScore, Episode
 from collections import defaultdict
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
+from urllib.parse import unquote
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -801,6 +802,30 @@ def get_active_experiment(user_id):
     return Experiment.query.filter_by(user_id=user_id, status='active').order_by(Experiment.start_date.desc()).first()
 
 
+def user_today(server_today=None):
+    """The user's local calendar day — the single source of truth for "today".
+
+    Every day-boundary write and read (compliance, protocol events, the
+    dashboard card) must resolve "today" through here so they can't diverge:
+    that divergence is exactly what put evening entries a day off.
+
+    Resolved from the `baseline_tz` cookie (set by base.html). That cookie is
+    written URL-encoded (`encodeURIComponent`), and Flask returns cookie values
+    un-decoded — so `unquote()` is REQUIRED. Without it,
+    `ZoneInfo('America%2FLos_Angeles')` raises, we silently fall back to UTC
+    (Railway's zone), and after ~5pm Pacific "today" jumps a day ahead of the
+    data. Falls back to the server date only when the cookie is truly absent or
+    unparseable. Must be called within a request context.
+    """
+    raw = request.cookies.get('baseline_tz', '')
+    if raw:
+        try:
+            return datetime.now(ZoneInfo(unquote(raw))).date()
+        except Exception:
+            pass
+    return server_today if server_today is not None else date.today()
+
+
 # ---------------------------------------------------------------------------
 # Supportive compliance messaging
 # ---------------------------------------------------------------------------
@@ -838,7 +863,9 @@ def pick_support_message(scenario, **ctx):
     str.format — user-entered text may contain braces.
     """
     pool = SUPPORT_MESSAGES[scenario]
-    msg = pool[date.today().toordinal() % len(pool)]
+    # Rotate on the user's local day (via user_today) so copy turns over at their
+    # midnight, not Railway's UTC ~5pm-Pacific rollover. Callers are request-scoped.
+    msg = pool[user_today().toordinal() % len(pool)]
     for key, val in ctx.items():
         msg = msg.replace('{' + key + '}', val)
     return msg
@@ -1882,14 +1909,15 @@ def checkin():
             # server's (Railway runs UTC — evening check-ins would land on
             # tomorrow otherwise). Upsert so an explicit statement to the AI
             # updates a day that was already confirmed on the dashboard.
-            compliance_date = date.today()
+            ct_today = user_today()
+            compliance_date = ct_today
             if client_time:
                 try:
                     compliance_date = datetime.strptime(client_time, '%Y-%m-%dT%H:%M').date()
                 except ValueError:
                     pass
-            if abs((compliance_date - date.today()).days) > 1:
-                compliance_date = date.today()
+            if abs((compliance_date - ct_today).days) > 1:
+                compliance_date = ct_today
 
             user_protocol_ids = {p.id for p in Protocol.query.filter_by(user_id=user.id, type='preventative').all()}
             for item in (parsed.get('protocol_compliance') or []):
@@ -2573,13 +2601,7 @@ def index():
     # runs UTC — for US users the server date rolls over mid-evening). The
     # browser stores its IANA zone in a cookie (set in base.html); fall back
     # to the server date when absent (first-ever request) or invalid.
-    tp_today = today
-    tz_name = request.cookies.get('baseline_tz', '')
-    if tz_name:
-        try:
-            tp_today = datetime.now(ZoneInfo(tz_name)).date()
-        except Exception:
-            pass
+    tp_today = user_today(today)
 
     tp_data = None
     if active_preventatives:
@@ -2935,7 +2957,7 @@ def new_protocol():
             protocol_id=protocol.id,
             user_id=user.id,
             event_type=event_type,
-            date=protocol.start_date or date.today(),
+            date=protocol.start_date or user_today(),
         ))
         db.session.commit()
         flash('Preventative added.', 'success')
@@ -2981,13 +3003,13 @@ def edit_protocol(protocol_id):
             event_type = {'active': 'reactivated', 'paused': 'paused', 'stopped': 'stopped'}.get(protocol.status, protocol.status)
             db.session.add(ProtocolEvent(
                 protocol_id=protocol.id, user_id=user.id,
-                event_type=event_type, date=date.today(),
+                event_type=event_type, date=user_today(),
             ))
         if old_dose != protocol.dose_frequency:
             detail = f'Changed from "{old_dose or "not set"}" to "{protocol.dose_frequency or "not set"}"'
             db.session.add(ProtocolEvent(
                 protocol_id=protocol.id, user_id=user.id,
-                event_type='dose_changed', detail=detail, date=date.today(),
+                event_type='dose_changed', detail=detail, date=user_today(),
             ))
 
         db.session.commit()
@@ -3024,12 +3046,13 @@ def protocol_detail(protocol_id):
         })
     timeline.sort(key=lambda x: (x['date'], x['created_at']), reverse=True)
 
+    pd_today = user_today()
     today_log = ProtocolCompliance.query.filter_by(
-        protocol_id=protocol_id, user_id=user.id, date=date.today()
+        protocol_id=protocol_id, user_id=user.id, date=pd_today
     ).first()
 
     return render_template('protocol_detail.html',
-                           protocol=protocol, timeline=timeline, today_log=today_log, today=date.today())
+                           protocol=protocol, timeline=timeline, today_log=today_log, today=pd_today)
 
 
 def _commit_compliance(user_id, day, cleaned_entries):
@@ -3122,9 +3145,11 @@ def log_protocol_today(protocol_id):
     protocol = Protocol.query.filter_by(id=protocol_id, user_id=user.id, type='preventative').first_or_404()
 
     took = request.form.get('took') == 'yes'
-    notes = request.form.get('notes', '').strip() or None
+    notes = (request.form.get('notes', '').strip() or None)
+    if notes and len(notes) > 500:
+        notes = notes[:500]  # match the 500-char cap enforced on the other compliance paths
 
-    _commit_compliance(user.id, date.today(), [(protocol_id, took, notes)])
+    _commit_compliance(user.id, user_today(), [(protocol_id, took, notes)])
     flash('Logged.', 'success')
     return redirect(url_for('protocol_detail', protocol_id=protocol_id))
 
@@ -3134,8 +3159,8 @@ def log_protocol_day():
     """Batch-save one day's compliance from the dashboard card (confirm or backfill).
 
     Body: {"date": "YYYY-MM-DD", "entries": [{"protocol_id": int, "took": bool, "note": str}]}
-    The window allows [today-7, today+1] so a browser's local date can differ
-    from the server's UTC date by a day in either direction.
+    The window allows [today-7, today+1], anchored on the user's local day
+    (user_today) so it lines up with the browser-local date the card sends.
     """
     user = get_user()
     data = request.get_json(silent=True) or {}
@@ -3144,8 +3169,8 @@ def log_protocol_day():
         day = datetime.strptime(str(data.get('date', '')), '%Y-%m-%d').date()
     except ValueError:
         return {'ok': False, 'error': 'Invalid date.'}, 400
-    server_today = date.today()
-    if not (server_today - timedelta(days=7)) <= day <= (server_today + timedelta(days=1)):
+    local_today = user_today()
+    if not (local_today - timedelta(days=7)) <= day <= (local_today + timedelta(days=1)):
         return {'ok': False, 'error': 'Date outside the editable window.'}, 400
 
     entries = data.get('entries')
