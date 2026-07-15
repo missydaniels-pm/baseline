@@ -12,7 +12,7 @@ from flask_bcrypt import Bcrypt
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from sqlalchemy import text
+from sqlalchemy import text, or_
 from sqlalchemy.exc import IntegrityError
 from database import db, User, Episode, Protocol, Symptom, SymptomScore, EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode, UsedVerifyToken, UserActivity, Trigger, EpisodeTrigger
 from collections import defaultdict
@@ -418,6 +418,7 @@ def run_migrations():
         ('symptoms',              'input_type',                "ALTER TABLE symptoms ADD COLUMN input_type VARCHAR(10) NOT NULL DEFAULT 'scale'"),
         ('symptom_scores',        'value_bool',                'ALTER TABLE symptom_scores ADD COLUMN value_bool BOOLEAN'),
         ('protocols',             'why',                       'ALTER TABLE protocols ADD COLUMN why TEXT'),
+        ('episode_triggers',      'source',                    "ALTER TABLE episode_triggers ADD COLUMN source VARCHAR(10) NOT NULL DEFAULT 'user'"),
     ]
 
     # Widen symptoms.name from varchar(100) to varchar(200) on PostgreSQL
@@ -2733,6 +2734,125 @@ def _save_symptom_entries_from_form(episode_id, symptoms, form):
             db.session.add(SymptomScore(episode_id=episode_id, symptom_id=s.id, score=score))
 
 
+def _normalize_trigger_name(raw):
+    """Collapse whitespace and trim; the canonical form we store and compare."""
+    return ' '.join((raw or '').strip().split())
+
+
+def _pickable_triggers(user_id):
+    """Triggers a user can choose on the episode form: active curated globals
+    (in seed order) followed by the user's own active customs (alphabetical).
+    Queried per-request — never cached in server memory (Rule 1)."""
+    from sqlalchemy import func
+    globals_ = (Trigger.query
+                .filter(Trigger.user_id.is_(None), Trigger.is_active == True)
+                .order_by(Trigger.id).all())
+    customs = (Trigger.query
+               .filter(Trigger.user_id == user_id, Trigger.is_active == True)
+               .order_by(func.lower(Trigger.name)).all())
+    return globals_ + customs
+
+
+def _resolve_trigger(user_id, name):
+    """Match-and-link for a typed trigger name. Returns an active Trigger,
+    creating or reactivating the user's custom as needed. Match order:
+      1. any global by case-insensitive name (shared → avoids split analytics,
+         reuses the Symptom unique-name precedent); a name colliding with a
+         soft-retired global still links to that global, never a duplicate;
+      2. the user's own custom (reactivated if soft-deactivated);
+      3. otherwise create a new custom.
+    Returns None for blank names. Name is normalized and capped at 100 (model
+    width). Caller flushes/commits."""
+    from sqlalchemy import func
+    name = _normalize_trigger_name(name)
+    if not name:
+        return None
+    name = name[:100]
+    lname = name.lower()
+
+    # Match an ACTIVE global only. A soft-retired global (is_active=False) is out
+    # of circulation — admin-curated removal — and a user can't see it in the
+    # picker, so a typed name colliding with a retired global falls through to
+    # the user's own custom (they keep agency to track it) rather than resurrect
+    # an admin-retired shared row for a fresh link. Consistent with the checkbox
+    # path, which also refuses to freshly link an inactive trigger.
+    g = (Trigger.query
+         .filter(Trigger.user_id.is_(None), Trigger.is_active == True,
+                 func.lower(Trigger.name) == lname)
+         .first())
+    if g:
+        return g
+
+    c = (Trigger.query
+         .filter(Trigger.user_id == user_id, func.lower(Trigger.name) == lname)
+         .first())
+    if c:
+        if not c.is_active:
+            c.is_active = True
+        return c
+
+    # Create the user's custom. Guard the insert with a SAVEPOINT so a concurrent
+    # request that created the same (user_id, lower(name)) between the SELECT
+    # above and this flush raises IntegrityError on the nested transaction only —
+    # we roll back to the savepoint, re-select the winner, and keep the OUTER
+    # transaction (the episode + its other rows) intact. This is the "retry once
+    # on a possible race" convention applied at the row: a plain try/except
+    # around the later commit can't cover it, because this flush happens first.
+    try:
+        with db.session.begin_nested():
+            c = Trigger(user_id=user_id, name=name, is_active=True)
+            db.session.add(c)
+            db.session.flush()
+        return c
+    except IntegrityError:
+        c = (Trigger.query
+             .filter(Trigger.user_id == user_id, func.lower(Trigger.name) == lname)
+             .first())
+        if c and not c.is_active:
+            c.is_active = True
+        return c
+
+
+def _save_episode_triggers_from_form(episode_id, user_id, form, source='user', preserve_ids=None):
+    """Link picked + newly-typed triggers to an episode from the logging form.
+
+    Form contract:
+      - trigger_ids       = repeated: ids of existing triggers the user checked.
+      - new_trigger_names = repeated: names typed via the inline "+ add".
+    Existing ids are validated to be pickable by this user (an active global or
+    an active custom the user owns) — stale/foreign ids are ignored. New names
+    go through match-and-link. `preserve_ids` (the episode's pre-edit link set)
+    additionally allows ids that are soft-deactivated but were already linked,
+    so the edit replace-on-save can't silently drop a linked-but-inactive custom
+    the user left checked. Idempotent per (episode, trigger)."""
+    preserve_ids = set(preserve_ids or ())
+    trigger_ids = set()
+
+    for raw in form.getlist('trigger_ids'):
+        try:
+            tid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        t = Trigger.query.filter(
+            Trigger.id == tid,
+            or_(Trigger.user_id.is_(None), Trigger.user_id == user_id),
+        ).first()
+        if t and (t.is_active or t.id in preserve_ids):
+            trigger_ids.add(t.id)
+
+    for raw in form.getlist('new_trigger_names'):
+        t = _resolve_trigger(user_id, raw)
+        if t:
+            trigger_ids.add(t.id)
+
+    existing = {et.trigger_id for et in
+                EpisodeTrigger.query.filter_by(episode_id=episode_id).all()}
+    for tid in trigger_ids:
+        if tid in existing:
+            continue
+        db.session.add(EpisodeTrigger(episode_id=episode_id, trigger_id=tid, source=source))
+
+
 @app.route('/episodes')
 def episodes():
     user = get_user()
@@ -2745,6 +2865,7 @@ def new_episode():
     user = get_user()
     symptoms = Symptom.query.filter_by(user_id=user.id, is_active=True).all()
     rescue_options = Protocol.query.filter(Protocol.user_id == user.id, Protocol.type == 'rescue', Protocol.status != 'removed').order_by(Protocol.available.desc(), Protocol.name).all()
+    triggers = _pickable_triggers(user.id)
 
     if request.method == 'POST':
         onset_str = request.form.get('onset')
@@ -2757,12 +2878,12 @@ def new_episode():
         # per-user-tz / onset-model work; not a standalone bug — don't re-flag.
         if onset > datetime.now():
             flash('Onset date cannot be in the future.', 'error')
-            return render_template('new_episode.html', rescue_options=rescue_options, symptoms=symptoms)
+            return render_template('new_episode.html', rescue_options=rescue_options, symptoms=symptoms, triggers=triggers, selected_trigger_ids=[])
 
         notes_val = request.form.get('notes', '').strip()
         if notes_val and len(notes_val) > 500:
             flash('Notes must be 500 characters or fewer.', 'error')
-            return render_template('new_episode.html', rescue_options=rescue_options, symptoms=symptoms)
+            return render_template('new_episode.html', rescue_options=rescue_options, symptoms=symptoms, triggers=triggers, selected_trigger_ids=[])
 
         episode = Episode(
             user_id=user.id,
@@ -2807,11 +2928,23 @@ def new_episode():
                 time_to_relief_hours=relief_val,
             ))
 
-        db.session.commit()
+        _save_episode_triggers_from_form(episode.id, user.id, request.form)
+
+        try:
+            db.session.commit()
+        except IntegrityError:
+            # Backstop only. The realistic custom-trigger race is handled at the
+            # row by _resolve_trigger's savepoint; this catches any other
+            # unexpected constraint failure so we roll back cleanly instead of
+            # 500ing. Rare enough that dropping the form on re-render is fine.
+            db.session.rollback()
+            app.logger.warning('new_episode commit failed', exc_info=True)
+            flash("Couldn't save that episode — please try again.", 'error')
+            return render_template('new_episode.html', rescue_options=rescue_options, symptoms=symptoms, triggers=_pickable_triggers(user.id), selected_trigger_ids=[])
         flash('Episode logged.', 'success')
         return redirect(url_for('episodes'))
 
-    return render_template('new_episode.html', rescue_options=rescue_options, symptoms=symptoms)
+    return render_template('new_episode.html', rescue_options=rescue_options, symptoms=symptoms, triggers=triggers, selected_trigger_ids=[])
 
 
 @app.route('/episodes/<int:episode_id>/edit', methods=['GET', 'POST'])
@@ -2820,6 +2953,17 @@ def edit_episode(episode_id):
     episode = Episode.query.filter_by(id=episode_id, user_id=user.id).first_or_404()
     symptoms = Symptom.query.filter_by(user_id=user.id, is_active=True).all()
     rescue_options = Protocol.query.filter(Protocol.user_id == user.id, Protocol.type == 'rescue', Protocol.status != 'removed').order_by(Protocol.available.desc(), Protocol.name).all()
+
+    # Trigger picker: active pickable set, plus any triggers this episode already
+    # links to (even soft-deactivated customs) so the replace-on-save can't
+    # silently drop a currently-linked trigger the user didn't touch.
+    linked_triggers = [et.trigger for et in episode.episode_triggers]
+    selected_trigger_ids = [t.id for t in linked_triggers]
+    triggers = list(_pickable_triggers(user.id))
+    _pickable_ids = {t.id for t in triggers}
+    for t in linked_triggers:
+        if t.id not in _pickable_ids:
+            triggers.append(t)
 
     if request.method == 'POST':
         onset_str = request.form.get('onset')
@@ -2830,14 +2974,16 @@ def edit_episode(episode_id):
             flash('Onset date cannot be in the future.', 'error')
             existing_entries = {ss.symptom_id: ss for ss in episode.symptom_scores}
             return render_template('edit_episode.html', episode=episode, rescue_options=rescue_options,
-                                   symptoms=symptoms, existing_entries=existing_entries)
+                                   symptoms=symptoms, existing_entries=existing_entries,
+                                   triggers=triggers, selected_trigger_ids=selected_trigger_ids)
 
         notes_val = request.form.get('notes', '').strip()
         if notes_val and len(notes_val) > 500:
             flash('Notes must be 500 characters or fewer.', 'error')
             existing_entries = {ss.symptom_id: ss for ss in episode.symptom_scores}
             return render_template('edit_episode.html', episode=episode, rescue_options=rescue_options,
-                                   symptoms=symptoms, existing_entries=existing_entries)
+                                   symptoms=symptoms, existing_entries=existing_entries,
+                                   triggers=triggers, selected_trigger_ids=selected_trigger_ids)
 
         episode.onset = new_onset
         episode.duration_hours = _safe_float(request.form.get('duration_hours'), min_val=0)
@@ -2885,13 +3031,36 @@ def edit_episode(episode_id):
                 time_to_relief_hours=relief_val,
             ))
 
-        db.session.commit()
+        # Replace trigger links (same replace-on-save pattern as interventions).
+        # preserve_ids = the pre-edit link set, so a linked-but-inactive custom
+        # the user leaves checked survives instead of being dropped by the
+        # active-only picker validation.
+        for et in list(episode.episode_triggers):
+            db.session.delete(et)
+        db.session.flush()
+
+        _save_episode_triggers_from_form(episode.id, user.id, request.form,
+                                         preserve_ids=selected_trigger_ids)
+
+        try:
+            db.session.commit()
+        except IntegrityError:
+            # Backstop only; the custom-trigger race is handled in _resolve_trigger
+            # (savepoint). See new_episode.
+            db.session.rollback()
+            app.logger.warning('edit_episode commit failed for episode %s', episode_id, exc_info=True)
+            flash("Couldn't save those changes — please try again.", 'error')
+            existing_entries = {ss.symptom_id: ss for ss in episode.symptom_scores}
+            return render_template('edit_episode.html', episode=episode, rescue_options=rescue_options,
+                                   symptoms=symptoms, existing_entries=existing_entries,
+                                   triggers=triggers, selected_trigger_ids=selected_trigger_ids)
         flash('Episode updated.', 'success')
         return redirect(url_for('episodes'))
 
     existing_entries = {ss.symptom_id: ss for ss in episode.symptom_scores}
     return render_template('edit_episode.html', episode=episode, rescue_options=rescue_options,
-                           symptoms=symptoms, existing_entries=existing_entries)
+                           symptoms=symptoms, existing_entries=existing_entries,
+                           triggers=triggers, selected_trigger_ids=selected_trigger_ids)
 
 
 @app.route('/episodes/<int:episode_id>/delete', methods=['POST'])

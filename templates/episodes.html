@@ -29,6 +29,9 @@
           {% if ep.interventions %}
             <span>💊 {{ ep.interventions|map(attribute='protocol')|map(attribute='name')|join(', ') }}</span>
           {% endif %}
+          {% if ep.episode_triggers %}
+            <span>⚡ {{ ep.episode_triggers|map(attribute='trigger')|map(attribute='name')|join(', ') }}</span>
+          {% endif %}
         </div>
         {% if ep.notes %}<div class="notes-text">{{ ep.notes }}</div>{% endif %}
       </div>

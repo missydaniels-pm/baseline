@@ -34,6 +34,37 @@ here in the same commit.
   Most-recent-explicit-statement wins. Validate every entry before touching the
   session — no partial writes.
 
+## Selection controls (single- vs multi-select)
+- **Single-select → a `<select>` dropdown** (functional impairment, the symptom
+  add-back picker, the per-row intervention protocol). One choice, compact.
+- **Multi-select → tap-to-toggle pills/chips**, not a native multi-`<select>`
+  (miserable on mobile). Canonical example: the episode-form **trigger picker**
+  (`.trigger-chip`). Each chip is a real `<label>` wrapping a checkbox; selection
+  is a JS-toggled `.selected` class (same approach as the binary Yes/No toggle,
+  so we don't depend on `:has()`). A "+ add" text input beside the chips creates
+  a new selected chip and **flushes any un-added text on form submit** so a typed
+  value is never silently lost. Chips must `overflow-wrap: anywhere` + tap target
+  ≥44px. This pills=multi / dropdown=single split is deliberate (decided 7/15/26);
+  don't reach for a dropdown when the field is genuinely multi-select.
+
+## Match-and-link writes (shared dimensions: triggers)
+- A user-extensible dimension backed by curated globals + per-user customs
+  (currently **triggers**) resolves a typed name through **`_resolve_trigger()`**,
+  never a raw insert: match an **active** global (case-insensitive) → else the
+  user's own custom (reactivating a soft-deactivated one) → else create the
+  custom. This prevents duplicate/split rows and reuses the `Symptom`
+  case-insensitive-unique precedent.
+- Guard the custom-create with a **`db.session.begin_nested()` savepoint** so a
+  concurrent same-name create raises `IntegrityError` on the savepoint only, and
+  we re-select the winner without losing the outer transaction (the row-level
+  form of the "retry once on a possible race" rule — see also `_commit_compliance`).
+- Link rows carry a **`source`** ('user' | 'ai') for provenance. Existing-id
+  validation is scoped `or_(user_id IS NULL, user_id == me)` and gated on
+  `is_active` (with an explicit `preserve_ids` allowance on edit so a
+  linked-but-inactive custom the user left checked isn't silently dropped).
+- Edit = **replace-on-save** (delete existing link rows, re-create from the form)
+  — the same shape as interventions and symptom scores.
+
 ## Deletes (FK-safe)
 - Delete children before parents. Local SQLite enforces FKs
   (`PRAGMA foreign_keys=ON`), so FK-unsafe deletes fail in dev too, not just prod.

@@ -79,6 +79,27 @@
 
     <hr class="divider">
 
+    <div class="form-group" id="triggers-section">
+      <label>Possible triggers</label>
+      <div class="field-hint">Optional — what may have contributed. Tap any that apply.</div>
+      <div class="trigger-chips" id="trigger-chips">
+        {% for t in triggers %}
+        <label class="trigger-chip">
+          <input type="checkbox" name="trigger_ids" value="{{ t.id }}"
+                 {% if t.id in selected_trigger_ids %}checked{% endif %}>
+          <span>{{ t.name }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      <div class="trigger-add-row">
+        <input type="text" id="triggerAddInput" maxlength="100"
+               placeholder="Add your own…" aria-label="Add a custom trigger">
+        <button type="button" class="btn btn-secondary btn-sm" id="addTriggerBtn">+ Add</button>
+      </div>
+    </div>
+
+    <hr class="divider">
+
     <div id="interventions-section">
       <label>Interventions Used</label>
       <div id="intervention-rows"></div>
@@ -261,5 +282,75 @@
     setOnsetNow();
     updateOnsetMax();
   });
+
+  // Triggers — chip multi-select + inline custom add. Selection state is a
+  // JS-toggled .selected class (same approach as the binary Yes/No toggles).
+  (function() {
+    var chipWrap = document.getElementById('trigger-chips');
+    var input = document.getElementById('triggerAddInput');
+    var addBtn = document.getElementById('addTriggerBtn');
+    if (!chipWrap || !input || !addBtn) return;
+
+    function normalize(s) { return (s || '').trim().replace(/\s+/g, ' '); }
+
+    function syncChip(label) {
+      var cb = label.querySelector('input[type=checkbox]');
+      if (cb) label.classList.toggle('selected', cb.checked);
+    }
+    function wireChip(label) {
+      var cb = label.querySelector('input[type=checkbox]');
+      if (!cb) return;
+      syncChip(label);
+      cb.addEventListener('change', function() { syncChip(label); });
+    }
+    chipWrap.querySelectorAll('.trigger-chip').forEach(wireChip);
+
+    function findChipByLabel(name) {
+      var lname = name.toLowerCase();
+      var chips = chipWrap.querySelectorAll('.trigger-chip');
+      for (var i = 0; i < chips.length; i++) {
+        var span = chips[i].querySelector('span');
+        if (span && span.textContent.trim().toLowerCase() === lname) return chips[i];
+      }
+      return null;
+    }
+
+    function addCustom() {
+      var name = normalize(input.value);
+      if (!name) return;
+      if (name.length > 100) name = name.slice(0, 100);
+      var existing = findChipByLabel(name);
+      if (existing) {
+        var ecb = existing.querySelector('input[type=checkbox]');
+        if (ecb) { ecb.checked = true; syncChip(existing); }
+        input.value = '';
+        return;
+      }
+      var label = document.createElement('label');
+      label.className = 'trigger-chip';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.name = 'new_trigger_names';
+      cb.value = name;
+      cb.checked = true;
+      var span = document.createElement('span');
+      span.textContent = name;
+      label.appendChild(cb);
+      label.appendChild(span);
+      chipWrap.appendChild(label);
+      wireChip(label);
+      input.value = '';
+    }
+
+    addBtn.addEventListener('click', addCustom);
+    input.addEventListener('keydown', function(e) {
+      if (e.isComposing) return;  // don't commit mid-IME-composition
+      if (e.key === 'Enter') { e.preventDefault(); addCustom(); }
+    });
+    // Flush any text still sitting in the input when the episode form submits,
+    // so a typed-but-not-"+Add"ed trigger isn't silently lost.
+    var triggerForm = input.closest('form');
+    if (triggerForm) triggerForm.addEventListener('submit', function() { addCustom(); });
+  })();
 </script>
 {% endblock %}

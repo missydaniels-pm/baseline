@@ -204,6 +204,12 @@ class EpisodeTrigger(db.Model):
     # (is_active=False), never hard-deleted, so this FK never needs to cascade.
     # DB-level ondelete directives are a deliberate later pass (P2 backlog).
     trigger_id = db.Column(db.Integer, db.ForeignKey('triggers.id'), nullable=False)
+    # Provenance: 'user' = picked/typed on the episode form; 'ai' = inferred by
+    # AI check-in parsing. Added at the write-path increment while zero rows
+    # existed, so no backfill guess. Editing the episode form re-links as 'user'
+    # (a user review is a confirmation). Feeds the future AI trigger-analysis
+    # item, which can weight confirmed vs inferred triggers differently.
+    source = db.Column(db.String(10), nullable=False, default='user')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     episode = db.relationship('Episode', backref=db.backref('episode_triggers', lazy=True, cascade='all, delete-orphan'))
