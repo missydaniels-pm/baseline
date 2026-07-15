@@ -24,6 +24,20 @@ Live at: **https://baseline-health.up.railway.app**
 
 ---
 
+## Architecture Rules (Non-Negotiable)
+
+Two distinct failure modes — full text in CLAUDE.md. Enforced in code review + QA (section 0 of both agent checklists).
+
+### Rule 1 — The Backend Stays Stateless (scalability)
+
+Any server instance must handle any request; **no server holds state in its own memory or local disk that another wouldn't have.** Sessions → signed client cookie / shared store (compliant today); uploaded files & artifacts → object storage, never local disk; no in-memory caches, cross-request temp files, or single-instance schedulers. **Test:** would a change make one server remember something another doesn't? → violation, flag it. *Known deviation:* Flask-Limiter in-memory backend (P2 → Redis).
+
+### Rule 2 — Slow Work Belongs Off the Request Path (responsiveness)
+
+Slow/blocking work must not run synchronously in-request when the caller doesn't need the result inline — it ties up a request worker and causes latency/timeouts under load. Fire-and-forget (email) → background job queue; batch (AI trigger analysis) → worker; interactive-but-slow (AI check-in) → async job pattern (submit → poll/stream). **This leaves no per-server state — it is *not* a Rule 1 issue.** The deferral mechanism must itself be shared (Redis queue), not an in-process thread — else it fixes Rule 2 but breaks Rule 1. *Known deviations:* transactional email in-request (P2 → Redis + worker), AI check-in in-request (rebuild-era async job).
+
+---
+
 ## Project Structure
 
 ```

@@ -98,6 +98,40 @@ Required in .env locally and in Railway variables in production:
 
 ---
 
+## Architecture Rules (Non-Negotiable)
+
+Two distinct failure modes — keep them separate. **Rule 1 is about *where state lives*** (scalability); **Rule 2 is about *when slow work runs*** (responsiveness). They are not the same thing, and a naive fix for one can break the other (see the interaction note under Rule 2).
+
+### Rule 1 — The Backend Stays Stateless
+
+**Rule (non-negotiable):** The backend must remain stateless. Any server instance must be able to handle any request. No server may hold information in its own memory or local disk that another server wouldn't have access to. This is what lets us add servers later without a rewrite — do not break it.
+
+**This means, including but not limited to:**
+- User sessions live in the database or a shared session store (or a signed client-side cookie), never in server memory.
+- Uploaded files (e.g. episode/trigger photos) go to dedicated object/file storage, never the server's local disk.
+- No other per-server state: in-memory caches or counters held across requests, local temp files held across requests, background schedulers pinned to one instance.
+
+**The test for any new code:** If this change would make one server remember something another server doesn't know about, it violates the rule. Stop and flag it instead of writing it. These examples are not exhaustive — when in doubt, treat new per-server state as a violation and surface it for review.
+
+**Known deviation** (latent at single-instance today): Flask-Limiter uses an in-memory backend (per-worker, resets on deploy) — the P2 "switch Flask-Limiter to Redis" item is the fix. Sessions are already compliant (Flask signed client-side cookies, no server memory).
+
+### Rule 2 — Slow Work Belongs Off the Request Path
+
+**Rule (non-negotiable):** Slow or blocking work must not run synchronously inside the HTTP request when the caller doesn't need the result in that same response. A blocking call ties up a request worker for its whole duration, so under load this causes latency, request timeouts, and worker exhaustion. This is a *throughput/responsiveness* failure mode — **distinct from Rule 1, and it leaves no per-server state.**
+
+**This means, including but not limited to:**
+- Fire-and-forget work (email sends, notifications) → a background job queue; the request returns immediately.
+- Batch work with nobody waiting (e.g. AI trigger-pattern analysis) → a background worker.
+- Interactive slow work where the user *is* waiting for the result (e.g. AI check-in parsing) → an async job pattern (submit → return a job id → client polls or streams → render when ready), not a synchronous in-request block.
+
+**The test for any new code:** If a change adds a slow or external/blocking call (email, PDF, AI/LLM, image processing, third-party HTTP) inside a request handler, ask whether the caller needs the result in that response. If not, defer it. If yes but it's slow, use the async-job pattern.
+
+**Interaction with Rule 1 (important):** the mechanism you defer work *to* must itself be stateless — use a shared queue/worker (e.g. Redis + RQ/Celery), not an in-process thread or a scheduler pinned to one instance. An in-process deferral would satisfy Rule 2 but *violate Rule 1*.
+
+**Known deviations** (latent at single-instance/low load): (1) transactional email (verification/welcome) runs in-request — P2 "provision Redis + move email to a background job" is the fix; (2) AI check-in runs the Anthropic call in-request — durable fix is the async-job pattern, a natural fit for the React rebuild. Both are throughput items, not per-server state.
+
+---
+
 ## Key Architectural Decisions
 
 **Monolith-first:** Flask serves HTML via Jinja2 templates. This was the right call for MVP speed. A React frontend rebuild is planned post-vacation (April/May 2026) once the product stabilizes at 20-30 users. The React rebuild is a deliberate learning project, not just a refactor.

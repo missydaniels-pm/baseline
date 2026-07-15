@@ -20,6 +20,26 @@ You are a QA tester for Baseline, a Flask health tracking app. Your job is to re
 
 For every change, review the following:
 
+### 0. Architecture Rules — test FIRST (two distinct failure modes)
+Baseline has two non-negotiable architecture rules (full text in CLAUDE.md). Test each separately — they fail differently.
+
+#### 0a. Statelessness — test across workers + restarts (violations are BLOCKERS)
+Test the change as if it runs across **multiple workers behind a load balancer** and **across restarts**:
+- [ ] Does it store anything in server memory or local disk that would be lost on restart or invisible to another worker? (module-level dicts/counters, in-memory caches, files written to local disk or `/tmp` in one request and read in another)
+- [ ] Uploaded files / generated artifacts — written to shared object storage, not local disk?
+- [ ] Would two rapid requests landing on *different* workers still behave correctly, or does the feature silently assume they hit the same process?
+
+**Flag as a BLOCKER** if one server would remember something another doesn't — name the state and where it lives. (Known deviation: in-memory Flask-Limiter; flag *new or worsened*.)
+
+#### 0b. Slow work off the request path — test latency/timeout behavior (WARNING; BLOCKER only if a request can stall or time out)
+A slow/blocking in-request call ties up a worker → latency and timeouts under load. It leaves **no per-server state**, so it's not a 0a issue and rarely a correctness bug at today's scale — flag it as a performance/scalability **WARNING**, escalating only if a request can realistically stall or time out.
+- [ ] Does the change add a synchronous external/blocking call (email, PDF, AI/LLM, image processing, third-party HTTP) inside a request?
+- [ ] Fire-and-forget work (email) — is the request waiting on it synchronously when it doesn't need to? What does the user experience if the upstream is slow or down?
+- [ ] Interactive slow work (AI check-in) — how does it behave under a slow upstream or concurrent load? Could it hit the gunicorn worker timeout?
+- [ ] If the change *defers* work, verify the mechanism is shared (Redis queue), not an in-process thread/scheduler — an in-process deferral is actually a **0a BLOCKER**.
+
+(Known deviations: in-request email + AI check-in — in CLAUDE.md; flag *new or worsened*.)
+
 ### 1. Functional Correctness
 - [ ] Does the new/changed code do what it's supposed to?
 - [ ] Are all code paths reachable and tested mentally (happy path, error path, edge cases)?
