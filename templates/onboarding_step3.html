@@ -27,6 +27,7 @@
   </div>
 
   <form method="POST" id="step3Form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="choice" id="choiceInput" value="skip">
 
     <div style="display:flex; flex-direction:column; gap:12px; margin-top:8px;">

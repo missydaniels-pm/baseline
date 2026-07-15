@@ -9,6 +9,7 @@
 
 <div class="form-card">
   <form method="POST" id="episodeForm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-row">
       <div class="form-group">
         <label for="onset">Onset Date & Time</label>
@@ -144,6 +145,7 @@
   <div class="form-actions">
     <form class="delete-form" method="POST" action="{{ url_for('delete_episode', episode_id=episode.id) }}"
           onsubmit="return confirm('Delete this episode?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="btn btn-danger">Delete Episode</button>
     </form>
     <div class="form-actions-primary">

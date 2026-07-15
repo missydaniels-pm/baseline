@@ -480,7 +480,7 @@
   function postDay(dateIso, entries, onOk, onErr) {
     fetch('{{ url_for("log_protocol_day") }}', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
       body: JSON.stringify({ date: dateIso, entries: entries }),
     }).then(function(r) { return r.json().then(function(j) { return { ok: r.ok && j.ok, j: j }; }); })
       .then(function(res) { if (res.ok) onOk(res.j); else onErr(res.j); })
@@ -934,7 +934,7 @@
 
   function close() {
     overlay.style.display = 'none';
-    fetch('{{ url_for("tour_complete") }}', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    fetch('{{ url_for("tour_complete") }}', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() } });
   }
 
   btnNext.addEventListener('click', function() {

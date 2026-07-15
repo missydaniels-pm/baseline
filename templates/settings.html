@@ -10,6 +10,7 @@
   <h2 class="section-title" style="margin-bottom:20px;">AI Logging</h2>
 
   <form method="POST" data-autosave>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     <div class="settings-row">
       <div>
@@ -33,6 +34,7 @@
 <div class="settings-section">
   <h2 class="section-title" style="margin-bottom:20px;">Email Preferences</h2>
   <form method="POST" action="{{ url_for('email_preferences') }}" data-autosave>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="settings-row">
       <div>
         <div class="settings-row-label" id="email-updates-label">Send me app updates and tips</div>
@@ -79,6 +81,7 @@
   <div class="settings-sub-section">
     <h3 class="settings-sub-title">Change email</h3>
     <form method="POST" action="{{ url_for('change_email') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label for="new_email">New email</label>
         <input type="email" id="new_email" name="new_email" placeholder="you@example.com" autocomplete="email">
@@ -94,6 +97,7 @@
   <div class="settings-sub-section">
     <h3 class="settings-sub-title">Change password</h3>
     <form method="POST" action="{{ url_for('change_password') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label for="current_password">Current password</label>
         <input type="password" id="current_password" name="current_password" placeholder="Your current password" autocomplete="current-password">
@@ -145,6 +149,7 @@
       episodes, protocols, experiments, and check-in history. This cannot be undone.
     </p>
     <form method="POST" action="{{ url_for('delete_account') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label for="delete-confirm-input" style="font-size:13px; font-weight:600; display:block; margin-bottom:6px;">
         Type <span style="color:var(--high);">DELETE</span> to confirm
       </label>

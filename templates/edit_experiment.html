@@ -9,6 +9,7 @@
 
 <div class="form-card">
   <form method="POST" id="experimentForm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-group">
       <label for="name">Experiment name</label>
       <input type="text" id="name" name="name" required autofocus value="{{ experiment.name }}"

@@ -127,6 +127,7 @@
       </div>
       <div style="display:flex; gap:8px; flex-shrink:0;">
         <form class="delete-form" method="POST" action="{{ url_for('restore_rescue_option', option_id=opt.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-secondary btn-sm">Restore</button>
         </form>
       </div>

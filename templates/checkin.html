@@ -53,6 +53,7 @@
       </div>
     {% else %}
       <form method="POST" id="checkinForm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="client_time" id="clientTime">
         <input type="hidden" name="client_tz" id="clientTz">
         <div class="chat-input-row">

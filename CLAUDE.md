@@ -30,7 +30,7 @@ Live at: https://mybaselineapp.com (custom domain; Railway default: baseline-hea
 - **Frontend:** Jinja2 templates, vanilla JavaScript, Chart.js
 - **AI:** Anthropic API (claude-sonnet-4-6) for check-in parsing
 - **Hosting:** Railway (auto-deploys from GitHub main branch), custom domain via Cloudflare DNS
-- **Auth:** Flask sessions, bcrypt password hashing, self-serve registration with email verification (itsdangerous signed tokens, 24h TTL, SHA-256 replay protection), Flask-Limiter rate limiting
+- **Auth:** Flask sessions, bcrypt password hashing, self-serve registration with email verification (itsdangerous signed tokens, 24h TTL, SHA-256 replay protection), Flask-Limiter rate limiting, CSRF protection (Flask-WTF `CSRFProtect`, all forms + JSON fetch endpoints)
 - **PWA:** manifest.json, service worker, home screen icons
 
 ---
@@ -89,8 +89,9 @@ Baseline Files/
 
 Required in .env locally and in Railway variables in production:
 - `ANTHROPIC_API_KEY` — Anthropic API key for AI check-in
-- `SECRET_KEY` — Flask session secret key
+- `SECRET_KEY` — Flask session secret key (also backs CSRF tokens)
 - `DEBUG` — set to `true` locally only, `false` in production
+- `WTF_CSRF_ENABLED` — CSRF on by default (unset = on, incl. local dev + prod). Set to `false` **only** in test harnesses that POST via the Flask test client without tokens. Never set in production.
 - `DATABASE_URL` — set automatically by Railway from PostgreSQL service reference
 - `APP_URL` — base URL for email links (production: `https://mybaselineapp.com`)
 - `RESEND_API_KEY` — Resend API key for transactional email (verification + welcome). From address is `Baseline <hello@mybaselineapp.com>`. Unset locally → email sends fail silently.
@@ -147,6 +148,8 @@ Two distinct failure modes — keep them separate. **Rule 1 is about *where stat
 **Database:** SQLite locally (no setup required), PostgreSQL in production. The DATABASE_URL environment variable controls which is used. The postgres:// → postgresql:// rewrite is handled in app.py.
 
 **Auth:** Self-serve registration with email verification. Flow: `/register` creates inactive user + sends signed itsdangerous token (24h TTL) → user clicks `/verify/<token>` → `verified_at` set, `is_active=True`, welcome email sent, logged in. Used tokens hashed into `used_verify_tokens` to block replay. Unverified accounts deleted after 48h by `cleanup_stale_unverified_users()` at startup. Flask-Limiter: 5/hour register + resend, 20/hour login. Disposable-email blocklist. Privacy policy acknowledgment required (server-enforced). `InviteCode` + `/dev/create-invite` retained for admin manual onboarding.
+
+**CSRF (Flask-WTF):** `CSRFProtect(app)` protects every state-changing POST globally (opt-out, not opt-in — nothing is missed by default). Every `<form method="POST">` carries a hidden `{{ csrf_token() }}`; JSON `fetch` POSTs (`/protocols/log-day`, `/tour/complete`) send the token as an `X-CSRFToken` header, read from a `<meta name="csrf-token">` in `base.html` via the global `csrfToken()` helper. A `CSRFError` handler returns a friendly flash+redirect for forms and a `{ok:false}` 400 for JSON — never a raw 400. The CSRF secret rides `SECRET_KEY` (session-stored, Rule 1 compliant). **On by default everywhere including local dev** (so the token flow is browser-exercised before prod); the test suites opt out with `WTF_CSRF_ENABLED=false` set before importing app. When adding a new form or fetch POST, include the token (see CONVENTIONS.md).
 
 **AI check-in:** Opt-in. Uses load_dotenv(override=True) to ensure .env always wins over shell environment. Returns structured JSON parsed into episode/compliance records. Triggers follow a **suggest-and-confirm** rule (unlike interventions, which the AI auto-creates): matched existing triggers link automatically (`source='ai'`), but a trigger name the AI doesn't recognize is never created — it's surfaced as a suggestion the user confirms by saving on the episode form (created `source='user'`). Owner decision 7/15/26.
 

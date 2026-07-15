@@ -9,6 +9,7 @@
 
 <div class="form-card">
   <form method="POST" id="symptomForm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-group">
       <label for="name">Name</label>
       <input type="text" id="name" name="name" value="{{ symptom.name }}" required autofocus
@@ -78,10 +79,12 @@
       {% if symptom.is_active %}
       <form method="POST" action="{{ url_for('deactivate_symptom', symptom_id=symptom.id) }}"
             onsubmit="return confirm('Pause tracking for {{ symptom.name }}? It will stop appearing on the episode form, but all historical data is kept.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="btn btn-danger">Pause Tracking</button>
       </form>
       {% else %}
       <form method="POST" action="{{ url_for('reactivate_symptom', symptom_id=symptom.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="btn btn-reactivate">Resume Tracking</button>
       </form>
       {% endif %}

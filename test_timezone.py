@@ -9,6 +9,7 @@ import tempfile
 
 os.environ['DATABASE_URL'] = f'sqlite:///{tempfile.mkdtemp()}/t.db'
 os.environ['DEBUG'] = 'true'
+os.environ['WTF_CSRF_ENABLED'] = 'false'  # test client posts without tokens
 os.environ.setdefault('SECRET_KEY', 'test-secret')
 
 from datetime import date, datetime

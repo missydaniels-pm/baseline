@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}Baseline{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -139,6 +140,13 @@
 </div>
 
 <script>
+  // CSRF token for fetch/XHR POSTs (Flask-WTF). Reads the meta tag in <head>;
+  // send it as the X-CSRFToken header on any JSON POST. Global on purpose.
+  function csrfToken() {
+    var m = document.querySelector('meta[name="csrf-token"]');
+    return m ? m.getAttribute('content') : '';
+  }
+
   // Store the browser's timezone so server-rendered "today" (dashboard
   // compliance card) matches the user's local day. Railway runs UTC.
   try {

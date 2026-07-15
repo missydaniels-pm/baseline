@@ -18,7 +18,7 @@ Live at: **https://baseline-health.up.railway.app**
 - **Database:** SQLAlchemy ORM — PostgreSQL (production), SQLite (local dev). Local SQLite enforces foreign keys (`PRAGMA foreign_keys=ON` on every connection, set in `database.py`) so FK-unsafe deletes fail in dev the same way they would on production PostgreSQL (added 7/12/26 after the protocol-delete incident).
 - **Frontend:** Jinja2 templates, vanilla JavaScript, Chart.js
 - **AI:** Anthropic API (claude-sonnet-4-6) for check-in parsing
-- **Auth:** Flask sessions, bcrypt password hashing, self-serve registration with email verification (itsdangerous signed tokens, 24h TTL), Flask-Limiter rate limiting
+- **Auth:** Flask sessions, bcrypt password hashing, self-serve registration with email verification (itsdangerous signed tokens, 24h TTL), Flask-Limiter rate limiting, CSRF protection (Flask-WTF)
 - **Hosting:** Railway (auto-deploys from GitHub main branch)
 - **PWA:** manifest.json, service worker, home screen icons (Pillow-generated)
 
@@ -110,8 +110,9 @@ templates/privacy.html          — in-app privacy policy (single source of trut
 | Variable | Required | Notes |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | Yes | Anthropic API key for AI check-in |
-| `SECRET_KEY` | Yes | Flask session secret key |
+| `SECRET_KEY` | Yes | Flask session secret key (also backs CSRF tokens) |
 | `DEBUG` | No | `true` locally only, `false` in production |
+| `WTF_CSRF_ENABLED` | No | CSRF on by default (unset = on, incl. local dev + prod). Set `false` **only** in test harnesses that POST via the test client without tokens. Never set in production. |
 | `DATABASE_URL` | Production only | Set automatically by Railway PostgreSQL reference |
 | `RESEND_API_KEY` | No | Resend API key for transactional email. From address is hardcoded to `Baseline <hello@mybaselineapp.com>` (domain must be verified in Resend). If unset, email sends fail silently — used in local dev. Replaces the prior Gmail SMTP flow (Railway blocks outbound SMTP — errno 101). |
 | `RESEND_AUDIENCE_ID` | No | Resend audience UUID for contact-list sync. When set (alongside `RESEND_API_KEY`), verify/unsubscribe/email-change/account-delete events upsert or remove the user's contact in this audience with the current `email_updates_enabled` state. Unset locally → all sync calls are no-ops. |
@@ -251,6 +252,7 @@ python generate_icons.py
 - Account deletion removes all data in FK-safe order: EpisodeInterventions → SymptomScores → EpisodeTriggers → CheckIns → Episodes → ProtocolCompliance → ProtocolEvents → Experiments → Protocols → Symptoms → Triggers (custom only) → UserActivity → InviteCode reference → User
 - Data deletion satisfies Washington State My Health MY Data Act (MHMD) requirements
 - **Email verification (self-serve registration):** New accounts created with `is_active=False` and `verified_at=None`. Signed itsdangerous token (HMAC over SECRET_KEY, salt `baseline-email-verify-v1`, 24h max_age) emailed as a verification link. On verify, token SHA-256 hash stored in `used_verify_tokens` to prevent replay; user flipped to `is_active=True` with `verified_at=now()`. Welcome email sent post-verification.
+- **CSRF protection:** Flask-WTF `CSRFProtect(app)` — global/opt-out, covers every POST. Forms carry a hidden `{{ csrf_token() }}`; JSON fetch POSTs (`/protocols/log-day`, `/tour/complete`) send it as an `X-CSRFToken` header read from a `<meta name="csrf-token">` (`csrfToken()` helper in base.html). `CSRFError` handler → friendly flash+redirect for forms, `{ok:false}` 400 for JSON. Secret rides SECRET_KEY. On by default incl. local dev; tests set `WTF_CSRF_ENABLED=false`.
 - **Rate limiting:** Flask-Limiter (in-memory backend). `/register` and `/resend-verification` 5/hour/IP; `/login` 20/hour/IP.
 - **Disposable-email blocklist:** common throwaway domains rejected at `/register`.
 - **Privacy acknowledgment:** `/register` requires a checkbox acknowledging the Privacy Policy (server-enforced).

@@ -81,6 +81,18 @@ here in the same commit.
   history (triggers, rescue options). Never hard-delete a row others reference.
 - New child table → trace every parent's delete path (blast radius).
 
+## CSRF (every state-changing POST)
+- Flask-WTF `CSRFProtect` is global/opt-out — a new POST route is protected
+  automatically. **Every `<form method="POST">` must include**
+  `<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">` right
+  after the opening tag. A button with `form="..."` outside its form is fine as
+  long as the token is inside that form.
+- **JSON `fetch`/XHR POSTs** send the token as an `X-CSRFToken` header:
+  `headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() }`.
+  `csrfToken()` (global, in base.html) reads the `<meta name="csrf-token">`.
+- Don't hand-roll CSRF exemptions. If a genuinely token-less POST is ever needed
+  (e.g. an external webhook), `@csrf.exempt` it explicitly and say why.
+
 ## User scoping (privacy)
 - Every query is scoped by `user_id` — directly, or by joining through an owned
   parent (e.g. Episode). This is health data; a missing scope is a cross-user leak.

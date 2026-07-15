@@ -116,6 +116,7 @@
       <hr class="divider">
 
       <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-group">
           <label for="outcome_rating">Overall outcome (1–10)</label>
           <div class="field-hint">How effective was this protocol? 1 = no benefit, 10 = major improvement.</div>

@@ -11,6 +11,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, ses
 from flask_bcrypt import Bcrypt
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from flask_limiter import Limiter
+from flask_wtf.csrf import CSRFProtect, CSRFError, generate_csrf
 from flask_limiter.util import get_remote_address
 from sqlalchemy import text, or_
 from sqlalchemy.exc import IntegrityError
@@ -18,7 +19,7 @@ from database import db, User, Episode, Protocol, Symptom, SymptomScore, Episode
 from collections import defaultdict
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -40,9 +41,36 @@ else:
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'dev-only-' + secrets.token_hex(16)
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
+# CSRF (Flask-WTF): on by default everywhere, including local dev, so the token
+# flow is exercised in the browser before it ships. The test suites opt out with
+# WTF_CSRF_ENABLED=false (set before importing app). CSRF secret rides SECRET_KEY.
+app.config['WTF_CSRF_ENABLED'] = os.environ.get('WTF_CSRF_ENABLED', 'true').lower() != 'false'
+# No per-token expiry: the token is bound to the session (valid for its lifetime).
+# The default 1h limit would silently discard a slow episode/check-in form on
+# submit — real risk for users who take a while — with no security gain here.
+app.config['WTF_CSRF_TIME_LIMIT'] = None
 
 db.init_app(app)
 bcrypt = Bcrypt(app)
+csrf = CSRFProtect(app)
+
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):
+    """Stale/missing CSRF token. JSON (fetch) callers get a JSON 400 in the shape
+    they already handle; form posts get a friendly flash and return to where they
+    came from — never a raw 400 page."""
+    wants_json = request.is_json or request.path.rstrip('/').endswith('/log-day') \
+        or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+    if wants_json:
+        return {'ok': False, 'error': 'Your session expired — please refresh and try again.'}, 400
+    flash('Your session expired or that form was stale. Please try again.', 'error')
+    # Only bounce back to a same-origin referrer (the failing POST is often a
+    # cross-site forgery — never redirect to an attacker-supplied Referer).
+    ref = request.referrer
+    if ref and urlparse(ref).netloc == request.host:
+        return redirect(ref)
+    return redirect(url_for('index'))
 
 limiter = Limiter(
     key_func=get_remote_address,
@@ -3672,10 +3700,11 @@ def dev_reset():
         flash('Dev reset complete. Onboarding restarted.', 'success')
         return redirect(url_for('onboarding_step1'))
 
-    return '''<!doctype html><html><body style="font-family:sans-serif;max-width:400px;margin:60px auto;padding:20px;">
+    return f'''<!doctype html><html><body style="font-family:sans-serif;max-width:400px;margin:60px auto;padding:20px;">
         <h2>Dev Reset</h2>
         <p>This will delete all episodes, symptoms, experiments, and protocols, and restart onboarding.</p>
         <form method="POST">
+          <input type="hidden" name="csrf_token" value="{generate_csrf()}">
           <button type="submit" style="background:#e05252;color:#fff;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-size:15px;">
             Reset everything
           </button>
@@ -3807,7 +3836,7 @@ def dev_seed():
         flash('12 weeks of test data seeded successfully.', 'success')
         return redirect(url_for('index'))
 
-    return '''<!doctype html><html><body style="font-family:sans-serif;max-width:500px;margin:60px auto;padding:20px;">
+    return f'''<!doctype html><html><body style="font-family:sans-serif;max-width:500px;margin:60px auto;padding:20px;">
         <h2>Seed Test Data</h2>
         <p>Generates <strong>12 weeks</strong> of realistic test data:</p>
         <ul style="line-height:1.8;">
@@ -3818,6 +3847,7 @@ def dev_seed():
         </ul>
         <p style="color:#888; font-size:13px;">Only runs if you have fewer than 20 existing episodes.</p>
         <form method="POST">
+          <input type="hidden" name="csrf_token" value="{generate_csrf()}">
           <button type="submit" style="background:#5a6fd6;color:#fff;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-size:15px;">
             Seed test data
           </button>

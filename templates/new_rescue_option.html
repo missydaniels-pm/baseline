@@ -9,6 +9,7 @@
 
 <div class="form-card">
   <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-group">
       <label for="name">Name</label>
       <input type="text" id="name" name="name" required placeholder="e.g. Ibuprofen 400mg, Ondansetron, Prednisone"

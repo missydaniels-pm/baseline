@@ -77,6 +77,7 @@
     <a href="{{ url_for('edit_experiment', exp_id=exp.id) }}" class="btn btn-sm btn-secondary">Edit</a>
     <form method="POST" action="{{ url_for('abandon_experiment', exp_id=exp.id) }}"
           onsubmit="return confirm('Abandon this experiment? This cannot be undone.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="btn btn-sm btn-muted">Abandon</button>
     </form>
   </div>

@@ -19,6 +19,7 @@
   </p>
 
   <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     <div class="form-group">
       <label for="baseline_episodes_per_month">In the last 4 weeks, roughly how many bad days did you have?</label>

@@ -67,12 +67,14 @@
       <summary style="cursor:pointer; font-size:13px; color:var(--text-muted);">Update today's entry</summary>
       <div style="margin-top:12px;">
         <form method="POST" action="{{ url_for('log_protocol_today', protocol_id=protocol.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           {{ _log_form(today_log.took, today_log.notes) }}
         </form>
       </div>
     </details>
   {% else %}
     <form method="POST" action="{{ url_for('log_protocol_today', protocol_id=protocol.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       {{ _log_form(true, none) }}
     </form>
   {% endif %}
