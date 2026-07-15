@@ -2,7 +2,12 @@
 instance/
 .env
 .DS_Store
-.claude/settings.local.json
+# Personal/local Claude tooling configs, anywhere in the tree — root OR a stray
+# nested .claude/ (e.g. one accidentally created under a subfolder). Scoped to
+# the specific local files so .claude/agents/*.md (the tracked review agents)
+# stays tracked.
+**/.claude/settings.local.json
+**/.claude/launch.json
 .claude/worktrees/
 __pycache__/
 ~$*
