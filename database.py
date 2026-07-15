@@ -43,6 +43,12 @@ class User(db.Model):
     experiments = db.relationship('Experiment', backref='user', lazy=True, cascade='all, delete-orphan')
     checkins = db.relationship('CheckIn', backref='user', lazy=True, cascade='all, delete-orphan')
     protocol_compliance = db.relationship('ProtocolCompliance', backref='user', lazy=True, cascade='all, delete-orphan')
+    # Custom triggers only (user_id set); global triggers have user_id NULL and
+    # belong to no user, so they never appear in any user's collection. Declared
+    # for consistency with the other owned children and to make db.session.delete(user)
+    # FK-safe. Note: delete_account uses bulk deletes (which bypass this cascade),
+    # so it still removes custom triggers explicitly.
+    triggers = db.relationship('Trigger', backref='user', lazy=True, cascade='all, delete-orphan')
 
     def __repr__(self):
         return f'<User {self.name}>'
@@ -68,6 +74,28 @@ class Symptom(db.Model):
 
     def __repr__(self):
         return f'<Symptom {self.name}>'
+
+
+class Trigger(db.Model):
+    """A trigger dimension for episodes. Hybrid model: rows with user_id IS NULL
+    are the curated global seed list (shared, admin-curated); rows with a user_id
+    are that user's custom triggers. Uniqueness is enforced by two partial unique
+    indexes created in run_migrations() (globals unique by lower(name); customs
+    unique per user by lower(name)) — the app-level match-and-link on the write
+    path is primary, the indexes are the invariant backstop. Custom "deletion" is
+    a soft-deactivate (is_active=False) so linked EpisodeTrigger history survives;
+    globals are soft-retired the same way, never hard-deleted."""
+    __tablename__ = 'triggers'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)  # NULL = global seed
+    name = db.Column(db.String(100), nullable=False)  # tag-like; deliberately tighter than Symptom.name (200)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        scope = 'global' if self.user_id is None else f'user={self.user_id}'
+        return f'<Trigger {self.name} ({scope})>'
 
 
 class Episode(db.Model):
@@ -160,6 +188,29 @@ class EpisodeIntervention(db.Model):
 
     def __repr__(self):
         return f'<EpisodeIntervention episode={self.episode_id} protocol={self.protocol_id}>'
+
+
+class EpisodeTrigger(db.Model):
+    """Junction linking an episode to a Trigger (global or custom). Single clean
+    FK to triggers regardless of the trigger's scope."""
+    __tablename__ = 'episode_triggers'
+    __table_args__ = (
+        db.UniqueConstraint('episode_id', 'trigger_id', name='ux_episode_trigger'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    episode_id = db.Column(db.Integer, db.ForeignKey('episodes.id'), nullable=False)
+    # No ondelete on trigger_id: triggers are only ever soft-deactivated
+    # (is_active=False), never hard-deleted, so this FK never needs to cascade.
+    # DB-level ondelete directives are a deliberate later pass (P2 backlog).
+    trigger_id = db.Column(db.Integer, db.ForeignKey('triggers.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    episode = db.relationship('Episode', backref=db.backref('episode_triggers', lazy=True, cascade='all, delete-orphan'))
+    trigger = db.relationship('Trigger')
+
+    def __repr__(self):
+        return f'<EpisodeTrigger episode={self.episode_id} trigger={self.trigger_id}>'
 
 
 class Protocol(db.Model):

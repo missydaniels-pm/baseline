@@ -14,7 +14,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-from database import db, User, Episode, Protocol, Symptom, SymptomScore, EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode, UsedVerifyToken, UserActivity
+from database import db, User, Episode, Protocol, Symptom, SymptomScore, EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode, UsedVerifyToken, UserActivity, Trigger, EpisodeTrigger
 from collections import defaultdict
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
@@ -373,6 +373,26 @@ Unsubscribe from app updates: {unsubscribe_url}
     _send_email(user_email, 'Welcome to Baseline', html, plain)
 
 
+# Curated global trigger seed list (cap: 12; condition-agnostic). Rows are
+# inserted with user_id NULL (global) idempotently in run_migrations(). Editing
+# this list adds new globals on next deploy; it never renames/removes existing
+# ones (globals are soft-retired via is_active, never hard-deleted).
+SEED_TRIGGERS = [
+    'Stress',
+    'Poor sleep',
+    'Dehydration',
+    'Skipped or late meal',
+    'Alcohol',
+    'Caffeine',
+    'Hormonal / menstrual cycle',
+    'Weather / barometric change',
+    'Strong smells',
+    'Specific food or drink',
+    'Physical overexertion',
+    'Travel or routine disruption',
+]
+
+
 def run_migrations():
     """Add columns that may not exist in older DB files."""
     from sqlalchemy import inspect as sa_inspect
@@ -557,6 +577,36 @@ def run_migrations():
                 ))
                 conn.commit()
                 print("Migration complete.")
+
+        # --- Structured triggers: partial unique indexes + global seed list ---
+        # Tables (triggers, episode_triggers) are auto-created by db.create_all().
+        # Enforce name uniqueness at the DB level: app-level match-and-link is the
+        # primary write path, these indexes are the invariant backstop against
+        # races / AI check-in / direct edits. TWO PARTIAL indexes because a plain
+        # (user_id, lower(name)) index wouldn't constrain globals — a NULL user_id
+        # compares as distinct in both SQLite and PostgreSQL, so duplicate globals
+        # would slip through. Partial + expression indexes work on both engines.
+        # Log-and-continue so a failure here can't block startup.
+        try:
+            conn.execute(text(
+                'CREATE UNIQUE INDEX IF NOT EXISTS ux_trigger_global_name '
+                'ON triggers (lower(name)) WHERE user_id IS NULL'
+            ))
+            conn.execute(text(
+                'CREATE UNIQUE INDEX IF NOT EXISTS ux_trigger_user_name '
+                'ON triggers (user_id, lower(name)) WHERE user_id IS NOT NULL'
+            ))
+            for _tname in SEED_TRIGGERS:
+                conn.execute(text(
+                    'INSERT INTO triggers (user_id, name, is_active, created_at) '
+                    'SELECT NULL, :name, :active, :now '
+                    'WHERE NOT EXISTS (SELECT 1 FROM triggers '
+                    'WHERE user_id IS NULL AND lower(name) = lower(:name))'
+                ), {'name': _tname, 'active': True, 'now': datetime.utcnow()})
+            conn.commit()
+        except Exception as exc:
+            app.logger.warning('trigger seed/index migration failed: %s', exc)
+            conn.rollback()
 
 
 def cleanup_stale_unverified_users():
@@ -1303,6 +1353,9 @@ def delete_account():
     SymptomScore.query.filter(
         SymptomScore.episode_id.in_(episode_ids)
     ).delete(synchronize_session=False)
+    EpisodeTrigger.query.filter(
+        EpisodeTrigger.episode_id.in_(episode_ids)
+    ).delete(synchronize_session=False)
     CheckIn.query.filter_by(user_id=user_id).delete()
     Episode.query.filter_by(user_id=user_id).delete()
     ProtocolCompliance.query.filter_by(user_id=user_id).delete()
@@ -1310,6 +1363,9 @@ def delete_account():
     Experiment.query.filter_by(user_id=user_id).delete()
     Protocol.query.filter_by(user_id=user_id).delete()
     Symptom.query.filter_by(user_id=user_id).delete()
+    # Custom triggers only (user_id set); global triggers have user_id NULL and
+    # are shared — their EpisodeTrigger links were removed above.
+    Trigger.query.filter_by(user_id=user_id).delete()
     UserActivity.query.filter_by(user_id=user_id).delete()
     InviteCode.query.filter_by(used_by_user_id=user_id).update({'used_by_user_id': None, 'used_at': None})
     User.query.filter_by(id=user_id).delete()
@@ -3268,9 +3324,13 @@ def dev_reset():
         SymptomScore.query.filter(
             SymptomScore.episode_id.in_(episode_ids)
         ).delete(synchronize_session=False)
+        EpisodeTrigger.query.filter(
+            EpisodeTrigger.episode_id.in_(episode_ids)
+        ).delete(synchronize_session=False)
         Episode.query.filter_by(user_id=user.id).delete()
         Protocol.query.filter_by(user_id=user.id).delete()
         Symptom.query.filter_by(user_id=user.id).delete()
+        Trigger.query.filter_by(user_id=user.id).delete()  # custom triggers only
         user.onboarding_complete = False
         user.ai_logging_enabled = False
         user.baseline_episodes_per_month = None
