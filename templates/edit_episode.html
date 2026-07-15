@@ -99,7 +99,16 @@
     <div class="form-group" id="triggers-section">
       <label>Possible triggers</label>
       <div class="field-hint">Optional — what may have contributed. Tap any that apply.</div>
+      {% if suggested_trigger_names|default([]) %}
+      <div class="field-hint trigger-suggest-hint"><span aria-hidden="true">✨</span> Suggested from your check-in — save to keep, or tap to remove.</div>
+      {% endif %}
       <div class="trigger-chips" id="trigger-chips">
+        {% for sname in suggested_trigger_names|default([]) %}
+        <label class="trigger-chip selected trigger-chip-suggested">
+          <input type="checkbox" name="new_trigger_names" value="{{ sname }}" checked>
+          <span>{{ sname }}</span>
+        </label>
+        {% endfor %}
         {% for t in triggers %}
         <label class="trigger-chip">
           <input type="checkbox" name="trigger_ids" value="{{ t.id }}"

@@ -64,6 +64,13 @@ here in the same commit.
   linked-but-inactive custom the user left checked isn't silently dropped).
 - Edit = **replace-on-save** (delete existing link rows, re-create from the form)
   — the same shape as interventions and symptom scores.
+- **AI check-in parity is deliberately NOT symmetric with the form.** The AI path
+  uses match-only **`_match_trigger()`** (never `_resolve_trigger`), so it links
+  only triggers the user already has (`source='ai'`); a name it doesn't recognize
+  is returned as a *suggestion*, stashed in the session, and offered on the
+  episode form for the user to confirm (Save → `source='user'`). Rule: **AI links,
+  the user creates.** (Contrast interventions, where the AI auto-creates — triggers
+  are more speculative, so they get a confirm step. Owner decision 7/15/26.)
 
 ## Deletes (FK-safe)
 - Delete children before parents. Local SQLite enforces FKs

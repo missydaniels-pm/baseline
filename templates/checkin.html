@@ -32,7 +32,7 @@
             <div class="chat-time">{{ msg.created_at.strftime('%-I:%M %p') }}</div>
             {% if msg.episode_id %}
               <div>
-                <span class="chat-episode-tag">Episode logged</span>
+                <a href="{{ url_for('edit_episode', episode_id=msg.episode_id) }}" class="chat-episode-tag">Episode logged →</a>
               </div>
             {% endif %}
           </div>

@@ -1650,6 +1650,12 @@ def build_system_prompt(user, client_time=None):
         for r in rescues
     ) or '  (none)'
 
+    # Triggers the user already has (curated globals + their own active customs).
+    # Matched by name, not id, on the write side (via _match_trigger).
+    trigger_list = '\n'.join(
+        f'  - "{t.name}"' for t in _pickable_triggers(user.id)
+    ) or '  (none)'
+
     exp_text = ''
     if active_exp:
         exp_text = f'\nActive experiment: "{active_exp.name}" (started {active_exp.start_date}).'
@@ -1672,6 +1678,9 @@ Active preventative protocols:
 Rescue options (interventions):
 {rescue_list}
 
+Possible triggers the user already tracks:
+{trigger_list}
+
 The user will describe how they are feeling or what happened today. Parse their message and respond with ONLY valid JSON (no markdown, no code fences).
 
 For the episode onset field: if the user mentions a specific time (e.g. "around 2pm", "this morning at 8"), infer the full datetime. Otherwise use the current date and time ({today}T{current_time}) as the onset. Never return null for onset when had_episode is true.
@@ -1680,6 +1689,8 @@ Symptom value format (read carefully — symptoms have different types):
 {score_format_block}
 
 Always match intervention names to the user's existing interventions listed above. Use your knowledge of brand/generic medication names, common misspellings, and colloquial terms to map to the correct one (e.g., "muscle relaxer" → the user's muscle relaxant if they have one, "ondansetren" → Ondansetron). If the user mentions multiple interventions, create a separate entry for each. If an intervention is genuinely new (not in the list), use the correct pharmacological or common name.
+
+Triggers: if the user mentions something that may have contributed to an episode, include it in the "triggers" array by name. Map to the user's existing triggers above whenever possible using synonyms and common phrasing (e.g. "didn't sleep" → "Poor sleep", "wine" → "Alcohol", "my period" → "Hormonal / menstrual cycle"). Use the existing trigger's exact name when you match one. Only if the user clearly names a possible trigger that isn't covered by the list, include it with a short natural name — the app will offer it to the user to confirm as a new trigger rather than creating it automatically. Never invent triggers the user didn't mention; an empty array is correct when none came up.
 
 Use this exact schema:
 
@@ -1696,6 +1707,7 @@ Use this exact schema:
         "time_to_relief_hours": <float or null>
       }}
     ],
+    "triggers": ["<trigger name — matched to the list above where possible>"],
     "notes": "<string or null>"
   }},
   "protocol_compliance": [
@@ -1711,7 +1723,7 @@ Use this exact schema:
 
 If no episode occurred, set had_episode to false and episode_data fields to null/empty.
 {rate_prompt_line}
-If no interventions were used, set interventions to an empty array [].
+If no interventions were used, set interventions to an empty array []. If no triggers came up, set triggers to an empty array [].
 For protocol_compliance: include an entry for every preventative protocol the user explicitly or implicitly addressed — "took everything" means every listed preventative with took=true; "I missed my magnesium" means that protocol with took=false (include their reason as the note if they gave one). Only include protocols the user actually addressed; leave out ones they didn't mention. Never treat a missed protocol as a failure in your reply — misses are useful data.
 Always populate suggested_response with a warm, brief reply."""
 
@@ -1775,6 +1787,8 @@ def checkin():
         parsed, raw = parse_checkin(user, message_text, client_time=client_time)
 
         episode_id = None
+        pending_names = None       # AI-suggested new triggers, stashed only after commit
+        pending_episode_id = None
 
         if parsed is None:
             # Parse failure — save raw as assistant message
@@ -1906,6 +1920,21 @@ def checkin():
                         suggestion += f" I've added {n} as a new intervention."
                     parsed['suggested_response'] = suggestion
 
+                # Triggers — link the ones the user already tracks (source='ai');
+                # unmatched names are suggestions, NOT auto-created. Held locally
+                # here and stashed in the session only *after* a successful commit
+                # (a rolled-back episode must not leave an orphaned suggestion).
+                suggested_new_triggers = _apply_ai_triggers(
+                    episode.id, user.id, ep_data.get('triggers'))
+                if suggested_new_triggers:
+                    pending_names = suggested_new_triggers
+                    pending_episode_id = episode.id
+                    names_txt = ', '.join(f'"{n}"' for n in suggested_new_triggers)
+                    parsed['suggested_response'] = (parsed.get('suggested_response', '')
+                        + f" I noted {names_txt} as possible new trigger"
+                        + ('s' if len(suggested_new_triggers) > 1 else '')
+                        + " — open the episode to review and save.")
+
             # Log protocol compliance. Prefer the browser's local date over the
             # server's (Railway runs UTC — evening check-ins would land on
             # tomorrow otherwise). Upsert so an explicit statement to the AI
@@ -1956,6 +1985,17 @@ def checkin():
             # Roll back and ask the user to resend rather than 500.
             db.session.rollback()
             flash("That didn't save — please send it again.", 'error')
+            return redirect(url_for('checkin'))
+
+        # Commit succeeded — now safe to stash the ephemeral trigger suggestion.
+        # Single most-recent entry (overwritten each check-in), mirroring
+        # session['pending_verify_email']: bounded, no read-modify-write race.
+        # The episode edit form peeks this and clears it once the user saves.
+        if pending_names:
+            session['pending_ai_triggers'] = {
+                'episode_id': pending_episode_id,
+                'names': pending_names,
+            }
         return redirect(url_for('checkin'))
 
     # GET
@@ -2813,7 +2853,56 @@ def _resolve_trigger(user_id, name):
         return c
 
 
-def _save_episode_triggers_from_form(episode_id, user_id, form, source='user', preserve_ids=None):
+def _match_trigger(user_id, name):
+    """Match a parsed name to an EXISTING active trigger (global or the user's
+    own custom), case-insensitive. Returns the Trigger or None — never creates.
+    The AI check-in path uses this (not _resolve_trigger) so AI inference links
+    only to triggers the user already has; genuinely new names are surfaced as
+    suggestions for the user to confirm rather than auto-created."""
+    from sqlalchemy import func
+    name = _normalize_trigger_name(name)
+    if not name:
+        return None
+    lname = name.lower()
+    return (Trigger.query
+            .filter(Trigger.is_active == True,
+                    or_(Trigger.user_id.is_(None), Trigger.user_id == user_id),
+                    func.lower(Trigger.name) == lname)
+            .first())
+
+
+def _apply_ai_triggers(episode_id, user_id, names, max_suggestions=10):
+    """AI check-in trigger handling. Links each name that matches an existing
+    trigger to the episode with source='ai' (dedup'd); returns the unmatched
+    names as suggestions for the user to confirm on the episode form (we never
+    auto-create a trigger from AI inference). Caller flushes/commits."""
+    if not isinstance(names, list):
+        # LLM schema drift (e.g. a bare string) — iterating it would yield
+        # single-character junk. Treat anything non-list as "no triggers".
+        return []
+    linked_ids = set()
+    suggested = []
+    seen = set()
+    for raw in names:
+        if not isinstance(raw, str):
+            continue
+        name = _normalize_trigger_name(raw)
+        if not name:
+            continue
+        match = _match_trigger(user_id, name)
+        if match:
+            if match.id not in linked_ids:
+                linked_ids.add(match.id)
+                db.session.add(EpisodeTrigger(episode_id=episode_id, trigger_id=match.id, source='ai'))
+        else:
+            key = name.lower()
+            if key not in seen and len(suggested) < max_suggestions:
+                seen.add(key)
+                suggested.append(name[:100])
+    return suggested
+
+
+def _save_episode_triggers_from_form(episode_id, user_id, form, source='user', preserve_ids=None, prior_sources=None):
     """Link picked + newly-typed triggers to an episode from the logging form.
 
     Form contract:
@@ -2847,10 +2936,17 @@ def _save_episode_triggers_from_form(episode_id, user_id, form, source='user', p
 
     existing = {et.trigger_id for et in
                 EpisodeTrigger.query.filter_by(episode_id=episode_id).all()}
+    prior_sources = prior_sources or {}
     for tid in trigger_ids:
         if tid in existing:
             continue
-        db.session.add(EpisodeTrigger(episode_id=episode_id, trigger_id=tid, source=source))
+        # Preserve provenance across an edit's replace-on-save: a link that was
+        # already on this episode keeps its original source (e.g. 'ai'); only a
+        # genuinely new pick gets `source`. Otherwise every save would relabel
+        # AI-inferred links as 'user' and corrupt the provenance signal.
+        db.session.add(EpisodeTrigger(
+            episode_id=episode_id, trigger_id=tid,
+            source=prior_sources.get(tid, source)))
 
 
 @app.route('/episodes')
@@ -2965,6 +3061,25 @@ def edit_episode(episode_id):
         if t.id not in _pickable_ids:
             triggers.append(t)
 
+    # AI-suggested new triggers from a check-in, for THIS episode. PEEK (don't
+    # consume) so a reload or a validation-error re-render keeps showing them;
+    # the session entry is cleared only after a successful save below. Names
+    # already linked are filtered so we never double-offer.
+    suggested_trigger_names = []
+    _pending = session.get('pending_ai_triggers')
+    if isinstance(_pending, dict) and _pending.get('episode_id') == episode.id \
+            and isinstance(_pending.get('names'), list):
+        _linked_names = {t.name.lower() for t in linked_triggers}
+        _seen = set()
+        for s in _pending['names']:
+            if not isinstance(s, str):
+                continue
+            s = _normalize_trigger_name(s)[:100]
+            low = s.lower()
+            if s and low not in _linked_names and low not in _seen:
+                _seen.add(low)
+                suggested_trigger_names.append(s)
+
     if request.method == 'POST':
         onset_str = request.form.get('onset')
         new_onset = datetime.strptime(onset_str, '%Y-%m-%dT%H:%M') if onset_str else episode.onset
@@ -2975,7 +3090,8 @@ def edit_episode(episode_id):
             existing_entries = {ss.symptom_id: ss for ss in episode.symptom_scores}
             return render_template('edit_episode.html', episode=episode, rescue_options=rescue_options,
                                    symptoms=symptoms, existing_entries=existing_entries,
-                                   triggers=triggers, selected_trigger_ids=selected_trigger_ids)
+                                   triggers=triggers, selected_trigger_ids=selected_trigger_ids,
+                                   suggested_trigger_names=suggested_trigger_names)
 
         notes_val = request.form.get('notes', '').strip()
         if notes_val and len(notes_val) > 500:
@@ -2983,7 +3099,8 @@ def edit_episode(episode_id):
             existing_entries = {ss.symptom_id: ss for ss in episode.symptom_scores}
             return render_template('edit_episode.html', episode=episode, rescue_options=rescue_options,
                                    symptoms=symptoms, existing_entries=existing_entries,
-                                   triggers=triggers, selected_trigger_ids=selected_trigger_ids)
+                                   triggers=triggers, selected_trigger_ids=selected_trigger_ids,
+                                   suggested_trigger_names=suggested_trigger_names)
 
         episode.onset = new_onset
         episode.duration_hours = _safe_float(request.form.get('duration_hours'), min_val=0)
@@ -3034,13 +3151,16 @@ def edit_episode(episode_id):
         # Replace trigger links (same replace-on-save pattern as interventions).
         # preserve_ids = the pre-edit link set, so a linked-but-inactive custom
         # the user leaves checked survives instead of being dropped by the
-        # active-only picker validation.
+        # active-only picker validation. prior_sources keeps each re-submitted
+        # link's original provenance (e.g. 'ai') instead of relabeling it 'user'.
+        prior_sources = {et.trigger_id: et.source for et in episode.episode_triggers}
         for et in list(episode.episode_triggers):
             db.session.delete(et)
         db.session.flush()
 
         _save_episode_triggers_from_form(episode.id, user.id, request.form,
-                                         preserve_ids=selected_trigger_ids)
+                                         preserve_ids=selected_trigger_ids,
+                                         prior_sources=prior_sources)
 
         try:
             db.session.commit()
@@ -3053,14 +3173,21 @@ def edit_episode(episode_id):
             existing_entries = {ss.symptom_id: ss for ss in episode.symptom_scores}
             return render_template('edit_episode.html', episode=episode, rescue_options=rescue_options,
                                    symptoms=symptoms, existing_entries=existing_entries,
-                                   triggers=triggers, selected_trigger_ids=selected_trigger_ids)
+                                   triggers=triggers, selected_trigger_ids=selected_trigger_ids,
+                                   suggested_trigger_names=suggested_trigger_names)
+        # Save succeeded — the AI suggestion for this episode is now resolved
+        # (kept, rejected, or created), so clear it from the session.
+        _pending2 = session.get('pending_ai_triggers')
+        if isinstance(_pending2, dict) and _pending2.get('episode_id') == episode.id:
+            session.pop('pending_ai_triggers', None)
         flash('Episode updated.', 'success')
         return redirect(url_for('episodes'))
 
     existing_entries = {ss.symptom_id: ss for ss in episode.symptom_scores}
     return render_template('edit_episode.html', episode=episode, rescue_options=rescue_options,
                            symptoms=symptoms, existing_entries=existing_entries,
-                           triggers=triggers, selected_trigger_ids=selected_trigger_ids)
+                           triggers=triggers, selected_trigger_ids=selected_trigger_ids,
+                           suggested_trigger_names=suggested_trigger_names)
 
 
 @app.route('/episodes/<int:episode_id>/delete', methods=['POST'])
@@ -3079,6 +3206,12 @@ def delete_episode(episode_id):
         app.logger.warning('delete_episode failed for episode %s', episode_id, exc_info=True)
         flash("Couldn't delete this episode — please try again.", 'error')
         return redirect(url_for('episodes'))
+    # Drop any pending AI trigger suggestion for the now-deleted episode so it
+    # can't resurface on a future episode that reuses this id (dev SQLite reuses
+    # rowids; harmless on Postgres, but keeps the session honest either way).
+    _pending = session.get('pending_ai_triggers')
+    if isinstance(_pending, dict) and _pending.get('episode_id') == episode_id:
+        session.pop('pending_ai_triggers', None)
     flash('Episode deleted.', 'success')
     return redirect(url_for('episodes'))
 

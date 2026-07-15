@@ -1154,6 +1154,16 @@ input[type="range"]::-moz-range-thumb {
   outline: 2px solid var(--accent-light);
   outline-offset: 2px;
 }
+/* AI check-in suggestions: pre-checked but visually marked as "review me". */
+.trigger-chip-suggested {
+  border-style: dashed;
+}
+/* Higher specificity than .field-hint (declared later in the file) so the
+   accent color + spacing actually win the cascade. */
+.field-hint.trigger-suggest-hint {
+  color: var(--accent-light);
+  margin-top: 6px;
+}
 .trigger-add-row {
   display: flex;
   align-items: center;
@@ -1911,13 +1921,15 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .chat-episode-tag {
-  display: inline-block;
-  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;          /* real tap target now that it's a link */
+  font-size: 13px;
   background: rgba(124,92,191,0.15);
   border: 1px solid rgba(124,92,191,0.3);
   color: var(--accent-light);
   border-radius: 20px;
-  padding: 2px 8px;
+  padding: 6px 14px;
   margin-top: 4px;
 }
 

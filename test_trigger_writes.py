@@ -180,6 +180,99 @@ def main():
         check(own_caf is not None and [t.trigger_id for t in l9] == [own_caf.id],
               "typed retired-global name becomes the user's own custom")
 
+        # --- AI check-in trigger parity -------------------------------------
+        from app import _match_trigger, _apply_ai_triggers
+
+        # 10. _match_trigger matches EXISTING active triggers only, never creates.
+        g_stress2 = next(t for t in globals_ if t.name == 'Stress')
+        m = _match_trigger(uid, '  stress ')
+        check(m is not None and m.id == g_stress2.id, '_match_trigger maps case-insensitively to an active global')
+        check(_match_trigger(uid, 'totally novel thing') is None, '_match_trigger returns None for an unknown name (no create)')
+        # A custom only the OTHER user owns must not match for uid.
+        db.session.add(Trigger(user_id=oid, name='Oid Only Trigger', is_active=True))
+        db.session.commit()
+        check(_match_trigger(uid, 'Oid Only Trigger') is None, "_match_trigger ignores another user's custom")
+        own_active = Trigger(user_id=uid, name='Bright office lights', is_active=True)
+        db.session.add(own_active); db.session.commit()
+        check(_match_trigger(uid, 'bright office lights') is not None, '_match_trigger maps to own active custom')
+
+        # 11. _apply_ai_triggers links matched (source='ai', dedup) and returns
+        #     unmatched names as suggestions WITHOUT creating them.
+        ep_ai = Episode(user_id=uid, onset=datetime(2020, 1, 2, 9, 0))
+        db.session.add(ep_ai); db.session.flush()
+        suggestions = _apply_ai_triggers(ep_ai.id, uid,
+            ['Stress', 'stress', 'Bright office lights', 'Skywriting fumes', 'skywriting fumes'])
+        db.session.commit()
+        ai_links = links_for(ep_ai.id)
+        check(bool(ai_links) and all(t.source == 'ai' for t in ai_links), 'AI-linked triggers stamped source=ai')
+        check(sorted(t.trigger.name for t in ai_links) == ['Bright office lights', 'Stress'],
+              'matched names linked + deduped')
+        check(suggestions == ['Skywriting fumes'], f'unmatched name returned as a single deduped suggestion (got {suggestions})')
+        check(Trigger.query.filter(db.func.lower(Trigger.name) == 'skywriting fumes').count() == 0,
+              'AI does NOT auto-create the suggested trigger')
+        # non-list guard: a bare string from the model must not char-iterate.
+        ep_guard = Episode(user_id=uid, onset=datetime(2020, 1, 4, 9, 0))
+        db.session.add(ep_guard); db.session.flush()
+        check(_apply_ai_triggers(ep_guard.id, uid, 'Stress') == [],
+              '_apply_ai_triggers ignores a non-list triggers value (no char iteration)')
+        db.session.rollback()
+
+        # 12. Edit form pre-loads the session suggestion as a pre-checked chip;
+        #     it PEEKS (survives reloads) and is only cleared on a successful save.
+        ep_conf = Episode(user_id=uid, onset=datetime(2020, 1, 3, 9, 0))
+        db.session.add(ep_conf); db.session.commit()
+        with c.session_transaction() as s:
+            s['pending_ai_triggers'] = {'episode_id': ep_conf.id, 'names': ['Skywriting fumes']}
+        body = c.get(f'/episodes/{ep_conf.id}/edit').get_data(as_text=True)
+        check('Suggested from your check-in' in body and 'Skywriting fumes' in body,
+              'edit form renders the AI suggestion chip + hint')
+        check('name="new_trigger_names" value="Skywriting fumes" checked' in body,
+              'suggestion rendered as a pre-checked new_trigger_names chip')
+        # PEEK: a second GET still shows it (not consumed on render).
+        body2 = c.get(f'/episodes/{ep_conf.id}/edit').get_data(as_text=True)
+        check('Skywriting fumes' in body2, 'suggestion survives a reload (peek, not consume-on-GET)')
+        with c.session_transaction() as s:
+            check(s.get('pending_ai_triggers', {}).get('episode_id') == ep_conf.id,
+                  'session suggestion still present until saved')
+        # A validation-error re-render must KEEP the suggestion (not drop it).
+        err_body = c.post(f'/episodes/{ep_conf.id}/edit',
+                          data={'onset': '2099-01-01T09:00'}, follow_redirects=False).get_data(as_text=True)
+        check('Skywriting fumes' in err_body, 'suggestion preserved on a validation-error re-render')
+        # Save confirms + clears it.
+        c.post(f'/episodes/{ep_conf.id}/edit',
+               data={'onset': '2020-01-03T09:00', 'new_trigger_names': ['Skywriting fumes']},
+               follow_redirects=False)
+        conf = Trigger.query.filter(Trigger.user_id == uid, db.func.lower(Trigger.name) == 'skywriting fumes').first()
+        check(conf is not None, 'saving the episode confirms/creates the suggested trigger')
+        link_conf = links_for(ep_conf.id)
+        check(len(link_conf) == 1 and link_conf[0].source == 'user' and link_conf[0].trigger_id == conf.id,
+              'confirmed suggestion linked with source=user')
+        with c.session_transaction() as s:
+            check('pending_ai_triggers' not in s, 'session suggestion cleared after a successful save')
+
+        # 13. Editing an episode preserves each re-submitted link's provenance:
+        #     an AI-linked trigger stays source='ai', a newly-picked one is 'user'.
+        ep_prov = Episode(user_id=uid, onset=datetime(2020, 1, 5, 9, 0))
+        db.session.add(ep_prov); db.session.flush()
+        db.session.add(EpisodeTrigger(episode_id=ep_prov.id, trigger_id=g_stress2.id, source='ai'))
+        db.session.commit()
+        c.post(f'/episodes/{ep_prov.id}/edit',
+               data={'onset': '2020-01-05T09:00',
+                     'trigger_ids': [str(g_stress2.id), str(g_alcohol.id)]},
+               follow_redirects=False)
+        prov = {t.trigger_id: t.source for t in links_for(ep_prov.id)}
+        check(prov.get(g_stress2.id) == 'ai', "re-submitted AI link keeps source='ai' on edit")
+        check(prov.get(g_alcohol.id) == 'user', "newly-picked link on the same edit is source='user'")
+
+        # 14. Deleting an episode clears its pending AI suggestion from the session.
+        ep_del = Episode(user_id=uid, onset=datetime(2020, 1, 6, 9, 0))
+        db.session.add(ep_del); db.session.commit()
+        with c.session_transaction() as s:
+            s['pending_ai_triggers'] = {'episode_id': ep_del.id, 'names': ['Ghost trigger']}
+        c.post(f'/episodes/{ep_del.id}/delete', follow_redirects=False)
+        with c.session_transaction() as s:
+            check('pending_ai_triggers' not in s, 'delete_episode clears the pending suggestion for that episode')
+
     if FAILS:
         print(f'\n{len(FAILS)} FAILURE(S)')
         raise SystemExit(1)
