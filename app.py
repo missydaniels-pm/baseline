@@ -3802,6 +3802,159 @@ def dev_reset():
 
 
 # /dev/seed — populates 12 weeks of realistic test data
+def seed_test_data(user):
+    """Populate `user` with 12 weeks of realistic synthetic health data.
+
+    Shared by the `/dev/seed` route (local, browser) and `seed_staging.py`
+    (Railway staging, run via `railway run`). Keeping one implementation avoids
+    the two copies drifting (Rule 3 — converge, don't diverge). Caller is
+    responsible for the <20-episode safety guard; this function just writes.
+    """
+    today = date.today()
+    base_date = today - timedelta(weeks=12)
+
+    # ── Symptoms (2 scale + 1 binary, so both input_types are exercised) ──
+    symptoms = Symptom.query.filter_by(user_id=user.id, is_active=True).all()
+    if not symptoms:
+        s1 = Symptom(user_id=user.id, name='Headache',
+                     description='Throbbing head pain, typically one-sided',
+                     is_active=True, baseline_score=7, input_type='scale')
+        s2 = Symptom(user_id=user.id, name='Nausea',
+                     description='Stomach upset and queasiness',
+                     is_active=True, baseline_score=5, input_type='scale')
+        s3 = Symptom(user_id=user.id, name='Aura',
+                     description='Visual disturbance before onset (yes/no)',
+                     is_active=True, baseline_score=None, input_type='binary')
+        db.session.add_all([s1, s2, s3])
+        db.session.flush()
+        symptoms = [s1, s2, s3]
+
+    # ── Triggers ──────────────────────────────────────────────────────
+    # Resolve a few curated globals by name (seeded at startup, user_id IS NULL)
+    # and give the user a couple of their own customs, so EpisodeTrigger links
+    # cover both scopes and both provenance values ('user' / 'ai').
+    global_triggers = Trigger.query.filter(
+        Trigger.user_id.is_(None), Trigger.is_active.is_(True),
+        Trigger.name.in_(['Stress', 'Poor sleep', 'Dehydration', 'Alcohol'])
+    ).all()
+    custom_triggers = []
+    for cname in ['Screen time', 'Red wine']:
+        existing_ct = Trigger.query.filter_by(user_id=user.id, name=cname).first()
+        if existing_ct is None:
+            existing_ct = Trigger(user_id=user.id, name=cname, is_active=True)
+            db.session.add(existing_ct)
+        custom_triggers.append(existing_ct)
+    db.session.flush()
+    trigger_pool = global_triggers + custom_triggers
+
+    # ── Protocols ─────────────────────────────────────────────────────
+    prev1 = Protocol(
+        user_id=user.id, name='Magnesium Glycinate 400mg',
+        type='preventative', start_date=base_date,
+        dose_frequency='400mg daily at bedtime', status='active',
+        why='my neurologist recommended it for migraine prevention',
+    )
+    prev2_start = base_date + timedelta(weeks=4)
+    prev2 = Protocol(
+        user_id=user.id, name='Riboflavin 400mg',
+        type='preventative', start_date=prev2_start,
+        dose_frequency='400mg daily with breakfast', status='active',
+        why='I want to cut down how often I need a triptan',
+    )
+    rescue = Protocol(
+        user_id=user.id, name='Sumatriptan 50mg',
+        type='rescue', available=True,
+    )
+    db.session.add_all([prev1, prev2, rescue])
+    db.session.flush()
+
+    db.session.add(ProtocolEvent(protocol_id=prev1.id, user_id=user.id,
+                                 event_type='started', date=prev1.start_date))
+    db.session.add(ProtocolEvent(protocol_id=prev2.id, user_id=user.id,
+                                 event_type='started', date=prev2.start_date))
+    db.session.flush()
+
+    # ── Episodes ──────────────────────────────────────────────────────
+    impairments_early = ['working_reduced', 'cannot_work', 'cannot_work', 'completely_incapacitated']
+    impairments_late  = ['working_normally', 'working_reduced', 'working_reduced', 'cannot_work']
+
+    for week in range(12):
+        week_start = base_date + timedelta(weeks=week)
+        n_episodes = random.randint(3, 4)
+        day_offsets = sorted(random.sample(range(7), n_episodes))
+        rescue_day = random.choice(day_offsets) if random.random() < 0.85 else None
+
+        for day_offset in day_offsets:
+            ep_date = week_start + timedelta(days=day_offset)
+            if ep_date > today:
+                continue
+            onset = datetime(ep_date.year, ep_date.month, ep_date.day,
+                             random.randint(5, 22), random.choice([0, 15, 30, 45]))
+
+            # Scores trend downward after week 6
+            base_score = random.randint(6, 9) if week < 6 else random.randint(4, 7)
+            impairment = random.choice(impairments_early if week < 6 else impairments_late)
+            used_rescue = (day_offset == rescue_day)
+
+            episode = Episode(
+                user_id=user.id,
+                onset=onset,
+                peak_severity=None,
+                duration_hours=round(random.uniform(4, 24), 1),
+                functional_impairment=impairment,
+            )
+            db.session.add(episode)
+            db.session.flush()
+
+            if used_rescue:
+                db.session.add(EpisodeIntervention(
+                    episode_id=episode.id,
+                    protocol_id=rescue.id,
+                    effectiveness=random.randint(4, 9),
+                    time_to_relief_hours=round(random.uniform(0.5, 4.0), 1),
+                ))
+
+            # Symptom scores — scale writes `score`, binary writes `value_bool`
+            # (the two never mix; aggregates filter on IS NOT NULL per type).
+            for symptom in symptoms:
+                if symptom.input_type == 'binary':
+                    db.session.add(SymptomScore(
+                        episode_id=episode.id, symptom_id=symptom.id,
+                        value_bool=(random.random() < 0.4)))
+                else:
+                    score = max(1, min(10, base_score + random.randint(-1, 1)))
+                    db.session.add(SymptomScore(
+                        episode_id=episode.id, symptom_id=symptom.id, score=score))
+
+            # Triggers — ~65% of episodes get 1–2 linked triggers (global +
+            # custom mix), most 'user'-sourced with an occasional 'ai' link.
+            if trigger_pool and random.random() < 0.65:
+                picks = random.sample(trigger_pool, random.randint(1, min(2, len(trigger_pool))))
+                for trig in picks:
+                    db.session.add(EpisodeTrigger(
+                        episode_id=episode.id, trigger_id=trig.id,
+                        source=('ai' if random.random() < 0.2 else 'user')))
+
+    # ── Protocol compliance ───────────────────────────────────────────
+    missed_notes = ['Forgot', 'Upset stomach, skipped', 'Away from home', 'Ran out briefly']
+
+    def seed_compliance(protocol, start):
+        current = start
+        while current <= today:
+            took = random.random() < 0.85
+            notes = random.choice(missed_notes) if not took and random.random() < 0.35 else None
+            db.session.add(ProtocolCompliance(
+                user_id=user.id, protocol_id=protocol.id,
+                date=current, took=took, notes=notes,
+            ))
+            current += timedelta(days=1)
+
+    seed_compliance(prev1, prev1.start_date)
+    seed_compliance(prev2, prev2.start_date)
+
+    db.session.commit()
+
+
 @app.route('/dev/seed', methods=['GET', 'POST'])
 def dev_seed():
     if not app.debug:
@@ -3818,110 +3971,7 @@ def dev_seed():
         ), 400
 
     if request.method == 'POST':
-        today = date.today()
-        base_date = today - timedelta(weeks=12)
-
-        # ── Symptoms ──────────────────────────────────────────────────────
-        symptoms = Symptom.query.filter_by(user_id=user.id, is_active=True).all()
-        if not symptoms:
-            s1 = Symptom(user_id=user.id, name='Headache',
-                         description='Throbbing head pain, typically one-sided',
-                         is_active=True, baseline_score=7)
-            s2 = Symptom(user_id=user.id, name='Nausea',
-                         description='Stomach upset and queasiness',
-                         is_active=True, baseline_score=5)
-            db.session.add_all([s1, s2])
-            db.session.flush()
-            symptoms = [s1, s2]
-
-        # ── Protocols ─────────────────────────────────────────────────────
-        prev1 = Protocol(
-            user_id=user.id, name='Magnesium Glycinate 400mg',
-            type='preventative', start_date=base_date,
-            dose_frequency='400mg daily at bedtime', status='active',
-        )
-        prev2_start = base_date + timedelta(weeks=4)
-        prev2 = Protocol(
-            user_id=user.id, name='Riboflavin 400mg',
-            type='preventative', start_date=prev2_start,
-            dose_frequency='400mg daily with breakfast', status='active',
-        )
-        rescue = Protocol(
-            user_id=user.id, name='Sumatriptan 50mg',
-            type='rescue', available=True,
-        )
-        db.session.add_all([prev1, prev2, rescue])
-        db.session.flush()
-
-        db.session.add(ProtocolEvent(protocol_id=prev1.id, user_id=user.id,
-                                     event_type='started', date=prev1.start_date))
-        db.session.add(ProtocolEvent(protocol_id=prev2.id, user_id=user.id,
-                                     event_type='started', date=prev2.start_date))
-        db.session.flush()
-
-        # ── Episodes ──────────────────────────────────────────────────────
-        impairments_early = ['working_reduced', 'cannot_work', 'cannot_work', 'completely_incapacitated']
-        impairments_late  = ['working_normally', 'working_reduced', 'working_reduced', 'cannot_work']
-
-        for week in range(12):
-            week_start = base_date + timedelta(weeks=week)
-            n_episodes = random.randint(3, 4)
-            day_offsets = sorted(random.sample(range(7), n_episodes))
-            rescue_day = random.choice(day_offsets) if random.random() < 0.85 else None
-
-            for day_offset in day_offsets:
-                ep_date = week_start + timedelta(days=day_offset)
-                if ep_date > today:
-                    continue
-                onset = datetime(ep_date.year, ep_date.month, ep_date.day,
-                                 random.randint(5, 22), random.choice([0, 15, 30, 45]))
-
-                # Scores trend downward after week 6
-                base_score = random.randint(6, 9) if week < 6 else random.randint(4, 7)
-                impairment = random.choice(impairments_early if week < 6 else impairments_late)
-                used_rescue = (day_offset == rescue_day)
-
-                episode = Episode(
-                    user_id=user.id,
-                    onset=onset,
-                    peak_severity=None,
-                    duration_hours=round(random.uniform(4, 24), 1),
-                    functional_impairment=impairment,
-                )
-                db.session.add(episode)
-                db.session.flush()
-
-                if used_rescue:
-                    db.session.add(EpisodeIntervention(
-                        episode_id=episode.id,
-                        protocol_id=rescue.id,
-                        effectiveness=random.randint(4, 9),
-                        time_to_relief_hours=round(random.uniform(0.5, 4.0), 1),
-                    ))
-
-                for symptom in symptoms:
-                    score = max(1, min(10, base_score + random.randint(-1, 1)))
-                    db.session.add(SymptomScore(
-                        episode_id=episode.id, symptom_id=symptom.id, score=score))
-
-        # ── Protocol compliance ───────────────────────────────────────────
-        missed_notes = ['Forgot', 'Upset stomach, skipped', 'Away from home', 'Ran out briefly']
-
-        def seed_compliance(protocol, start):
-            current = start
-            while current <= today:
-                took = random.random() < 0.85
-                notes = random.choice(missed_notes) if not took and random.random() < 0.35 else None
-                db.session.add(ProtocolCompliance(
-                    user_id=user.id, protocol_id=protocol.id,
-                    date=current, took=took, notes=notes,
-                ))
-                current += timedelta(days=1)
-
-        seed_compliance(prev1, prev1.start_date)
-        seed_compliance(prev2, prev2.start_date)
-
-        db.session.commit()
+        seed_test_data(user)
         flash('12 weeks of test data seeded successfully.', 'success')
         return redirect(url_for('index'))
 

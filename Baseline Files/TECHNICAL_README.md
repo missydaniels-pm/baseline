@@ -46,6 +46,7 @@ database.py                   — SQLAlchemy models
 requirements.txt              — Python dependencies
 Procfile                      — gunicorn for production
 run.sh                        — local startup script
+seed_staging.py               — seed the staging DB (railway run; reuses app.seed_test_data)
 CLAUDE.md                     — Claude Code persistent context document
 generate_icons.py             — PWA icon generation (Pillow)
 .env                          — environment variables (not committed)
@@ -219,6 +220,12 @@ All dev routes are grouped in a clearly marked section at the bottom of `app.py`
 4. Watch Railway dashboard for green deployment
 
 **Important:** Every push to main deploys to production immediately. Real users are on the app. Always test locally before pushing.
+
+### Staging (in progress, 7/17/26)
+- Separate Railway **environment** (`staging`) in the same project, its own Postgres, deploying from the **`staging` branch**. `main` → production.
+- Email off on staging (`RESEND_API_KEY` unset). Full setup/runbook: `Baseline Files/STAGING_SETUP.md`.
+- Seed with `CONFIRM_SEED=yes railway run python seed_staging.py` (reuses `app.seed_test_data`; guards against running against production). Dev routes (`/dev/seed`, `/dev/reset`) stay `app.debug`-gated → inert on staging, hence the script.
+- Workflow once live: feature work → push `staging` → verify on staging URL → merge `staging → main` → prod deploys.
 
 ### Railway Services
 - **baseline** — Flask app, gunicorn, Python 3.13
