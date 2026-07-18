@@ -177,7 +177,7 @@
   // Active experiment warning
   {% if active_experiment %}
   var activeExpName = {{ active_experiment.name|tojson }};
-  var activeExpWeeks = {{ active_experiment.weeks_elapsed|round(0)|int }};
+  var activeExpWeeks = {{ active_experiment.wks_elapsed|round(0)|int }};
   var allowSubmit = false;
 
   document.getElementById('experimentForm').addEventListener('submit', function(e) {

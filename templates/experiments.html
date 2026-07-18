@@ -7,9 +7,9 @@
   <a href="{{ url_for('new_experiment') }}" class="btn btn-primary">+ Start Experiment</a>
 </div>
 
-{% if active | selectattr('ready_to_assess') | list %}
+{% if active | selectattr('is_ready') | list %}
 <div class="warning-banner warning-banner-ready">
-  {% for exp in active if exp.ready_to_assess %}
+  {% for exp in active if exp.is_ready %}
   <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; {% if not loop.first %}margin-top:10px; padding-top:10px; border-top:1px solid rgba(76,175,120,0.2);{% endif %}">
     <span>✓ <strong>{{ exp.name }}</strong> is ready to assess.</span>
     <a href="{{ url_for('assess_experiment', exp_id=exp.id) }}" class="btn btn-primary btn-sm">Assess now →</a>
@@ -18,7 +18,7 @@
 </div>
 {% endif %}
 
-{% if active | rejectattr('ready_to_assess') | list | length > 1 %}
+{% if active | rejectattr('is_ready') | list | length > 1 %}
 <div class="warning-banner">
   Running multiple experiments at once makes it harder to know what's working. Consider completing your current experiment first.
 </div>
@@ -42,7 +42,7 @@
       {% endif %}
     </div>
     <div class="experiment-status-col">
-      {% if exp.ready_to_assess %}
+      {% if exp.is_ready %}
         <span class="exp-badge exp-badge-ready">Ready</span>
       {% else %}
         <span class="exp-badge exp-badge-active">Active</span>
@@ -52,16 +52,16 @@
 
   <div class="experiment-progress-section">
     <div class="progress-bar-wrap">
-      <div class="progress-bar {% if exp.ready_to_assess %}progress-bar-complete{% endif %}"
-           style="width:{{ exp.progress_pct }}%"></div>
+      <div class="progress-bar {% if exp.is_ready %}progress-bar-complete{% endif %}"
+           style="width:{{ exp.pct }}%"></div>
     </div>
     <div class="progress-labels">
       <span>Started {{ exp.start_date.strftime('%b %-d') }}</span>
       <span>
-        {% if exp.ready_to_assess %}
+        {% if exp.is_ready %}
           Assessment overdue — <a href="{{ url_for('assess_experiment', exp_id=exp.id) }}">assess now</a>
         {% else %}
-          {% set wr = exp.weeks_remaining %}
+          {% set wr = exp.wks_remaining %}
           {% if wr < 1 %}{{ (wr * 7)|round|int }} days remaining
           {% else %}{{ wr|round(1) }} weeks remaining{% endif %}
           · assess {{ exp.assessment_date.strftime('%b %-d, %Y') }}
@@ -71,7 +71,7 @@
   </div>
 
   <div class="experiment-actions">
-    {% if exp.ready_to_assess %}
+    {% if exp.is_ready %}
       <a href="{{ url_for('assess_experiment', exp_id=exp.id) }}" class="btn btn-primary btn-sm">Assess →</a>
     {% endif %}
     <a href="{{ url_for('edit_experiment', exp_id=exp.id) }}" class="btn btn-sm btn-secondary">Edit</a>

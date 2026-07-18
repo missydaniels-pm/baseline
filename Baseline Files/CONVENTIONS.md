@@ -29,6 +29,12 @@ here in the same commit.
   one place a `db.session.commit()` runs inside a `before_request` — it's before any
   route touches the session, writes only on change, logs on failure, never blocks).
   Don't add other before-request commits without the same care.
+- **"Now" in the user's zone (a moment they're logging):** `user_now()` — the
+  time-of-day sibling of `user_today()`. Returns the user's local wall-clock as a
+  **naive** datetime, matching `Episode.onset`'s browser-local-naive storage. Use
+  it for the future-onset guard and any no-JS onset fallback so both sides of a
+  comparison are in the same frame. Never `datetime.now()` (server-local) for
+  user-facing "now."
 - **Absolute timestamps / ordering / TTLs:** `datetime.utcnow()` — `created_at`,
   `verified_at`, cutoffs, rate windows. These are moments in time, not calendar
   days; UTC is correct and needs no timezone handling.
@@ -37,6 +43,12 @@ here in the same commit.
 - Client-sent dates (dashboard card body, check-in `client_time`) are browser-local
   and preferred where available; the server validates them within a small window
   anchored on `user_today()`.
+- **Models stay request-context-free.** A model method that depends on "today"
+  (e.g. `Experiment.ready_to_assess(today)`, `weeks_elapsed(today)`) takes `today`
+  as a parameter — the route resolves `user_today()` and passes it in (annotating
+  the result onto the instance for templates: `exp.is_ready = exp.ready_to_assess(today)`).
+  Never import `flask.g`/`request`/`user_tz_name` into `database.py` — the model
+  layer must stay reusable behind the future non-Flask API (owner decision 7/17/26).
 
 ## Compliance writes
 - Go through the shared helpers: `_commit_compliance()` → `_upsert_compliance()` /

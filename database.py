@@ -278,23 +278,24 @@ class Experiment(db.Model):
     def assessment_date(self):
         return self.start_date + timedelta(weeks=self.stabilization_weeks)
 
-    @property
-    def weeks_elapsed(self):
-        elapsed = (date.today() - self.start_date).days / 7
+    # These depend on "today," which for a user is their LOCAL calendar day —
+    # a request-scoped value the pure model layer must not resolve itself (no
+    # Flask/request-context import here). Callers pass `today` (from user_today())
+    # and annotate the result onto the instance for templates. Owner decision
+    # 7/17/26 (Option A) — keeps the models reusable behind the future API layer.
+    def weeks_elapsed(self, today):
+        elapsed = (today - self.start_date).days / 7
         return min(max(0.0, elapsed), float(self.stabilization_weeks))
 
-    @property
-    def weeks_remaining(self):
-        remaining = (self.assessment_date - date.today()).days / 7
+    def weeks_remaining(self, today):
+        remaining = (self.assessment_date - today).days / 7
         return max(0.0, remaining)
 
-    @property
-    def progress_pct(self):
-        return min(int(self.weeks_elapsed / self.stabilization_weeks * 100), 100)
+    def progress_pct(self, today):
+        return min(int(self.weeks_elapsed(today) / self.stabilization_weeks * 100), 100)
 
-    @property
-    def ready_to_assess(self):
-        return date.today() >= self.assessment_date
+    def ready_to_assess(self, today):
+        return today >= self.assessment_date
 
 
 class CheckIn(db.Model):

@@ -925,6 +925,28 @@ def user_today(server_today=None):
     return server_today if server_today is not None else date.today()
 
 
+def user_now():
+    """The user's local wall-clock datetime as a NAIVE value — matching how
+    `Episode.onset` is stored (browser-local-naive). Single source of truth for
+    "now in the user's zone": the future-onset guard and the no-JS onset fallback
+    compare against this so both sides of the comparison are in the same frame.
+    Resolves the zone via `user_tz_name()`; falls back to server UTC only when no
+    zone resolves. Must be called within a request context.
+
+    Frame assumption: the guard's exactness relies on the `baseline_tz` cookie
+    being no older than the page load that produced the onset value being compared
+    (base.html refreshes it every full load). A PWA/tab left open across a live
+    device-zone change without a reload could compare against a stale-zone now —
+    a rare edge, and still strictly better than the old full-UTC-offset fuzz."""
+    tz = user_tz_name()
+    if tz:
+        try:
+            return datetime.now(ZoneInfo(tz)).replace(tzinfo=None)
+        except Exception:
+            pass
+    return datetime.utcnow()
+
+
 # ---------------------------------------------------------------------------
 # Supportive compliance messaging
 # ---------------------------------------------------------------------------
@@ -1912,7 +1934,10 @@ def checkin():
                     except ValueError:
                         pass
                 if onset is None:
-                    onset = datetime.utcnow()
+                    # Local-naive fallback, matching the form paths and how onset
+                    # is stored (Increment 3 replaces this whole block with the
+                    # classify-and-resolve resolver + a future→don't-log guard).
+                    onset = user_now()
 
                 episode = Episode(
                     user_id=user.id,
@@ -2313,6 +2338,13 @@ def experiments():
     active = Experiment.query.filter_by(user_id=user.id, status='active').order_by(Experiment.start_date.desc()).all()
     completed = Experiment.query.filter_by(user_id=user.id, status='completed').order_by(Experiment.start_date.desc()).all()
     abandoned = Experiment.query.filter_by(user_id=user.id, status='abandoned').order_by(Experiment.start_date.desc()).all()
+    # Annotate today-dependent values on each active experiment (local day), so
+    # the template reads plain attributes and models stay request-context-free.
+    today = user_today()
+    for exp in active:
+        exp.is_ready = exp.ready_to_assess(today)
+        exp.pct = exp.progress_pct(today)
+        exp.wks_remaining = exp.weeks_remaining(today)
     return render_template('experiments.html', active=active, completed=completed, abandoned=abandoned)
 
 
@@ -2322,6 +2354,8 @@ def new_experiment():
     preventatives = Protocol.query.filter_by(user_id=user.id, type='preventative', status='active').all()
     prefill_protocol_id = request.args.get('protocol_id', type=int)
     active_experiment = get_active_experiment(user.id)
+    if active_experiment:
+        active_experiment.wks_elapsed = active_experiment.weeks_elapsed(user_today())
 
     if request.method == 'POST':
         exp_name = request.form.get('name', '').strip()
@@ -2329,18 +2363,18 @@ def new_experiment():
         if exp_name and len(exp_name) > 200:
             flash('Experiment name must be 200 characters or fewer.', 'error')
             return render_template('new_experiment.html', preventatives=preventatives,
-                                   prefill_protocol_id=prefill_protocol_id, today=date.today(),
+                                   prefill_protocol_id=prefill_protocol_id, today=user_today(),
                                    active_experiment=active_experiment)
         if hypothesis_val and len(hypothesis_val) > 500:
             flash('Hypothesis must be 500 characters or fewer.', 'error')
             return render_template('new_experiment.html', preventatives=preventatives,
-                                   prefill_protocol_id=prefill_protocol_id, today=date.today(),
+                                   prefill_protocol_id=prefill_protocol_id, today=user_today(),
                                    active_experiment=active_experiment)
         start_str = request.form.get('start_date', '').strip()
         try:
-            start = datetime.strptime(start_str, '%Y-%m-%d').date() if start_str else date.today()
+            start = datetime.strptime(start_str, '%Y-%m-%d').date() if start_str else user_today()
         except ValueError:
-            start = date.today()
+            start = user_today()
         try:
             weeks = max(1, int(request.form.get('stabilization_weeks') or 3))
         except (ValueError, TypeError):
@@ -2353,18 +2387,18 @@ def new_experiment():
             if not new_proto_name:
                 flash('Protocol name is required.', 'error')
                 return render_template('new_experiment.html', preventatives=preventatives,
-                                       prefill_protocol_id=prefill_protocol_id, today=date.today(),
+                                       prefill_protocol_id=prefill_protocol_id, today=user_today(),
                                        active_experiment=active_experiment)
             if len(new_proto_name) > 200:
                 flash('Protocol name must be 200 characters or fewer.', 'error')
                 return render_template('new_experiment.html', preventatives=preventatives,
-                                       prefill_protocol_id=prefill_protocol_id, today=date.today(),
+                                       prefill_protocol_id=prefill_protocol_id, today=user_today(),
                                        active_experiment=active_experiment)
             new_proto_why = request.form.get('new_protocol_why', '').strip()
             if new_proto_why and len(new_proto_why) > 500:
                 flash('"Why I\'m doing this" must be 500 characters or fewer.', 'error')
                 return render_template('new_experiment.html', preventatives=preventatives,
-                                       prefill_protocol_id=prefill_protocol_id, today=date.today(),
+                                       prefill_protocol_id=prefill_protocol_id, today=user_today(),
                                        active_experiment=active_experiment)
             protocol = Protocol(
                 user_id=user.id,
@@ -2412,7 +2446,7 @@ def new_experiment():
         return redirect(url_for('experiments'))
 
     return render_template('new_experiment.html', preventatives=preventatives,
-                           prefill_protocol_id=prefill_protocol_id, today=date.today(),
+                           prefill_protocol_id=prefill_protocol_id, today=user_today(),
                            active_experiment=active_experiment)
 
 
@@ -2445,7 +2479,7 @@ def assess_experiment(exp_id):
         return redirect(url_for('experiments'))
 
     # ── Compute assessment context data ──
-    today = date.today()
+    today = user_today()  # local day, consistent with the dashboard windows
     before_start = experiment.start_date - timedelta(weeks=8)
     exp_start = experiment.start_date
 
@@ -2624,7 +2658,11 @@ def abandon_experiment(exp_id):
 @app.route('/')
 def index():
     user = get_user()
-    today = date.today()
+    # Local calendar day anchors every chart window (month card, 12-week buckets,
+    # current-week). Episode.onset is naive-local, so ep.onset.date() is already
+    # the user's local date — the windows must be local too or evening/boundary
+    # episodes fall in the wrong bucket.
+    today = user_today()
     active_preventatives = Protocol.query.filter_by(user_id=user.id, type='preventative', status='active').all()
 
     # ── Symptom cards: scale → avg this month vs baseline. Binary → yes/no count this month. ──
@@ -2823,17 +2861,15 @@ def index():
 
     experiments_ready = [
         e for e in Experiment.query.filter_by(user_id=user.id, status='active').all()
-        if e.ready_to_assess
+        if e.ready_to_assess(today)
     ]
 
     show_tour = not user.has_seen_tour
 
     # ── Today's Protocols card: 7-day compliance + supportive messages ──
-    # The card's "today" is the user's local day, not the server's (Railway
-    # runs UTC — for US users the server date rolls over mid-evening). The
-    # browser stores its IANA zone in a cookie (set in base.html); fall back
-    # to the server date when absent (first-ever request) or invalid.
-    tp_today = user_today(today)
+    # Reuse the local `today` already resolved at the top of index() (via
+    # user_today) — no need to re-resolve the zone a second time.
+    tp_today = today
 
     tp_data = None
     if active_preventatives:
@@ -3156,14 +3192,13 @@ def new_episode():
 
     if request.method == 'POST':
         onset_str = request.form.get('onset')
-        onset = datetime.strptime(onset_str, '%Y-%m-%dT%H:%M') if onset_str else datetime.utcnow()
+        onset = datetime.strptime(onset_str, '%Y-%m-%dT%H:%M') if onset_str else user_now()
 
-        # Coarse future-date guard, intentional. `onset` is browser-local-naive and
-        # datetime.now() is server-UTC-naive, so this is fuzzy by the tz offset —
-        # acceptable because future-dating episodes isn't a supported case (decided
-        # 7/14/26: keep blocked, not needed). Exact handling arrives with the P1
-        # per-user-tz / onset-model work; not a standalone bug — don't re-flag.
-        if onset > datetime.now():
+        # Future-date guard — now EXACT. Both sides are in the user's local naive
+        # wall-clock: `onset` is browser-local-naive and `user_now()` is the user's
+        # local now (naive). The old server-UTC comparison was fuzzy by the tz
+        # offset (Increment 2 of the per-user-tz work makes it precise).
+        if onset > user_now():
             flash('Onset date cannot be in the future.', 'error')
             return render_template('new_episode.html', rescue_options=rescue_options, symptoms=symptoms, triggers=triggers, selected_trigger_ids=[])
 
@@ -3275,8 +3310,12 @@ def edit_episode(episode_id):
         onset_str = request.form.get('onset')
         new_onset = datetime.strptime(onset_str, '%Y-%m-%dT%H:%M') if onset_str else episode.onset
 
-        # Coarse future-date guard (see new_episode) — intentional, keep-blocked 7/14/26.
-        if new_onset > datetime.now():
+        # Exact future-date guard (see new_episode) — user-local now, naive. Only
+        # enforced when the onset actually CHANGED: a pre-existing episode whose
+        # stored onset predates the local-naive convention (e.g. a legacy UTC
+        # no-JS write that now reads as "future") must stay editable on its other
+        # fields — we only block a user newly setting a future onset.
+        if new_onset != episode.onset and new_onset > user_now():
             flash('Onset date cannot be in the future.', 'error')
             existing_entries = {ss.symptom_id: ss for ss in episode.symptom_scores}
             return render_template('edit_episode.html', episode=episode, rescue_options=rescue_options,
@@ -3424,6 +3463,8 @@ def protocols():
 def new_protocol():
     user = get_user()
     active_experiment = get_active_experiment(user.id)
+    if active_experiment:
+        active_experiment.wks_elapsed = active_experiment.weeks_elapsed(user_today())
 
     if request.method == 'POST':
         name_val = request.form.get('name', '').strip()
@@ -3473,6 +3514,8 @@ def edit_protocol(protocol_id):
     user = get_user()
     protocol = Protocol.query.filter_by(id=protocol_id, user_id=user.id, type='preventative').first_or_404()
     active_experiment = get_active_experiment(user.id)
+    if active_experiment:
+        active_experiment.wks_elapsed = active_experiment.weeks_elapsed(user_today())
 
     if request.method == 'POST':
         name_val = request.form.get('name', '').strip()

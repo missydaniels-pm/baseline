@@ -12,12 +12,12 @@ os.environ['DEBUG'] = 'true'
 os.environ['WTF_CSRF_ENABLED'] = 'false'  # test client posts without tokens
 os.environ.setdefault('SECRET_KEY', 'test-secret')
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from flask import g
 
-from app import app, user_today, user_tz_name, sync_user_timezone, db
+from app import app, user_today, user_now, user_tz_name, sync_user_timezone, db
 from database import User
 
 LA = 'America/Los_Angeles'
@@ -137,6 +137,40 @@ def main():
         assert User.query.get(uid3).timezone == 'America/Denver', \
             "require_auth should persist the browser zone end-to-end"
     print("PASS: full request dispatch through require_auth persists the timezone")
+
+    # ── Increment 2: user_now() — the future-guard / onset frame ─────────────
+    # 11. user_now() is the user's local wall-clock, NAIVE (same frame as the
+    #     browser-local-naive Episode.onset), so the future-onset guard is exact.
+    with app.test_request_context('/', headers={'Cookie': 'baseline_tz=America%2FLos_Angeles'}):
+        un = user_now()
+        assert un.tzinfo is None, "user_now must be naive (matches Episode.onset)"
+        la_now = datetime.now(ZoneInfo(LA)).replace(tzinfo=None)
+        assert abs((un - la_now).total_seconds()) < 5, f"user_now should be LA wall-clock, got {un}"
+        # Guard semantics: one minute ahead is rejected, one minute ago is allowed.
+        assert (un + timedelta(minutes=1)) > user_now(), "a future onset must trip the guard"
+        assert not ((un - timedelta(minutes=1)) > user_now()), "a past onset must pass the guard"
+    # No cookie / no zone -> falls back to server UTC wall-clock, still naive.
+    with app.test_request_context('/'):
+        assert user_now().tzinfo is None
+    print("PASS: user_now() is the user's naive local wall-clock (exact future-guard frame)")
+
+    # 12. Experiment today-dependent methods take an injected `today` (Option A —
+    #     models stay request-context-free; caller passes user_today()).
+    from database import Experiment
+    with app.app_context():
+        e = Experiment(name='E', start_date=date(2026, 1, 1), stabilization_weeks=3, status='active')
+        # start 2026-01-01, 3-week stabilization -> assessment_date 2026-01-22.
+        assert e.assessment_date == date(2026, 1, 22)
+        assert e.ready_to_assess(date(2026, 1, 22)) is True   # exactly on the day
+        assert e.ready_to_assess(date(2026, 1, 21)) is False  # day before
+        assert e.weeks_elapsed(date(2026, 1, 8)) == 1.0
+        assert e.weeks_elapsed(date(2027, 1, 1)) == 3.0       # capped at stabilization_weeks
+        assert e.progress_pct(date(2026, 1, 8)) == 33         # 1 of 3 weeks
+        assert e.progress_pct(date(2026, 1, 22)) == 100       # capped
+        # Two different `today` values give two different answers — proving the
+        # day is injected, not resolved from a server clock inside the model.
+        assert e.ready_to_assess(date(2026, 1, 30)) != e.ready_to_assess(date(2026, 1, 1))
+    print("PASS: Experiment methods take injected today (models stay Flask-free)")
 
     print("\nALL TIMEZONE TESTS PASSED")
 
