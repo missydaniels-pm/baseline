@@ -922,6 +922,15 @@
   var btnSkip = document.getElementById('tourSkip');
   var current = 1;
   var total = steps.length;
+  var lastNav = 0;
+  // Ignore a second tap within 250ms — show() is synchronous, so a rapid
+  // double-tap on Next would otherwise skip a whole slide (often slide 2).
+  function navGuard() {
+    var now = Date.now();
+    if (now - lastNav < 250) return false;
+    lastNav = now;
+    return true;
+  }
 
   function show(n) {
     steps.forEach(function(s) { s.style.display = 'none'; });
@@ -939,10 +948,12 @@
   }
 
   btnNext.addEventListener('click', function() {
+    if (!navGuard()) return;
     if (current < total) { current++; show(current); }
     else { close(); }
   });
   btnBack.addEventListener('click', function() {
+    if (!navGuard()) return;
     if (current > 1) { current--; show(current); }
   });
   btnSkip.addEventListener('click', close);

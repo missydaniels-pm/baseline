@@ -225,7 +225,7 @@ Two markdown files live in `Baseline Files/` and must be updated directly as par
 
 These describe features/workflows/terminology to users, so **any change that adds, renames, or reworks a user-facing feature or term must sweep every surface below in the same commit** — not just `help.html`. They drift silently and independently (the welcome tour lagged behind shipped features because it wasn't on this list — added 7/17/26). When you touch a feature, ask "which of these now says something stale?" and fix each.
 
-- **`templates/help.html`** — the single source of truth for the user guide. The user-guide `.docx` was retired; all user docs live here.
+- **`templates/help.html`** — the single source of truth for the user guide. All user-facing help lives in-app (this page, the welcome tour, onboarding) and in the welcome email — never in a `.docx`.
 - **Welcome tour slides** — the `{% if show_tour %}` slideshow block in **`templates/index.html`** (5 steps; shown on first login, replayable via `/tour/restart` from Help). Feature-level copy; keep it consistent with `help.html`.
 - **Welcome email** — the HTML email built in **`app.py`** (sent post-verification). If a headline feature or the "what you can do" framing changes, update it here too.
 - **Onboarding copy** — **`templates/onboarding_step1/2/3.html`** — the first-run guidance; update when the setup flow or terminology changes.
