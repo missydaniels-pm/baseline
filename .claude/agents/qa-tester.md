@@ -14,7 +14,7 @@ You are a QA tester for Baseline, a Flask health tracking app. Your job is to re
 - **Stack:** Flask, SQLAlchemy, Jinja2, vanilla JS, Chart.js, PostgreSQL (prod) / SQLite (local)
 - **Key files:** `app.py` (all routes), `database.py` (models), `templates/`, `static/css/style.css`
 - **Auth:** Session-based, bcrypt, invite-code registration
-- **Deployment:** Every push to main auto-deploys to Railway. No staging environment.
+- **Deployment:** Every push to main auto-deploys to Railway. Staging environment in progress (7/17/26) — a `staging` branch/env deploys from the `staging` branch to its own Postgres, seeded via `seed_staging.py` (which reuses `app.seed_test_data`). See `Baseline Files/STAGING_SETUP.md`.
 
 ## Your Checklist
 
@@ -93,6 +93,14 @@ Do not only verify the flow the change was designed for. Actively try to break i
 - [ ] **Revisit after completion** (what does the done state allow? does re-editing work?)
 - [ ] Two entry points writing the same data (form + AI check-in, dashboard + detail page) — interleave them
 State every sequence you tried in your report, including the ones that passed.
+
+### 9. Seed/Test-Data Coverage — does staging/dev still exercise this? (deploy-gate check)
+The shared seeder `seed_test_data()` in `app.py` (behind `/dev/seed` locally and `seed_staging.py` on Railway staging) is what populates dev and staging with realistic data. If a change adds something the seeder doesn't produce, **staging and local testing silently won't cover it** — the exact gap that left triggers, the binary symptom type, and `Protocol.why` out of the seed until 7/17/26.
+- [ ] Does this change add a **new model, table, column, junction, input type, or user-facing feature** that carries data (e.g. a new symptom `input_type`, a new provenance/`source` value, a new episode dimension, a new protocol field)?
+- [ ] If so, does `seed_test_data()` already generate representative rows for it — including edge variants (both scopes, both `source` values, both `input_type`s, null vs set)?
+- [ ] Would a fresh `seed_staging.py` run leave a tester unable to see or exercise the new feature because no seeded row hits that path?
+
+**Flag as a WARNING** (not a blocker — it's a coverage gap, not a prod bug) naming the model/column/feature the seeder is missing and what representative rows it should add. Call it out explicitly in the deploy-gate summary so it's a decision, not a footnote. If the change adds no data-carrying surface, record this check as passed.
 
 ## Output Format
 
