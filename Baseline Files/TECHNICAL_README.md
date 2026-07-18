@@ -17,7 +17,7 @@ Live at: **https://baseline-health.up.railway.app**
 - **Backend:** Python 3.10, Flask
 - **Database:** SQLAlchemy ORM — PostgreSQL (production), SQLite (local dev). Local SQLite enforces foreign keys (`PRAGMA foreign_keys=ON` on every connection, set in `database.py`) so FK-unsafe deletes fail in dev the same way they would on production PostgreSQL (added 7/12/26 after the protocol-delete incident).
 - **Frontend:** Jinja2 templates, vanilla JavaScript, Chart.js
-- **AI:** Anthropic API (claude-sonnet-4-6) for check-in parsing
+- **AI:** Anthropic API (claude-sonnet-4-6) for check-in parsing. Onset is **classify-and-resolve** (7/17/26): the model returns a time phrase + type (never a computed date); `resolve_onset()` resolves it deterministically against the message anchor using **`dateparser`** + a colloquial-normalization layer, never logging a future onset.
 - **Auth:** Flask sessions, bcrypt password hashing, self-serve registration with email verification (itsdangerous signed tokens, 24h TTL), Flask-Limiter rate limiting, CSRF protection (Flask-WTF)
 - **Hosting:** Railway (auto-deploys from GitHub main branch)
 - **PWA:** manifest.json, service worker, home screen icons (Pillow-generated)

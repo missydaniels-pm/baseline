@@ -947,6 +947,143 @@ def user_now():
     return datetime.utcnow()
 
 
+def _client_time_anchor(client_time):
+    """Parse the browser's local time (`client_time`, '%Y-%m-%dT%H:%M') into a
+    naive-local datetime, or None. Single parser for the check-in's "now" so the
+    prompt context, onset resolution, and compliance date all agree on one anchor
+    (Rule 3 — was previously parsed three ways). Each caller picks its own
+    fallback (all should use user_now())."""
+    if client_time:
+        try:
+            return datetime.strptime(client_time, '%Y-%m-%dT%H:%M')
+        except ValueError:
+            pass
+    return None
+
+
+# Colloquial time phrases dateparser can't parse on its own, mapped into forms it
+# CAN — dateparser still does all the date math, we just translate the vocabulary.
+# Day-part phrases carry a (day word, default meridiem, default hour): if the
+# phrase also names an explicit hour ("this morning around 8") we keep that hour
+# with the part-of-day's am/pm; otherwise we use the default. Longer phrases first.
+_DAYPART = [
+    ('yesterday morning',   ('yesterday', 'am', 9)),
+    ('yesterday afternoon', ('yesterday', 'pm', 2)),
+    ('yesterday evening',   ('yesterday', 'pm', 8)),
+    ('yesterday night',     ('yesterday', 'pm', 9)),
+    ('last night',          ('yesterday', 'pm', 9)),
+    ('this morning',        ('today', 'am', 9)),
+    ('this afternoon',      ('today', 'pm', 2)),
+    ('this evening',        ('today', 'pm', 8)),
+    ('tonight',             ('today', 'pm', 8)),
+]
+# Vague day-count phrases (still flagged low-confidence via onset_time_type).
+_DAY_QUANTIFIER = [
+    ('a couple of days ago', '2 days ago'),
+    ('a couple days ago', '2 days ago'),
+    ('couple of days ago', '2 days ago'),
+    ('a few days ago', '3 days ago'),
+]
+
+
+def _explicit_hour(rest, default_mer):
+    """Extract an explicit hour from `rest` ONLY when it carries a time signal —
+    at/around/about/@ before it, am/pm after it, or H:MM — so a bare number like
+    an "8/10" severity rating is never mistaken for the hour. Returns a
+    "H:MM<mer>" string, or None to fall back to the part-of-day default."""
+    m = re.search(r'(?:\b(?:at|around|about)\s+|@\s*)(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b', rest)
+    if not m:
+        m = re.search(r'\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b', rest)
+    if not m:
+        m = re.search(r'\b(\d{1,2}):(\d{2})\b', rest)
+        return f'{m.group(1)}:{m.group(2)}{default_mer}' if m else None
+    return f'{m.group(1)}:{m.group(2) or "00"}{m.group(3) or default_mer}'
+
+
+def _normalize_onset_phrase(expr):
+    """Translate a colloquial time phrase dateparser can't parse into one it can,
+    or None — day-part phrases (optional explicit hour), vague day-counts, and
+    ongoing intervals (resolved to their START). dateparser still does the math;
+    any result here is treated as low-confidence by the caller."""
+    low = expr.lower()
+    for phrase, repl in _DAY_QUANTIFIER:
+        if phrase in low:
+            return low.replace(phrase, repl)
+    # Ongoing interval -> its START (onset = when it began): "the last seven days"
+    # -> "seven days ago"; "since Monday" -> "Monday"; "all week" -> a week ago.
+    m = re.search(r'(?:the\s+)?(?:last|past)\s+(\w+)\s+(day|days|week|weeks)\b', low)
+    if m:
+        unit = 'weeks' if m.group(2).startswith('week') else 'days'
+        return f'{m.group(1)} {unit} ago'
+    m = re.match(r'\s*since\s+(.+)', low)
+    if m:
+        return m.group(1).strip()
+    if 'all week' in low or 'all this week' in low or 'this whole week' in low:
+        return '7 days ago'
+    for phrase, (day, mer, default_hr) in _DAYPART:
+        if phrase in low:
+            hr = _explicit_hour(low.replace(phrase, ''), mer)
+            return f'{day} {hr}' if hr else f'{day} {default_hr}{mer}'
+    return None
+
+
+def _dateparse_onset(expr, anchor):
+    import dateparser
+    # languages=['en'] avoids dateparser's ~2s locale auto-detect on the first
+    # call in a fresh worker (English-only app).
+    return dateparser.parse(expr, languages=['en'], settings={
+        'RELATIVE_BASE': anchor,
+        'PREFER_DATES_FROM': 'past',
+        'RETURN_AS_TIMEZONE_AWARE': False,
+    })
+
+
+def resolve_onset(expr, ttype, anchor):
+    """Resolve the AI check-in's CLASSIFIED onset phrase to a naive-local
+    datetime (Episode.onset's frame). The conversational model classifies and
+    quotes the time phrase (see build_system_prompt); this deterministic code
+    owns the date math, resolving `expr` against `anchor` — the message's local
+    time, the one temporal fact the model can't get wrong (spec §1.2/§2).
+
+    `anchor` must be naive-local (the browser's client_time, else user_now()).
+    Returns (onset, low_confidence): low_confidence rides into a light "adjust
+    the time" nudge on the reply, routed through the existing episode edit form.
+    """
+    # Be defensive about LLM schema drift — a non-string type/expr must not raise.
+    t = ttype.strip().lower() if isinstance(ttype, str) else 'unknown'
+    expr = expr.strip() if isinstance(expr, str) else ''
+    # Bound the string handed to dateparser — a long/repetitive model echo makes
+    # its regex-heavy parse slow on the request path, and a time phrase is short.
+    expr = expr[:100]
+    # now / no cue -> the message time. Flag anything that ISN'T a plain 'now'
+    # (unknown, or a typed type the model forgot to quote a phrase for).
+    if t in ('now', 'unknown') or not expr:
+        return anchor, (t != 'now')
+    # A planned/future action is never logged as an occurred onset -> clamp to now
+    # (closes the AI-path future-onset gap the form guard already covers).
+    if t == 'future':
+        return anchor, False
+    parsed = _dateparse_onset(expr, anchor)
+    normalized = False
+    if parsed is None:
+        # Retry after translating a colloquial phrase into dateparser's vocabulary
+        # ("this morning around 8", "last night", "the last seven days").
+        norm = _normalize_onset_phrase(expr)
+        if norm:
+            parsed = _dateparse_onset(norm, anchor)
+            normalized = True
+    if parsed is not None and parsed.tzinfo is not None:
+        parsed = parsed.replace(tzinfo=None)
+    if parsed is None:
+        return anchor, True             # couldn't resolve -> best guess = now, flag it
+    if parsed > anchor:
+        return anchor, True             # never a future onset (dateparser misfire)
+    # A normalized/inferred resolution, or a vague/ongoing type, is a best-guess —
+    # flag it for the confirm nudge. Only a directly-parsed explicit/relative
+    # phrase is trusted without a nudge.
+    return parsed, (normalized or t in ('past_vague', 'ongoing'))
+
+
 # ---------------------------------------------------------------------------
 # Supportive compliance messaging
 # ---------------------------------------------------------------------------
@@ -1728,14 +1865,10 @@ def admin_users():
 # ---------------------------------------------------------------------------
 
 def build_system_prompt(user, client_time=None):
-    local_dt = None
-    if client_time:
-        try:
-            local_dt = datetime.strptime(client_time, '%Y-%m-%dT%H:%M')
-        except ValueError:
-            pass
-    if local_dt is None:
-        local_dt = datetime.utcnow()
+    # One anchor for "now" (user-local), shared with resolve_onset in checkin so
+    # the model's classification and the code's resolution reason about the same
+    # moment even when client_time is absent.
+    local_dt = _client_time_anchor(client_time) or user_now()
     today = local_dt.strftime('%Y-%m-%d')
     current_time = local_dt.strftime('%H:%M')
     symptoms = Symptom.query.filter_by(user_id=user.id, is_active=True).all()
@@ -1807,7 +1940,17 @@ Possible triggers the user already tracks:
 
 The user will describe how they are feeling or what happened today. Parse their message and respond with ONLY valid JSON (no markdown, no code fences).
 
-For the episode onset field: if the user mentions a specific time (e.g. "around 2pm", "this morning at 8"), infer the full datetime. Otherwise use the current date and time ({today}T{current_time}) as the onset. Never return null for onset when had_episode is true.
+For the episode's onset TIME, DO NOT compute or output any date or timestamp — the app resolves the actual date deterministically. Your only job is to classify and quote:
+  - "onset_time_expr": the user's time phrase, VERBATIM (e.g. "around 2pm", "last night", "2 hours ago", "this morning at 8"). Use null if they gave no time cue.
+  - "onset_time_type": classify that phrase using tense and adverbs —
+      "now" = happening at message time (present tense, "right now", no past marker);
+      "past_specific" = an explicit clock time or day ("at 3pm", "on Tuesday", "this morning at 8");
+      "past_relative" = relative to now ("2 hours ago", "last night", "yesterday", "earlier today");
+      "past_vague" = fuzzy ("earlier", "a few days ago", "recently", "lately");
+      "ongoing" = continuous ("all week", "since Monday", "constant");
+      "future" = planned, not yet happened ("I'll take it tonight", "tomorrow");
+      "unknown" = no time signal at all.
+    Distinguish a PAST event ("my head WAS killing me last night") from a CURRENT state ("my head IS killing me") — tense decides it.
 
 Symptom value format (read carefully — symptoms have different types):
 {score_format_block}
@@ -1821,7 +1964,8 @@ Use this exact schema:
 {{
   "had_episode": true or false,
   "episode_data": {{
-    "onset": "YYYY-MM-DDTHH:MM or null",
+    "onset_time_expr": "<the user's time phrase verbatim, or null>",
+    "onset_time_type": "now | past_specific | past_relative | past_vague | ongoing | future | unknown",
     "symptom_scores": {{"<symptom_id_as_string>": <integer 1-10 for scale OR boolean for binary>}},
     "functional_impairment": "working_normally or working_reduced or cannot_work or completely_incapacitated or null",
     "interventions": [
@@ -1921,23 +2065,13 @@ def checkin():
             if parsed.get('had_episode'):
                 ep_data = parsed.get('episode_data', {})
 
-                onset_str = ep_data.get('onset')
-                onset = None
-                if onset_str:
-                    try:
-                        onset = datetime.strptime(onset_str, '%Y-%m-%dT%H:%M')
-                    except ValueError:
-                        pass
-                if onset is None and client_time:
-                    try:
-                        onset = datetime.strptime(client_time, '%Y-%m-%dT%H:%M')
-                    except ValueError:
-                        pass
-                if onset is None:
-                    # Local-naive fallback, matching the form paths and how onset
-                    # is stored (Increment 3 replaces this whole block with the
-                    # classify-and-resolve resolver + a future→don't-log guard).
-                    onset = user_now()
+                # Onset = classify-and-resolve (spec §1.2/§2): the model classified
+                # the time phrase; code resolves it against the anchor — the
+                # message's local time (browser client_time, else the user's local
+                # now). The model no longer freehand-computes a date.
+                anchor = _client_time_anchor(client_time) or user_now()
+                onset, onset_low_conf = resolve_onset(
+                    ep_data.get('onset_time_expr'), ep_data.get('onset_time_type'), anchor)
 
                 episode = Episode(
                     user_id=user.id,
@@ -2042,7 +2176,7 @@ def checkin():
                     ))
 
                 if new_intervention_names:
-                    suggestion = parsed.get('suggested_response', '')
+                    suggestion = (parsed.get('suggested_response') or '')
                     for n in new_intervention_names:
                         suggestion += f" I've added {n} as a new intervention."
                     parsed['suggested_response'] = suggestion
@@ -2057,22 +2191,26 @@ def checkin():
                     pending_names = suggested_new_triggers
                     pending_episode_id = episode.id
                     names_txt = ', '.join(f'"{n}"' for n in suggested_new_triggers)
-                    parsed['suggested_response'] = (parsed.get('suggested_response', '')
+                    parsed['suggested_response'] = ((parsed.get('suggested_response') or '')
                         + f" I noted {names_txt} as possible new trigger"
                         + ('s' if len(suggested_new_triggers) > 1 else '')
                         + " — open the episode to review and save.")
+
+                # Onset was inferred from a vague/unresolvable time phrase — name
+                # the guess so the user can eyeball it, and route the fix through
+                # the existing episode edit form (no new confirmation UI).
+                if onset_low_conf:
+                    parsed['suggested_response'] = ((parsed.get('suggested_response') or '')
+                        + f" I logged the onset as about {onset.strftime('%-I:%M %p on %b %-d')}"
+                        + " — open the episode to adjust the time if that's off.")
 
             # Log protocol compliance. Prefer the browser's local date over the
             # server's (Railway runs UTC — evening check-ins would land on
             # tomorrow otherwise). Upsert so an explicit statement to the AI
             # updates a day that was already confirmed on the dashboard.
             ct_today = user_today()
-            compliance_date = ct_today
-            if client_time:
-                try:
-                    compliance_date = datetime.strptime(client_time, '%Y-%m-%dT%H:%M').date()
-                except ValueError:
-                    pass
+            _ca = _client_time_anchor(client_time)
+            compliance_date = _ca.date() if _ca else ct_today
             if abs((compliance_date - ct_today).days) > 1:
                 compliance_date = ct_today
 
