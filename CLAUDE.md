@@ -1,6 +1,6 @@
 # Baseline — Claude Code Context Document
 
-Last updated: April 24, 2026
+Last updated: July 18, 2026
 
 This file gives Claude Code persistent context about the Baseline project. Read it at the start of every session before making any changes.
 
@@ -184,7 +184,8 @@ Two distinct failure modes — keep them separate. **Rule 1 is about *where stat
 
 ## Known Issues / Active Investigation
 
-- None currently open. (Partial-week chart display — resolved; the current week now shows with an asterisk label. Future-episode-dates question — reviewed 7/14/26: keeping them blocked, allowing future-dated episodes isn't needed, no change required.)
+- **Open:** "Add" symptom did nothing (Missy smoke test, 7/18/26) — adding a new symptom (e.g. "migraine") after a check-in appeared to do nothing; needs repro. Likely the episode-form inline "add symptom" being a UX gap (it only re-adds a *removed* existing symptom) vs. the `/symptoms` → "+ Track Something New" create flow being a genuine bug. See BACKLOG → Open Bugs.
+- Resolved: Partial-week chart display (asterisk label); future-episode-dates (reviewed 7/14/26 — keep blocked; guard made exact in tz Increment 2, no change needed).
 
 ---
 

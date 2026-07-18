@@ -34,7 +34,6 @@ Backend / data-model work that should land before the React rebuild, plus small 
 | Post-CSRF hardening | S | `ProxyFix` for `X-Forwarded-Proto` (do near Redis — also fixes rate-limiter IP keying); `/logout` GET→POST (forgeable); privacy-line for the anon session cookie. |
 | Trigger review cleanups | S | Accepted low-risk findings: add `source` DB CHECK; non-ASCII case-fold; history N+1; chip ✕-remove; fieldset/legend a11y; rename reused `symptom-*` CSS classes; reconcile seed↔custom name collision when the seed list grows. |
 | AI check-in — episode duration capture | S | Check-in ignores `Episode.duration_hours`. Add duration to the schema + parse ("24/7 headache for 7 days" = one long episode). Fast-follow to tz. |
-| Restyle binary (Yes/No) dashboard widget | S | Owner-approved monolith breather (7/17) — small CSS restyle of the binary stat card + dot strip; design-first in the Design System project. *Tension flag: same class of small frontend work as pill-unification, which is deferred to the rebuild — your call whether both wait.* |
 | Richer delete protection for preventatives | S | Informed confirmation (history count) or soft-delete/archive. Decision pending: count vs. archive. |
 | YouTube feature-update videos | S | Record short walkthroughs; surface on Help + in update emails. No app change to start. |
 
@@ -49,6 +48,7 @@ The anchor is the **React frontend rebuild** (L, API-first, positions for React 
 |---|---|---|
 | Chart time-range selector (days/weeks/months) | M | Spec the requirement now; build in React. *(Was flagged both "build before rebuild" and "build in React" — reconciled to build-in-React.)* |
 | Unify Taken/Missed pill styling | S | Detail page uses `.proto-log-label`, dashboard uses `.tp-pill`; rebuild rewrites both. |
+| Restyle binary (Yes/No) dashboard widget | S | Small CSS restyle of the binary stat card + dot strip; design-first in the Design System project. Moved here with the other frontend restyles (owner call 7/18) — waits for the rebuild rather than a throwaway monolith pass. |
 | Edit compliance entries older than 7 days | S | History timeline is read-only past the 7-day backfill window; rebuild rewrites this surface. |
 | Trend-based supportive messages | M | Reuse the message-catalog + adherence-% query; defer the UI. Start with logging-rate delta + longest validated stretch. |
 | Compliance-aware experiment views | M | Show adherence % during the experiment window. Decide how unlogged days count (unknown vs. assumed). |
