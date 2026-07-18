@@ -67,7 +67,7 @@ Baseline Files/
 
 ## Data Models
 
-- **User** — email, password_hash, invite_code_used (legacy), is_active, verified_at, onboarding_complete, baseline data, ai_logging_enabled, has_seen_tour, is_admin, email_updates_enabled
+- **User** — email, password_hash, invite_code_used (legacy), is_active, verified_at, onboarding_complete, baseline data, ai_logging_enabled, has_seen_tour, is_admin, email_updates_enabled, `timezone` (IANA, auto-detected from the `baseline_tz` cookie and persisted; resolved **cookie-first → stored fallback** via `user_tz_name()`, which backs `user_today()`)
 - **InviteCode** — code, created_at, used_at, used_by_user_id (legacy — admin use only via /dev/create-invite)
 - **UsedVerifyToken** — token_hash (SHA-256), used_at. Prevents email-verification token replay.
 - **Symptom** — user-defined trackable items (name, description, is_active, input_type). Displayed as "What I Track" in UI. No hard limit on count post-onboarding. `input_type` is `'scale'` (1–10 slider) or `'binary'` (Yes/No). Type is locked once any SymptomScore for the symptom exists.

@@ -36,6 +36,11 @@ class User(db.Model):
     verified_at = db.Column(db.DateTime, nullable=True)
     is_admin = db.Column(db.Boolean, default=False, nullable=False)
     email_updates_enabled = db.Column(db.Boolean, default=True, nullable=False)
+    # IANA timezone (e.g. 'America/Los_Angeles'), auto-detected from the browser
+    # (baseline_tz cookie) and persisted so "today"/day-boundary logic is durable
+    # server-side instead of cookie-dependent. Null until the first authed request
+    # syncs it; callers fall back to the cookie, then server UTC.
+    timezone = db.Column(db.String(64), nullable=True)
 
     episodes = db.relationship('Episode', backref='user', lazy=True, cascade='all, delete-orphan')
     protocols = db.relationship('Protocol', backref='user', lazy=True, cascade='all, delete-orphan')

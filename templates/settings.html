@@ -88,6 +88,13 @@
     <a href="{{ url_for('logout') }}" class="btn btn-secondary">Log out</a>
   </div>
 
+  <div style="margin-bottom:24px;">
+    <div class="settings-row-label">Timezone <span class="settings-row-desc" style="font-weight:400;">(info only)</span></div>
+    <div class="settings-row-desc">
+      {% if user.timezone %}{{ user.timezone }} — detected automatically from your device.{% else %}Not yet detected — this updates automatically as you use the app.{% endif %}
+    </div>
+  </div>
+
   <div class="settings-sub-section">
     <h3 class="settings-sub-title">Change email</h3>
     <form method="POST" action="{{ url_for('change_email') }}">

@@ -7,7 +7,7 @@ import hashlib
 import hmac
 import base64
 import resend
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, g
 from flask_bcrypt import Bcrypt
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from flask_limiter import Limiter
@@ -447,6 +447,7 @@ def run_migrations():
         ('symptom_scores',        'value_bool',                'ALTER TABLE symptom_scores ADD COLUMN value_bool BOOLEAN'),
         ('protocols',             'why',                       'ALTER TABLE protocols ADD COLUMN why TEXT'),
         ('episode_triggers',      'source',                    "ALTER TABLE episode_triggers ADD COLUMN source VARCHAR(10) NOT NULL DEFAULT 'user'"),
+        ('users',                 'timezone',                  'ALTER TABLE users ADD COLUMN timezone VARCHAR(64)'),
     ]
 
     # Widen symptoms.name from varchar(100) to varchar(200) on PostgreSQL
@@ -831,25 +832,94 @@ def get_active_experiment(user_id):
     return Experiment.query.filter_by(user_id=user_id, status='active').order_by(Experiment.start_date.desc()).first()
 
 
+def user_tz_name(user=None):
+    """The user's IANA timezone name (e.g. 'America/Los_Angeles'), or None.
+
+    Single source of truth for "which zone is this user in". Resolution order
+    (COOKIE-FIRST, owner decision 7/17/26):
+      1. the current request's `baseline_tz` cookie (this device's own zone),
+      2. the stored `User.timezone` (durable fallback for cookie-less contexts:
+         future background jobs, admin actions),
+      3. None (caller falls back to server UTC).
+
+    Cookie-first means a device always computes "today" in its OWN zone rather
+    than inheriting whichever zone another device last wrote — avoiding the
+    cross-device thrash that would otherwise put an entry on the wrong day. The
+    stored value stays a durable fallback and is populated by sync_user_timezone.
+
+    Both the cookie and the stored value are re-validated with `ZoneInfo` before
+    use — a stale/invalid stored zone (e.g. a tzdata change) must self-heal to
+    the cookie rather than poison every request. The cookie is written
+    URL-encoded (`encodeURIComponent`) and Flask returns cookie values un-decoded,
+    so `unquote()` is REQUIRED before `ZoneInfo` — the 7/14 "day off" bug was
+    exactly a missing unquote silently falling back to UTC.
+
+    `user` defaults to the request's logged-in user (`g.user`, set in
+    require_auth). Must be called within a request context.
+    """
+    if user is None:
+        user = g.get('user')
+    # 1. Current device's browser-detected zone wins.
+    raw = request.cookies.get('baseline_tz', '')
+    if raw:
+        name = unquote(raw)
+        try:
+            ZoneInfo(name)
+            return name
+        except Exception:
+            pass
+    # 2. Durable fallback — re-validate so a bad stored value can't poison reads.
+    if user is not None and user.timezone:
+        try:
+            ZoneInfo(user.timezone)
+            return user.timezone
+        except Exception:
+            pass
+    return None
+
+
+def sync_user_timezone(user):
+    """Persist the browser-detected zone (baseline_tz cookie) onto User.timezone
+    as a durable "last-known zone" fallback for cookie-less contexts (background
+    jobs, admin actions). Reads themselves are cookie-first (see user_tz_name),
+    so this is a fallback record, not the primary read path. Only writes on
+    change (rare), and never blocks the request — a failure here must not break
+    navigation. Called from require_auth once the user is loaded."""
+    raw = request.cookies.get('baseline_tz', '')
+    if not raw:
+        return
+    name = unquote(raw)
+    if name == user.timezone:
+        return
+    try:
+        ZoneInfo(name)  # reject junk before writing (expected miss — stay quiet)
+    except Exception:
+        return
+    try:
+        user.timezone = name
+        db.session.commit()
+    except Exception:
+        # Don't swallow silently — a persistent DB-write failure here should be
+        # visible in logs (CONVENTIONS: catch narrowly, log; never a bare pass).
+        db.session.rollback()
+        app.logger.warning('sync_user_timezone: failed to persist timezone %r for user %s',
+                           name, getattr(user, 'id', '?'), exc_info=True)
+
+
 def user_today(server_today=None):
     """The user's local calendar day — the single source of truth for "today".
 
     Every day-boundary write and read (compliance, protocol events, the
     dashboard card) must resolve "today" through here so they can't diverge:
-    that divergence is exactly what put evening entries a day off.
-
-    Resolved from the `baseline_tz` cookie (set by base.html). That cookie is
-    written URL-encoded (`encodeURIComponent`), and Flask returns cookie values
-    un-decoded — so `unquote()` is REQUIRED. Without it,
-    `ZoneInfo('America%2FLos_Angeles')` raises, we silently fall back to UTC
-    (Railway's zone), and after ~5pm Pacific "today" jumps a day ahead of the
-    data. Falls back to the server date only when the cookie is truly absent or
-    unparseable. Must be called within a request context.
+    that divergence is exactly what put evening entries a day off. Resolves the
+    zone via `user_tz_name()` (stored User.timezone → cookie → server UTC).
+    Falls back to the server date only when no zone resolves. Must be called
+    within a request context.
     """
-    raw = request.cookies.get('baseline_tz', '')
-    if raw:
+    tz = user_tz_name()
+    if tz:
         try:
-            return datetime.now(ZoneInfo(unquote(raw))).date()
+            return datetime.now(ZoneInfo(tz)).date()
         except Exception:
             pass
     return server_today if server_today is not None else date.today()
@@ -943,6 +1013,10 @@ def require_auth():
         session.clear()
         flash('Your account has been deactivated.', 'error')
         return redirect(url_for('login'))
+    # Stash the loaded user for request-scoped helpers (user_tz_name/user_today)
+    # and persist the browser-detected timezone if it changed.
+    g.user = user
+    sync_user_timezone(user)
     # Onboarding gate — let auth and onboarding endpoints through
     if request.endpoint.startswith('onboarding_'):
         return

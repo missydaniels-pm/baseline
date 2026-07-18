@@ -16,8 +16,19 @@ here in the same commit.
 - **User-facing "day" (which calendar date):** always `user_today()` — never a raw
   `date.today()` or `datetime.utcnow().date()`. Covers compliance dates,
   protocol-event dates, the dashboard "today," and anything a user perceives as
-  today/yesterday. Railway runs UTC; `user_today()` resolves the browser's
-  `baseline_tz` cookie (unquoted) and falls back to the server date.
+  today/yesterday. Railway runs UTC; `user_today()` resolves the zone via
+  `user_tz_name()`.
+- **Which timezone is the user in:** `user_tz_name()` — the single source of truth.
+  Resolution is **cookie-first**: the current request's `baseline_tz` cookie
+  (this device's own zone) → then the stored `User.timezone` (durable fallback for
+  cookie-less contexts) → then None (server UTC). Cookie-first so a device always
+  computes "today" in its OWN zone; the stored column is a fallback, not an override
+  (owner decision 7/17/26 — stored-first caused cross-device thrash). Both cookie
+  and stored value are `ZoneInfo`-validated before use so a bad value self-heals.
+- **`User.timezone` is persisted** by `sync_user_timezone()` in `require_auth` (the
+  one place a `db.session.commit()` runs inside a `before_request` — it's before any
+  route touches the session, writes only on change, logs on failure, never blocks).
+  Don't add other before-request commits without the same care.
 - **Absolute timestamps / ordering / TTLs:** `datetime.utcnow()` — `created_at`,
   `verified_at`, cutoffs, rate windows. These are moments in time, not calendar
   days; UTC is correct and needs no timezone handling.
