@@ -43,13 +43,13 @@ Update when:
 - [ ] Priorities shift — reorder items
 - [ ] Decisions made — add to Decision Log section
 
-### 4. templates/help.html (in-app user guide — edit directly)
+### 4. User-facing help & support surfaces (edit directly — keep ALL in sync)
 
-Update when:
-- [ ] User-facing workflows change
-- [ ] New features are added that users need to know about
-- [ ] UI changes that affect how users interact with the app
-- [ ] New settings or options added
+Any change that adds, renames, or reworks a user-facing feature/workflow/terminology must sweep **every** surface below in the same commit — they drift silently and independently (the welcome tour lagged behind shipped features because it was omitted here — added 7/17/26). Update when user-facing workflows change, new features land, UI changes how users interact, or settings/options are added:
+- [ ] **templates/help.html** — the in-app user guide (single source of truth for user docs)
+- [ ] **Welcome tour slides** — the `{% if show_tour %}` slideshow in **templates/index.html** (5 steps, replayable via `/tour/restart`); keep consistent with help.html
+- [ ] **Welcome email** — the HTML email in **app.py** (post-verification); update if a headline feature or "what you can do" framing changed
+- [ ] **Onboarding copy** — **templates/onboarding_step1/2/3.html** — first-run guidance; update on setup-flow or terminology changes
 
 ### 5. templates/privacy.html (in-app privacy policy — edit directly)
 
@@ -89,7 +89,7 @@ After reviewing changes, produce a summary:
 - CLAUDE.md: [what was updated]
 - TECHNICAL_README.md: [what was updated]
 - BACKLOG.md: [what was updated]
-- templates/help.html: [what was updated]
+- User-facing help & support surfaces: [help.html / welcome tour (index.html) / welcome email (app.py) / onboarding copy — which were swept, what changed, and which were checked-and-fine]
 - templates/privacy.html: [what was updated — flag legal-sensitive edits to Missy before committing]
 
 ### Flagged for Missy (.docx files):

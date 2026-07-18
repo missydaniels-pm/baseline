@@ -83,19 +83,36 @@ Reuses the exact `/dev/seed` logic (`app.seed_test_data`), so staging data match
 including triggers, a binary symptom, and `Protocol.why`, which the upcoming migrations touch.
 
 From the repo root, with the Railway CLI linked to the project + **staging** environment
-(`railway link`, then select staging):
+(`railway link`, then select staging).
+
+> **Important — use the public DB URL, not `railway run` alone.** The app's `DATABASE_URL` points at
+> Railway's **private** host (`postgres.railway.internal`), which only resolves *inside* Railway's
+> network — a plain `railway run python seed_staging.py` from your Mac fails with
+> `could not translate host name "postgres.railway.internal"`. Seed by overriding `DATABASE_URL`
+> with the Postgres service's **public** proxy URL (`DATABASE_PUBLIC_URL`), while still passing the
+> real `APP_URL` so the safety guard is meaningful:
 
 ```bash
-CONFIRM_SEED=yes railway run python seed_staging.py
+# 1) (safe, read-only) confirm the DB is the fresh staging one — expect 0 users, never your prod count
+PUBURL=$(railway variables -s Postgres --json | python3 -c "import sys,json;print(json.load(sys.stdin)['DATABASE_PUBLIC_URL'])")
+DATABASE_URL="$PUBURL" python3 -c "from app import app; from database import User; app.app_context().push(); print('users:', User.query.count())"
+
+# 2) seed (only after the count above is 0 / clearly not production)
+APPURL=$(railway variables -s baseline --json | python3 -c "import sys,json;print(json.load(sys.stdin)['APP_URL'])")
+DATABASE_URL="$PUBURL" APP_URL="$APPURL" CONFIRM_SEED=yes python3 seed_staging.py
 ```
 
-`railway run` injects the staging environment's variables (staging `DATABASE_URL`, `APP_URL`) into
-the command. The script:
+The script:
 - refuses to run without `CONFIRM_SEED=yes`,
-- **hard-refuses if `APP_URL` looks like production** (belt-and-suspenders against a mis-linked env),
+- **hard-refuses if `APP_URL` looks like production** (belt-and-suspenders against a mis-linked env —
+  so keep passing the real `APP_URL`, don't hardcode a fake staging one),
 - creates user `staging@baseline.test` / `Staging2026!` (override via `STAGING_SEED_EMAIL` /
   `STAGING_SEED_PASSWORD`),
 - writes 12 weeks of data, and is **idempotent** (skips if the user already has ≥20 episodes).
+
+> Alternative (no public URL): run the seed *inside* the container via `railway ssh` (or the service
+> **Console** tab), where `postgres.railway.internal` resolves — requires the container to be on the
+> `staging` branch so `seed_staging.py` is present.
 
 - [ ] Log in to staging as `staging@baseline.test` / `Staging2026!` and confirm the dashboard shows
       episodes, charts, protocols, and trigger data.

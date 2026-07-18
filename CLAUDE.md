@@ -221,9 +221,14 @@ Two markdown files live in `Baseline Files/` and must be updated directly as par
 
 **`Baseline Files/CONVENTIONS.md`** — the canonical-patterns reference (Rule 3). Read it before building; update it when a genuinely new canonical pattern is established (e.g. a new shared helper, a standard way to do a class of CRUD action).
 
-### In-app help page:
+### User-facing help & support surfaces (keep ALL in sync):
 
-**`templates/help.html`** — the single source of truth for user-facing documentation. Update when user-facing features, workflows, or terminology change. The user guide `.docx` was retired — all user docs live in the help page now.
+These describe features/workflows/terminology to users, so **any change that adds, renames, or reworks a user-facing feature or term must sweep every surface below in the same commit** — not just `help.html`. They drift silently and independently (the welcome tour lagged behind shipped features because it wasn't on this list — added 7/17/26). When you touch a feature, ask "which of these now says something stale?" and fix each.
+
+- **`templates/help.html`** — the single source of truth for the user guide. The user-guide `.docx` was retired; all user docs live here.
+- **Welcome tour slides** — the `{% if show_tour %}` slideshow block in **`templates/index.html`** (5 steps; shown on first login, replayable via `/tour/restart` from Help). Feature-level copy; keep it consistent with `help.html`.
+- **Welcome email** — the HTML email built in **`app.py`** (sent post-verification). If a headline feature or the "what you can do" framing changes, update it here too.
+- **Onboarding copy** — **`templates/onboarding_step1/2/3.html`** — the first-run guidance; update when the setup flow or terminology changes.
 
 **`templates/privacy.html`** — the single source of truth for the privacy policy. Update directly when registration/email/data-handling changes. Changes with legal or MHMD implications must be raised to Missy for approval before committing.
 
@@ -233,7 +238,7 @@ Two markdown files live in `Baseline Files/` and must be updated directly as par
 
 ### Session end checklist:
 1. Update TECHNICAL_README.md and BACKLOG.md directly
-2. Update help.html if user-facing features or workflows changed
+2. If user-facing features, workflows, or terminology changed, sweep **all** user-facing help & support surfaces (help.html, the welcome tour slides in index.html, the welcome email, onboarding copy — see list above) and fix any that went stale
 3. Include all in the commit with the code changes
 4. Note what needs updating in the .docx files for Missy
 5. Confirm git push completed
@@ -279,6 +284,7 @@ All agents run in parallel. Wait for all to complete before proceeding.
    - Update `CLAUDE.md` if project context changed
    - Update `Baseline Files/TECHNICAL_README.md` if technical details changed
    - Update `Baseline Files/BACKLOG.md` if items were completed or discovered
+   - **If any user-facing feature/workflow/terminology changed, sweep ALL user-facing help & support surfaces** (help.html, welcome tour slides in index.html, welcome email, onboarding copy — see "User-facing help & support surfaces" above) and fix any that went stale
    - Flag any `.docx` files that need Missy's attention
 
 ### Phase 4 — Deploy Gate
