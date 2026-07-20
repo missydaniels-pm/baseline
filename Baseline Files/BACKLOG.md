@@ -1,6 +1,6 @@
 # Baseline — Product Backlog
 
-Last updated: July 18, 2026 · open self-serve registration
+Last updated: July 20, 2026 · open self-serve registration
 
 **How this list is organized:** by **build phase**, not priority number — that's how work is actually sequenced. Open bugs first, then the pre-rebuild monolith work, then everything the React rebuild will redo, then post-rebuild. **Size:** S = <2hrs, M = half day, L = 1+ days. Rows are one-liners; the full story for a shipped item lives in the **Decision Log** below (→ *DL*).
 
@@ -33,7 +33,8 @@ Backend / data-model work that should land before the React rebuild, plus small 
 |---|---|---|
 | Post-CSRF hardening | S | `ProxyFix` for `X-Forwarded-Proto` (do near Redis — also fixes rate-limiter IP keying); `/logout` GET→POST (forgeable); privacy-line for the anon session cookie. |
 | Trigger review cleanups | S | Accepted low-risk findings: add `source` DB CHECK; non-ASCII case-fold; history N+1; chip ✕-remove; fieldset/legend a11y; rename reused `symptom-*` CSS classes; reconcile seed↔custom name collision when the seed list grows. |
-| AI check-in — episode duration capture | S | Check-in ignores `Episode.duration_hours`. Add duration to the schema + parse ("24/7 headache for 7 days" = one long episode). Fast-follow to tz. |
+| AI check-in — episode duration capture | S | Check-in ignores `Episode.duration_hours`. Add duration to the schema + parse ("24/7 headache for 7 days" = one long episode). Fast-follow to tz. **Gated on the "is episode length useful?" investigation** (Needs Investigation) — don't build duration UI until that resolves. |
+| AI check-in — response tone: fewer words, less sympathy | S | The prompt over-does empathy — "You are a warm, empathetic health companion" + repeated "warm" / "warm 1-3 sentence reply" (`build_system_prompt`, app.py). A chronic-illness user hears a fresh "I'm so sorry" every single day; daily sympathy grates and gets heavier, not lighter (Missy 7/20). Retune `suggested_response` to briefer, matter-of-fact, **validating-not-pitying** copy. Pure prompt-copy — no schema change, independently shippable. Feeds the rebuild's converse job (below) so the tuned voice carries forward. |
 | Richer delete protection for preventatives | S | Informed confirmation (history count) or soft-delete/archive. Decision pending: count vs. archive. |
 | YouTube feature-update videos | S | Record short walkthroughs; surface on Help + in update emails. No app change to start. |
 
@@ -81,6 +82,7 @@ The anchor is the **React frontend rebuild** (L, API-first, positions for React 
 | Item | Size | Notes |
 |---|---|---|
 | React Native iOS + Android apps | L | Follows the React rebuild, not parallel. |
+| Episode start/stop timer — Home Screen / watch widget | L | "Acknowledge now, fill in details later": one tap starts an episode (onset = now); a later tap marks it ended (sets duration). Solves two real gaps Missy named (7/20) — logging when you can barely function, and *forgetting to record when you feel better*. Native widget = React Native / WidgetKit + watchOS territory (post-rebuild). **Gated on the "is episode length useful?" investigation** — if that lands "yes," a lightweight in-app start/stop could ship earlier without the native surface. Shares duration capture with the check-in duration-capture follow-up. |
 | Apple Health / HealthKit integration | L | Requires native iOS; gates the correlation items below. |
 | HRV correlation with episodes | L | Pull HRV from Apple Health; correlate with onset/severity. |
 | Blood glucose correlation with episodes | L | Pull glucose/CGM from Apple Health; correlate with onset/severity. |
@@ -106,6 +108,7 @@ The anchor is the **React frontend rebuild** (L, API-first, positions for React 
 
 | Item | Notes |
 |---|---|
+| Is episode *length* useful data to track? | Gates both duration items (the check-in "duration capture" follow-up + the episode start/stop timer widget). Chronic episodes are often long or continuous (tz Inc-3 spinoff: "24/7 headache for 7 days") — does an end-time / duration actually change any decision the user or a clinician makes, or is onset + severity + frequency enough? Answer before building any duration UI. Consider: is "how long" more of a burden-to-log than it's worth for this audience? (Missy 7/20) |
 | GDPR obligations if non-US users join | Not immediate — all current users are US-based. |
 
 > **Closed 7/14 — future episode dates:** keep blocked (not a supported case). The guard is now **exact** as of tz Increment 2 (`user_now()` local comparison; edit-guard fires only on onset change). → *DL.*
