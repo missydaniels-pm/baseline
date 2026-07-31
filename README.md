@@ -2,7 +2,7 @@
 
 **A health tracking app for people managing chronic conditions through structured experiment tracking.**
 
-Live at: (https://mybaselineapp.com/)
+Live at: **[mybaselineapp.com](https://mybaselineapp.com/)**
 
 ---
 
@@ -16,11 +16,11 @@ Baseline gives users the structure to do that:
 
 - **Health tracking** — define what you're measuring
 - **Protocol management** — track preventative medications, supplements, and lifestyle changes
-- **Episode logging** — record what happens and when, via natural language check-in or manual entry
+- **Episode logging** — record what happens and when, along with the triggers behind it, via natural language check-in or manual entry
 - **Experiment framework** — form a hypothesis, run a protocol for a defined period, assess the outcome with your own data
 - **Dashboard** — visualize patterns, protocol impact markers, intervention effectiveness, and trends over time
 
-Currently in use by 5 people managing chronic migraine, mold toxicity, and MS.
+In active use by a small group of early users managing chronic migraine, mold toxicity, MS, and other conditions.
 
 ---
 
@@ -46,7 +46,7 @@ The experience shaped how I think about AI-assisted development — not as autoc
 - **Database:** PostgreSQL (production), SQLite (local dev) via SQLAlchemy
 - **Frontend:** Jinja2 templates, vanilla JavaScript, Chart.js
 - **AI:** Anthropic API (Claude) for natural language check-in parsing
-- **Auth:** Flask sessions, bcrypt, invite-code registration
+- **Auth:** Flask sessions, bcrypt password hashing, self-serve registration with email verification, CSRF protection, and rate limiting
 - **Hosting:** Railway (auto-deploys from this repo)
 - **PWA:** Installable as a home screen app on iOS and Android
 
@@ -58,11 +58,11 @@ A few places where I made deliberate product calls rather than just technical on
 
 **Condition-agnostic by design.** No condition field. Users define what they track and their own protocols. The same experiment framework works for migraine, autoimmune conditions, or anything else — the structure is the value, not the taxonomy.
 
-**Assumed compliance, exception capture.** The app doesn't ask users to log every pill every day. It assumes they're following their protocols and captures exceptions through the daily check-in. Reduces friction for sick people who have limited energy.
+**Assumed compliance, exception capture.** The app doesn't ask users to log every pill every day. It assumes they're following their protocols and captures exceptions — through the daily check-in or a one-tap confirmation on the dashboard. Reduces friction for sick people who have limited energy.
 
 **Experiment default of 3 weeks, not 8.** Early version defaulted to 8 weeks. A user with chronic migraine told me that was too long — by week 3 she already knew something wasn't working. Changed to 3 weeks with user-adjustable duration.
 
-**Invite-only registration.** Health data requires trust. Growth is manual and intentional during early access.
+**Trust-first registration.** Health data requires trust. Baseline started invite-only, then opened to self-serve registration gated by email verification — with rate limiting, CSRF protection, and a required privacy-policy acknowledgment — so growth can scale without lowering the bar on security.
 
 **Privacy-first from day one.** Washington State's My Health MY Data Act applies. Privacy policy written before meaningful user growth. Account deletion built before it was requested.
 
@@ -78,9 +78,11 @@ The planned next chapter is a React frontend rebuild with an API-first Flask bac
 
 ## What's next
 
-Current focus: retention features for the existing user base — multiple interventions per episode, chart time range controls, neurologist report export (auto-generated PDF for insurance documentation).
+Recently shipped: multiple interventions per episode with effectiveness tracking, trigger capture (manual and AI-assisted), email-verified self-serve registration, and timezone-correct day handling.
 
-Longer term: React rebuild, native mobile, HealthKit integration.
+Current focus: backend groundwork ahead of the React rebuild — data-model cleanup, a "date stopped" field for protocols, and the query spec for a neurologist report export (auto-generated PDF for insurance documentation).
+
+Longer term: React frontend rebuild, native mobile, HealthKit integration, and stats-first pattern detection that turns "this might be a trigger" into a testable experiment.
 
 ---
 
