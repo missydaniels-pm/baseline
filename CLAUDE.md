@@ -222,6 +222,8 @@ Two markdown files live in `Baseline Files/` and must be updated directly as par
 
 **`Baseline Files/CONVENTIONS.md`** — the canonical-patterns reference (Rule 3). Read it before building; update it when a genuinely new canonical pattern is established (e.g. a new shared helper, a standard way to do a class of CRUD action).
 
+**`README.md`** (repo root) — the **public / portfolio-facing** project overview (what Baseline is, the story, tech stack at a glance, product decisions, what's next). Distinct from `TECHNICAL_README.md` (internal engineering detail). It is read by outsiders, so it drifts silently and is easy to forget — added to this list 7/31/26 after it lagged behind shipped features (self-serve registration, triggers, multiple interventions). Update when a **headline user-facing feature ships or is deprecated**, the **registration/auth model changes**, the **tech stack changes**, or the **"What's next" roadmap shifts**. It is narrative, not exhaustive — sweep it for anything now false, don't mirror every internal change.
+
 ### User-facing help & support surfaces (keep ALL in sync):
 
 These describe features/workflows/terminology to users, so **any change that adds, renames, or reworks a user-facing feature or term must sweep every surface below in the same commit** — not just `help.html`. They drift silently and independently (the welcome tour lagged behind shipped features because it wasn't on this list — added 7/17/26). When you touch a feature, ask "which of these now says something stale?" and fix each.
@@ -239,10 +241,11 @@ These describe features/workflows/terminology to users, so **any change that add
 
 ### Session end checklist:
 1. Update TECHNICAL_README.md and BACKLOG.md directly
-2. If user-facing features, workflows, or terminology changed, sweep **all** user-facing help & support surfaces (help.html, the welcome tour slides in index.html, the welcome email, onboarding copy — see list above) and fix any that went stale
-3. Include all in the commit with the code changes
-4. Note what needs updating in the .docx files for Missy
-5. Confirm git push completed
+2. If a headline feature, the registration/auth model, the tech stack, or the roadmap changed, sweep the root **README.md** (public-facing) and fix anything now false
+3. If user-facing features, workflows, or terminology changed, sweep **all** user-facing help & support surfaces (help.html, the welcome tour slides in index.html, the welcome email, onboarding copy — see list above) and fix any that went stale
+4. Include all in the commit with the code changes
+5. Note what needs updating in the .docx files for Missy
+6. Confirm git push completed
 
 ---
 
