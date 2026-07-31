@@ -58,7 +58,7 @@ A few places where I made deliberate product calls rather than just technical on
 
 **Condition-agnostic by design.** No condition field. Users define what they track and their own protocols. The same experiment framework works for migraine, autoimmune conditions, or anything else — the structure is the value, not the taxonomy.
 
-**Assumed compliance, exception capture.** The app doesn't ask users to log every pill every day. It assumes they're following their protocols and captures exceptions through the daily check-in. Reduces friction for sick people who have limited energy.
+**Assumed compliance, exception capture.** The app doesn't ask users to log every pill every day. It assumes they're following their protocols and captures exceptions — through the daily check-in or a one-tap confirmation on the dashboard. Reduces friction for sick people who have limited energy.
 
 **Experiment default of 3 weeks, not 8.** Early version defaulted to 8 weeks. A user with chronic migraine told me that was too long — by week 3 she already knew something wasn't working. Changed to 3 weeks with user-adjustable duration.
 
