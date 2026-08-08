@@ -183,14 +183,44 @@ here in the same commit.
   against it.** `ADD CONSTRAINT` validates existing rows; one orphan makes that FK
   silently stay on its old behaviour while the rest migrate.
 
-## Deletes (FK-safe)
-- Delete children before parents. Local SQLite enforces FKs
-  (`PRAGMA foreign_keys=ON`), so FK-unsafe deletes fail in dev too, not just prod.
-- **Update BOTH manual delete paths** when you add an owned table: `delete_account`
-  AND `dev_reset` (bulk `.delete()` bypasses ORM cascade).
+## Deletes (the database cascades — don't hand-order children)
+- **As of FK cleanup Increment 2 (8/8/26), a hard delete is one statement.**
+  `delete_episode`, `delete_protocol` and `delete_account` each call
+  `db.session.delete(parent)` and let the DB cascade. Do **not** reintroduce
+  hand-ordered child cleanup — that's what this removed.
+- **Adding a new owned table?** Declare the FK with the right `ondelete=`, add it
+  to `EXPECTED_FK_ONDELETE`, and add the relationship with
+  `cascade='all, delete-orphan', passive_deletes=True`. That is *all* — a
+  `db.session.delete(user/episode/protocol)` will cascade it. Nothing to add to
+  `delete_account`.
+- **`dev_reset` is the one deliberate exception** and does still need updating for
+  a new **top-level** owned table: it keeps the `User` row, so it has no parent
+  deletion to cascade from and must bulk-delete each top-level table itself
+  (grandchildren still cascade). Order matters there: delete `CheckIn` *before*
+  `Episode`, or `checkins.episode_id`'s `SET NULL` detaches chat history instead
+  of removing it.
+- **`passive_deletes=True` means the ORM will not clean up in Python.** It is only
+  safe where the constraint genuinely cascades — check `EXPECTED_FK_ONDELETE`
+  first. It does not affect *disassociation* (removing a child from a collection
+  without deleting the parent); the episode form's replace-on-save still deletes
+  each row explicitly.
+- Keep the `except IntegrityError` guard on every hard-delete route. It is not
+  dead code: `run_migrations()` and `check_fk_ondelete()` are both deliberately
+  non-fatal, so an environment whose constraints never applied fails *here*.
+- **Every hard-delete route starts with `deletion_blocked_response(...)`.** The
+  startup schema check records any mismatch in `FK_SCHEMA_PROBLEMS`; if it is
+  non-empty the delete routes refuse and flash rather than run. This exists for
+  the *silent* failure mode — a `SET NULL` column that is actually `CASCADE`
+  destroys an experiment or chat history with no error at all. Only the delete
+  routes are gated, deliberately: everything else stays up. New hard-delete
+  route → add the same two lines.
 - Prefer **soft-deactivate** (`is_active=False`) over hard delete for records with
   history (triggers, rescue options). Never hard-delete a row others reference.
-- New child table → trace every parent's delete path (blast radius).
+- Both engines enforce FKs — local SQLite via `PRAGMA foreign_keys=ON` — so
+  cascade behaviour reproduces in dev, including multi-hop chains.
+- Gotcha for later: with `passive_deletes`, children are never expunged from the
+  session, so a stale reference to a cascaded-away child raises
+  `ObjectDeletedError` on next attribute access rather than returning `None`.
 
 ## CSRF (every state-changing POST)
 - Flask-WTF `CSRFProtect` is global/opt-out — a new POST route is protected

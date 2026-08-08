@@ -18,12 +18,11 @@ Last updated: July 20, 2026 · open self-serve registration
 
 Backend / data-model work that should land before the React rebuild, plus small independent follow-ups. Frontend-heavy work is deliberately **not** here — it lives under React Rebuild so it isn't built twice.
 
-**Build order (agreed 7/15):** CSRF ✅ · Manage Triggers ✅ · Staging ✅ · Timezone ✅ · **FK cleanup ○** · **date-stopped + report-spec ○**. Foundations first; staging before the schema-heavy migrations. (Detail on the ✅ milestones → *DL*.)
+**Build order (agreed 7/15):** CSRF ✅ · Manage Triggers ✅ · Staging ✅ · Timezone ✅ · FK cleanup ✅ · **date-stopped ○** · **report-spec ○**. Foundations first; staging before the schema-heavy migrations. (Detail on the ✅ milestones → *DL*.)
 
 ### Remaining
 | Item | Size | Notes |
 |---|---|---|
-| FK cleanup **Increment 2** — remove hand-ordered cleanup | M | Inc 1 (constraints) shipped 8/8/26 → *DL*. Inc 2 removes the manual child-cleanup from `delete_episode` / `delete_protocol` / `delete_account` / `dev_reset` and adds `passive_deletes=True` so the DB does the cascading. **Prerequisites, both non-negotiable:** (1) run `check_fk_orphans.py` against staging *and* production — one orphan means that FK silently stayed on `NO ACTION` and Inc 2 would start throwing `IntegrityError` on a user-facing delete; (2) run `verify_fk_ondelete()` against the target DB and require zero mismatches — Inc 1's migration is log-and-continue, so a failure only left a log line. **Do not remove** the `UserActivity` anonymize in `cleanup_stale_unverified_users()` — it needs the opposite of the declared CASCADE (see CONVENTIONS). Note `ADD CONSTRAINT` without `NOT VALID` validates the whole table under an ACCESS EXCLUSIVE lock — fine at this size, worth revisiting with Alembic at 50+ users. |
 | "Date stopped" field on pause/stop | S | ProtocolEvent dates the click, not the actual stop day. Add an effective-date field so retroactive stops correlate with episode data. |
 | Neurologist report — backend spec only | L | Spec the rollup/query backend now; build the PDF during the rebuild (cleaner API-first). Shares the structured-rollups machinery with pattern detection; clinician-facing → hedging mandatory. |
 | AI check-in — multi-episode / bulk logging | L | "a migraine each day for 7 days" = 7 episodes; today's check-in makes at most one. Needs a list + per-episode default time + a confirm gate before bulk-creating records. **Design pending** — build backend pre-rebuild vs. defer whole. |
@@ -138,6 +137,19 @@ Condensed record of completed work; full detail in the Decision Log where marked
 ---
 
 ## Decision Log
+
+### FK cleanup — Increment 2: the database owns cascading (completes the milestone)
+**August 8, 2026:** Removed the hand-ordered child cleanup; `passive_deletes=True` on 11 relationships means SQLAlchemy no longer loads and deletes children in Python. `delete_account` went from ~14 bulk deletes to `db.session.delete(user)`; `delete_protocol` from 4 statements to 1; `delete_episode` no longer manually detaches check-ins; `dev_reset` from 11 statements to 6. Net **app.py −55/+30**, concentrated in the delete paths where the ordering was the fragile part.
+
+**Deployed only after** `check_fk_orphans.py` and `verify_fk_ondelete()` both came back clean on staging *and* production — the Increment 1 prerequisites, which mattered because the constraints are now load-bearing rather than decorative.
+
+**The assertion worth keeping:** `test_fk_ondelete.py` counts SQL statements and requires a fully-populated user delete to emit **exactly one DELETE**, against `users`. If `passive_deletes` is ever dropped or a future edit reintroduces eager loading, the ORM quietly starts doing the work again and everything still *passes* functionally — this is the only thing that would catch it.
+
+**Deliberately not cleaned up:** `cleanup_stale_unverified_users()` still anonymizes `UserActivity` by hand. It needs the opposite of the declared CASCADE (a never-verified signup should still count in analytics), and "finishing the cleanup" there would have silently started deleting signup data.
+
+**Reviewed** QA + Code — **1 blocker, fixed.** `delete_account` was left with no `except IntegrityError` while its two siblings got one, and `resend_contact_delete()` fired *before* the DB write — so on an environment with bad constraints the user would be dropped from the mailing list while their account and health data survived, behind a raw 500 in the middle of "delete my health data." Now guarded, with the Resend call moved after a successful commit. Also fixed: a stale `database.py` comment claiming `delete_account` still bulk-deletes triggers, a missing 2-hop assertion in the new ORM test (QA), and the **CONVENTIONS "Deletes" section, which post-Increment-2 would have actively instructed the next contributor to re-add hand-ordered cleanup to `delete_account`** — rewritten to describe the new pattern and `dev_reset`'s documented exception.
+
+**Owner decision (A1) — gate the delete routes.** `check_fk_ondelete()` stays warn-only for the app as a whole, but its result is recorded in `FK_SCHEMA_PROBLEMS` and every hard-delete route now begins with `deletion_blocked_response(...)`: on a mismatch it refuses and flashes instead of deleting, and logs at ERROR. Rejected making startup fatal — one wrong FK shouldn't take the app down for every user. This targets the *silent* failure (a `SET NULL` column actually set to `CASCADE` destroys an experiment or chat history with no error); the loud failure (`CASCADE` actually `NO ACTION`) was already caught by the `IntegrityError` guards. Verified by simulating a mismatch: both episode and account deletion refused, data intact, error logged; restored, deletes work. Rule 1 is satisfied — `FK_SCHEMA_PROBLEMS` is derived at boot from the shared DB, so every instance computes the same value (same category as `CSS_VERSION`), not per-server state.
 
 ### FK cleanup — Increment 1: DB-level ON DELETE directives
 **August 8, 2026:** All 20 FKs now carry `ON DELETE` (16 CASCADE, 3 SET NULL, declared once in `database.EXPECTED_FK_ONDELETE`). **Behaviour-preserving by design:** the hand-ordered child cleanup still runs first, so the constraints are inert safety nets until Increment 2. Both reviewers independently traced every delete route and confirmed nothing user-facing changes.

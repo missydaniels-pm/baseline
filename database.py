@@ -118,18 +118,20 @@ class User(db.Model):
     # syncs it; callers fall back to the cookie, then server UTC.
     timezone = db.Column(db.String(64), nullable=True)
 
-    episodes = db.relationship('Episode', backref='user', lazy=True, cascade='all, delete-orphan')
-    protocols = db.relationship('Protocol', backref='user', lazy=True, cascade='all, delete-orphan')
-    symptoms = db.relationship('Symptom', backref='user', lazy=True, cascade='all, delete-orphan')
-    experiments = db.relationship('Experiment', backref='user', lazy=True, cascade='all, delete-orphan')
-    checkins = db.relationship('CheckIn', backref='user', lazy=True, cascade='all, delete-orphan')
-    protocol_compliance = db.relationship('ProtocolCompliance', backref='user', lazy=True, cascade='all, delete-orphan')
+    episodes = db.relationship('Episode', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)
+    protocols = db.relationship('Protocol', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)
+    symptoms = db.relationship('Symptom', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)
+    experiments = db.relationship('Experiment', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)
+    checkins = db.relationship('CheckIn', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)
+    protocol_compliance = db.relationship('ProtocolCompliance', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)
     # Custom triggers only (user_id set); global triggers have user_id NULL and
-    # belong to no user, so they never appear in any user's collection. Declared
-    # for consistency with the other owned children and to make db.session.delete(user)
-    # FK-safe. Note: delete_account uses bulk deletes (which bypass this cascade),
-    # so it still removes custom triggers explicitly.
-    triggers = db.relationship('Trigger', backref='user', lazy=True, cascade='all, delete-orphan')
+    # belong to no user, so they never appear in any user's collection and are
+    # never touched by a user delete. As of FK cleanup Increment 2 this is how
+    # `delete_account` removes custom triggers — a single db.session.delete(user)
+    # cascading through triggers.user_id ON DELETE CASCADE, not an explicit bulk
+    # delete. `dev_reset` still needs its own bulk delete: it keeps the User row,
+    # so there's no parent deletion to cascade from.
+    triggers = db.relationship('Trigger', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)
 
     def __repr__(self):
         return f'<User {self.name}>'
@@ -198,7 +200,7 @@ class Episode(db.Model):
     notes = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    symptom_scores = db.relationship('SymptomScore', backref='episode', lazy=True, cascade='all, delete-orphan')
+    symptom_scores = db.relationship('SymptomScore', backref='episode', lazy=True, cascade='all, delete-orphan', passive_deletes=True)
 
     def __repr__(self):
         return f'<Episode {self.onset}>'
@@ -264,7 +266,7 @@ class EpisodeIntervention(db.Model):
     time_to_relief_hours = db.Column(db.Float, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    episode = db.relationship('Episode', backref=db.backref('interventions', lazy=True, cascade='all, delete-orphan'))
+    episode = db.relationship('Episode', backref=db.backref('interventions', lazy=True, cascade='all, delete-orphan', passive_deletes=True))
     protocol = db.relationship('Protocol')
 
     def __repr__(self):
@@ -294,7 +296,7 @@ class EpisodeTrigger(db.Model):
     source = db.Column(db.String(10), nullable=False, default='user')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    episode = db.relationship('Episode', backref=db.backref('episode_triggers', lazy=True, cascade='all, delete-orphan'))
+    episode = db.relationship('Episode', backref=db.backref('episode_triggers', lazy=True, cascade='all, delete-orphan', passive_deletes=True))
     trigger = db.relationship('Trigger')
 
     def __repr__(self):
@@ -346,7 +348,7 @@ class Experiment(db.Model):
     decision = db.Column(db.String(20), nullable=True)  # continue/pause/stop
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    protocol = db.relationship('Protocol', backref=db.backref('experiments', lazy=True))
+    protocol = db.relationship('Protocol', backref=db.backref('experiments', lazy=True, passive_deletes=True))
 
     def __repr__(self):
         return f'<Experiment {self.name}>'

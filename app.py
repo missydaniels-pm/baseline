@@ -797,6 +797,44 @@ def migrate_fk_ondelete(conn, inspector, is_sqlite):
     return executed
 
 
+# Populated once at startup by check_fk_ondelete(). Empty == schema is correct.
+#
+# Rule 1 note: this is NOT per-server state in the sense the rule forbids. It is
+# a constant derived at boot from the shared database, so every instance
+# computes the same value from the same source — the same category as
+# CSS_VERSION. No instance knows anything another doesn't.
+FK_SCHEMA_PROBLEMS = []
+
+
+def deletion_blocked_response(redirect_endpoint, **kwargs):
+    """Refuse a hard delete when the live FK schema doesn't match the matrix.
+
+    Since Increment 2 the delete routes have no app-level cleanup — they rely
+    entirely on the DB cascading. If the constraints are wrong on some
+    environment (a migration that only logged a warning, a restored backup, a
+    fresh env), the failure modes split:
+
+      * a CASCADE that's actually NO ACTION  -> IntegrityError, caught, visible;
+      * a SET NULL that's actually CASCADE   -> SILENT. An experiment or a chat
+        history the user was promised would survive is destroyed instead, with
+        no error anywhere.
+
+    The second is why this exists. Blocking only the four delete routes keeps
+    the blast radius on the surface that actually depends on the constraints —
+    logging, browsing and check-ins stay up — rather than taking the whole app
+    down for every user over one wrong FK.
+
+    Returns a redirect response to send back, or None when it's safe to proceed.
+    """
+    if not FK_SCHEMA_PROBLEMS:
+        return None
+    app.logger.error('Delete refused — FK schema mismatch (%d): %s',
+                     len(FK_SCHEMA_PROBLEMS), '; '.join(FK_SCHEMA_PROBLEMS))
+    flash("Deleting is temporarily unavailable while a database issue is sorted out. "
+          "Nothing was changed — please try again later.", 'error')
+    return redirect(url_for(redirect_endpoint, **kwargs))
+
+
 def check_fk_ondelete():
     """Assert the live schema matches the declared ON DELETE matrix.
 
@@ -811,8 +849,10 @@ def check_fk_ondelete():
     real users. Locally the usual fix is a stale dev DB — delete
     instance/migraine_tracker.db and let create_all() rebuild it.
     """
+    global FK_SCHEMA_PROBLEMS
     try:
         problems = verify_fk_ondelete(db.engine)
+        FK_SCHEMA_PROBLEMS = problems
     except Exception:
         # Reflection itself failing must not take the app down — this is a
         # diagnostic, not a gate. Every sibling startup task guards its work
@@ -1726,6 +1766,10 @@ def delete_account():
     if not user:
         return redirect(url_for('login'))
 
+    blocked = deletion_blocked_response('settings')
+    if blocked:
+        return blocked
+
     confirmation = request.form.get('confirmation', '').strip()
     if confirmation != 'DELETE':
         flash('Account deletion cancelled — confirmation text did not match.', 'error')
@@ -1734,35 +1778,37 @@ def delete_account():
     user_id = user.id
     user_email = user.email
 
-    # Remove from Resend audience before DB delete so we still have the email.
+    # One DELETE; the database does the rest (FK cleanup Increment 2). Every
+    # owned child cascades — episodes and their scores/interventions/trigger
+    # links, protocols and their compliance/events, experiments, check-ins,
+    # analytics, and the user's CUSTOM triggers. Global triggers (user_id NULL)
+    # belong to no user and are untouched. Invite codes are detached rather than
+    # deleted (ON DELETE SET NULL), so the code itself survives the account.
+    #
+    # `used_at` is still cleared explicitly: SET NULL only clears the FK column,
+    # and leaving a used_at timestamp on a code with no user would read as
+    # "consumed by someone" forever.
+    #
+    # Guarded like the other hard-delete routes. Increment 2 removed the
+    # app-level cleanup, so the DB constraints are now the only thing making
+    # this work — on an environment where they were never applied this raises
+    # instead of silently succeeding, and a 500 in the middle of "delete my
+    # health data" is the worst place to surface that.
+    try:
+        InviteCode.query.filter_by(used_by_user_id=user_id).update({'used_at': None})
+        db.session.delete(user)
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        app.logger.warning('delete_account failed for user %s', user_id, exc_info=True)
+        flash("Couldn't delete your account — please try again, or contact support if this keeps happening.", 'error')
+        return redirect(url_for('settings'))
+
+    # Only after the account is really gone. This is an irreversible external
+    # call and is NOT part of the DB transaction — doing it first would drop the
+    # user from the mailing list while their account and health data survived.
     if user_email:
         resend_contact_delete(user_email)
-
-    # Delete in FK-safe order
-    episode_ids = db.session.query(Episode.id).filter_by(user_id=user_id)
-    EpisodeIntervention.query.filter(
-        EpisodeIntervention.episode_id.in_(episode_ids)
-    ).delete(synchronize_session=False)
-    SymptomScore.query.filter(
-        SymptomScore.episode_id.in_(episode_ids)
-    ).delete(synchronize_session=False)
-    EpisodeTrigger.query.filter(
-        EpisodeTrigger.episode_id.in_(episode_ids)
-    ).delete(synchronize_session=False)
-    CheckIn.query.filter_by(user_id=user_id).delete()
-    Episode.query.filter_by(user_id=user_id).delete()
-    ProtocolCompliance.query.filter_by(user_id=user_id).delete()
-    ProtocolEvent.query.filter_by(user_id=user_id).delete()
-    Experiment.query.filter_by(user_id=user_id).delete()
-    Protocol.query.filter_by(user_id=user_id).delete()
-    Symptom.query.filter_by(user_id=user_id).delete()
-    # Custom triggers only (user_id set); global triggers have user_id NULL and
-    # are shared — their EpisodeTrigger links were removed above.
-    Trigger.query.filter_by(user_id=user_id).delete()
-    UserActivity.query.filter_by(user_id=user_id).delete()
-    InviteCode.query.filter_by(used_by_user_id=user_id).update({'used_by_user_id': None, 'used_at': None})
-    User.query.filter_by(id=user_id).delete()
-    db.session.commit()
 
     session.clear()
     flash('Your account has been deleted.', 'success')
@@ -3664,13 +3710,16 @@ def edit_episode(episode_id):
 
 @app.route('/episodes/<int:episode_id>/delete', methods=['POST'])
 def delete_episode(episode_id):
+    blocked = deletion_blocked_response('episodes')
+    if blocked:
+        return blocked
     user = get_user()
     episode = Episode.query.filter_by(id=episode_id, user_id=user.id).first_or_404()
     try:
-        # Detach any AI check-in messages that reference this episode — chat
-        # history survives, only the link goes. SymptomScores and interventions
-        # are handled by the ORM cascade; CheckIn has no cascade relationship.
-        CheckIn.query.filter_by(episode_id=episode.id, user_id=user.id).update({'episode_id': None})
+        # One DELETE; the database does the rest (FK cleanup Increment 2).
+        # SymptomScore / EpisodeIntervention / EpisodeTrigger cascade, and any
+        # AI check-in referencing this episode is detached to episode_id NULL by
+        # ON DELETE SET NULL — chat history survives, only the link goes.
         db.session.delete(episode)
         db.session.commit()
     except IntegrityError:
@@ -4073,6 +4122,9 @@ def restore_rescue_option(option_id):
 
 @app.route('/protocols/<int:protocol_id>/delete', methods=['POST'])
 def delete_protocol(protocol_id):
+    blocked = deletion_blocked_response('protocols')
+    if blocked:
+        return blocked
     user = get_user()
     protocol = Protocol.query.filter_by(id=protocol_id, user_id=user.id).first_or_404()
 
@@ -4086,20 +4138,13 @@ def delete_protocol(protocol_id):
             flash(f'{protocol.name} has been removed. Historical episode data is preserved.', 'success')
             return redirect(url_for('protocols'))
 
-    # No historical usage (or preventative) — hard delete, removing children first.
-    # (Both engines enforce these FKs: PostgreSQL always, local SQLite via the
-    # PRAGMA foreign_keys=ON listener in database.py, so omissions DO reproduce
-    # in dev. As of FK cleanup Increment 1 the FKs also carry ON DELETE
-    # directives; this manual cleanup still runs first, so they stay inert until
-    # Increment 2 removes it.)
-    # Experiments are detached (protocol_id=NULL), not deleted — hypothesis/outcome history
-    # survives the protocol; templates guard with {% if exp.protocol %} and simply omit
-    # the protocol line for detached experiments.
+    # No historical usage (or preventative) — hard delete. One DELETE; the
+    # database does the rest (FK cleanup Increment 2). EpisodeIntervention /
+    # ProtocolCompliance / ProtocolEvent cascade. Experiments are DETACHED
+    # (protocol_id=NULL) by ON DELETE SET NULL, not deleted — hypothesis/outcome
+    # history survives the protocol exactly as the delete dialog promises;
+    # templates guard with {% if exp.protocol %} and omit the protocol line.
     try:
-        EpisodeIntervention.query.filter_by(protocol_id=protocol.id).delete()
-        ProtocolCompliance.query.filter_by(protocol_id=protocol.id, user_id=user.id).delete()
-        ProtocolEvent.query.filter_by(protocol_id=protocol.id, user_id=user.id).delete()
-        Experiment.query.filter_by(protocol_id=protocol.id, user_id=user.id).update({'protocol_id': None})
         db.session.delete(protocol)
         db.session.commit()
     except IntegrityError:
@@ -4125,25 +4170,22 @@ def dev_reset():
         return 'Not available in production.', 403
 
     if request.method == 'POST':
+        blocked = deletion_blocked_response('index')
+        if blocked:
+            return blocked
         user = get_user()
+        # Bulk deletes of the top-level owned tables; the database cascades
+        # their children (FK cleanup Increment 2). Unlike delete_account this
+        # keeps the User row, so it can't just delete the user and be done.
+        # Order still matters only in that check-ins reference episodes —
+        # ON DELETE SET NULL would detach rather than delete them, so they are
+        # removed explicitly. Custom triggers only; globals have user_id NULL.
         CheckIn.query.filter_by(user_id=user.id).delete()
-        ProtocolCompliance.query.filter_by(user_id=user.id).delete()
-        ProtocolEvent.query.filter_by(user_id=user.id).delete()
-        Experiment.query.filter_by(user_id=user.id).delete()
-        episode_ids = db.session.query(Episode.id).filter_by(user_id=user.id)
-        EpisodeIntervention.query.filter(
-            EpisodeIntervention.episode_id.in_(episode_ids)
-        ).delete(synchronize_session=False)
-        SymptomScore.query.filter(
-            SymptomScore.episode_id.in_(episode_ids)
-        ).delete(synchronize_session=False)
-        EpisodeTrigger.query.filter(
-            EpisodeTrigger.episode_id.in_(episode_ids)
-        ).delete(synchronize_session=False)
         Episode.query.filter_by(user_id=user.id).delete()
         Protocol.query.filter_by(user_id=user.id).delete()
+        Experiment.query.filter_by(user_id=user.id).delete()
         Symptom.query.filter_by(user_id=user.id).delete()
-        Trigger.query.filter_by(user_id=user.id).delete()  # custom triggers only
+        Trigger.query.filter_by(user_id=user.id).delete()
         user.onboarding_complete = False
         user.ai_logging_enabled = False
         user.baseline_episodes_per_month = None

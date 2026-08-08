@@ -255,6 +255,79 @@ def main():
         check('sqlite short-circuits the postgres path',
               migrate_fk_ondelete(FakeConn(), FakeInspector(), is_sqlite=True) == [])
 
+        # 8. Increment 2: the ORM paths the routes actually use.
+        #    Sections 2-6 delete with raw SQL, which proves the DB constraints
+        #    work. The routes call db.session.delete(...), and with
+        #    passive_deletes=True SQLAlchemy deliberately does NOT load and
+        #    delete children itself — it relies on the constraints. If those two
+        #    ever disagree, deletes break in production, so exercise this path
+        #    explicitly rather than inferring it from the raw-SQL results.
+        u3, ep3, proto3, sym3, trig3 = _fixture()
+        ep3_id, proto3_id, u3_id = ep3.id, proto3.id, u3.id
+
+        db.session.delete(ep3)          # what delete_episode does
+        db.session.commit()
+        db.session.expire_all()
+        check('ORM episode delete cascades children (passive_deletes + DB)',
+              SymptomScore.query.filter_by(episode_id=ep3_id).count() == 0
+              and EpisodeIntervention.query.filter_by(episode_id=ep3_id).count() == 0
+              and EpisodeTrigger.query.filter_by(episode_id=ep3_id).count() == 0)
+        ci3 = CheckIn.query.filter_by(user_id=u3_id).first()
+        check('ORM episode delete detaches CheckIn, keeps chat history',
+              ci3 is not None and ci3.episode_id is None)
+
+        db.session.delete(Protocol.query.get(proto3_id))   # what delete_protocol does
+        db.session.commit()
+        db.session.expire_all()
+        exp3 = Experiment.query.filter_by(user_id=u3_id).first()
+        check('ORM protocol delete cascades children, DETACHES experiment',
+              ProtocolCompliance.query.filter_by(protocol_id=proto3_id).count() == 0
+              and ProtocolEvent.query.filter_by(protocol_id=proto3_id).count() == 0
+              and exp3 is not None and exp3.protocol_id is None)
+
+        # 9. Prove passive_deletes is actually in force: deleting a user with
+        #    children must emit ONE delete against users, not a storm of child
+        #    DELETEs. Without passive_deletes SQLAlchemy loads every child
+        #    collection and deletes row by row — correct, but the N+1 this
+        #    increment exists to remove.
+        u4, ep4, proto4, sym4, trig4 = _fixture()
+        u4_id, ep4_id = u4.id, ep4.id
+        deletes = []
+        from sqlalchemy import event as sa_event
+
+        def _record(conn, cursor, statement, params, context, executemany):
+            if statement.lstrip().upper().startswith('DELETE'):
+                deletes.append(statement.split('FROM')[1].strip().split()[0] if 'FROM' in statement else statement)
+
+        sa_event.listen(db.engine, 'before_cursor_execute', _record)
+        db.session.delete(u4)           # what delete_account does
+        db.session.commit()
+        sa_event.remove(db.engine, 'before_cursor_execute', _record)
+        db.session.expire_all()
+
+        check(f'user delete emits a single DELETE, DB cascades the rest (saw {deletes})',
+              len(deletes) == 1 and 'users' in deletes[0])
+        check('ORM user delete removed every owned child',
+              Episode.query.filter_by(user_id=u4_id).count() == 0
+              and Protocol.query.filter_by(user_id=u4_id).count() == 0
+              and Symptom.query.filter_by(user_id=u4_id).count() == 0
+              and CheckIn.query.filter_by(user_id=u4_id).count() == 0
+              and Experiment.query.filter_by(user_id=u4_id).count() == 0
+              and Trigger.query.filter_by(user_id=u4_id).count() == 0
+              and UserActivity.query.filter_by(user_id=u4_id).count() == 0
+              # The 2-hop chains (User -> Protocol -> compliance/events, and
+              # User -> Episode -> scores/interventions) are what passive_deletes
+              # is most exposed on: nothing in Python walks them, so only the
+              # DB's own cascade removes these. Scoped to THIS user's rows —
+              # earlier sections leave other users' data behind on purpose.
+              and ProtocolCompliance.query.filter_by(user_id=u4_id).count() == 0
+              and ProtocolEvent.query.filter_by(user_id=u4_id).count() == 0
+              and SymptomScore.query.filter_by(episode_id=ep4_id).count() == 0
+              and EpisodeIntervention.query.filter_by(episode_id=ep4_id).count() == 0
+              and EpisodeTrigger.query.filter_by(episode_id=ep4_id).count() == 0)
+        check('global triggers still survive an ORM user delete',
+              Trigger.query.filter_by(user_id=None).count() > 0)
+
     print()
     if failures:
         print(f'{len(failures)} FK ONDELETE TEST(S) FAILED')
