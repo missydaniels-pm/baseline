@@ -156,6 +156,33 @@ here in the same commit.
   the user creates.** (Contrast interventions, where the AI auto-creates — triggers
   are more speculative, so they get a confirm step. Owner decision 7/15/26.)
 
+## Foreign keys / ON DELETE
+- **`database.EXPECTED_FK_ONDELETE` is the single source of truth** for every
+  FK's delete behaviour. It drives three things: the `ondelete=` on each model
+  `ForeignKey`, the PostgreSQL migration (`migrate_fk_ondelete` in app.py), and
+  `verify_fk_ondelete()` which introspects a live DB. **Adding an FK column means
+  adding a dict entry** — `test_fk_ondelete.py` walks `db.metadata` and fails if a
+  model FK is missing from the dict or disagrees with it, so this can't drift
+  silently.
+- `CASCADE` when the child is meaningless without its parent. `SET NULL` when the
+  child deliberately outlives it — currently only `checkins.episode_id` (deleting
+  an episode keeps chat history), `experiments.protocol_id` (deleting a protocol
+  keeps the experiment — promised in the delete dialog) and
+  `invite_codes.used_by_user_id`. **These encode product promises; changing one to
+  CASCADE silently destroys user history.** Only ever on nullable columns.
+- **One directive can't express two behaviours.** `user_activity.user_id` is
+  CASCADE (account deletion removes analytics, privacy-first), but
+  `cleanup_stale_unverified_users()` wants the *opposite* — anonymize
+  (`user_id=NULL`) so a never-verified signup still counts. That explicit UPDATE
+  is load-bearing and must survive Increment 2's cleanup removal.
+- **SQLite is dev-only and cannot alter a constraint in place.** A fresh local DB
+  gets correct constraints from `create_all()`; a stale one is caught loudly by
+  `check_fk_ondelete()` at startup (warn-only, never fatal). Fix by deleting
+  `instance/migraine_tracker.db` and restarting — never by hand-editing.
+- **Before migrating a real PostgreSQL database, run `check_fk_orphans.py`
+  against it.** `ADD CONSTRAINT` validates existing rows; one orphan makes that FK
+  silently stay on its old behaviour while the rest migrate.
+
 ## Deletes (FK-safe)
 - Delete children before parents. Local SQLite enforces FKs
   (`PRAGMA foreign_keys=ON`), so FK-unsafe deletes fail in dev too, not just prod.

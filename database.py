@@ -18,6 +18,82 @@ def _enforce_sqlite_foreign_keys(dbapi_connection, connection_record):
         cursor.close()
 
 
+# ---------------------------------------------------------------------------
+# Declared ON DELETE behaviour — single source of truth.
+#
+# This dict is authoritative for three separate things, which is the point:
+#   1. the `ondelete=` on each ForeignKey below (what create_all() builds),
+#   2. the PostgreSQL constraint migration in app.py's run_migrations(),
+#   3. verify_fk_ondelete(), which introspects the LIVE database and reports
+#      any FK whose actual ondelete differs.
+#
+# (3) is what stops local SQLite (built by create_all) and PostgreSQL (built by
+# hand-written ALTERs) from silently drifting apart — the real risk in a
+# hand-rolled migration system with no Alembic. Change this dict and the model
+# together, never one alone.
+#
+# CASCADE  = the child row is meaningless without its parent.
+# SET NULL = the child outlives the parent deliberately; deleting a protocol
+#            keeps its experiment, deleting an episode keeps the chat history.
+#            Only ever on nullable columns.
+# ---------------------------------------------------------------------------
+EXPECTED_FK_ONDELETE = {
+    ('symptoms', 'user_id'): 'CASCADE',
+    ('triggers', 'user_id'): 'CASCADE',
+    ('episodes', 'user_id'): 'CASCADE',
+    ('symptom_scores', 'episode_id'): 'CASCADE',
+    ('symptom_scores', 'symptom_id'): 'CASCADE',
+    ('episode_interventions', 'episode_id'): 'CASCADE',
+    ('episode_interventions', 'protocol_id'): 'CASCADE',
+    ('episode_triggers', 'episode_id'): 'CASCADE',
+    ('episode_triggers', 'trigger_id'): 'CASCADE',
+    ('protocols', 'user_id'): 'CASCADE',
+    ('experiments', 'user_id'): 'CASCADE',
+    ('experiments', 'protocol_id'): 'SET NULL',      # experiment history survives
+    ('checkins', 'user_id'): 'CASCADE',
+    ('checkins', 'episode_id'): 'SET NULL',          # chat history survives
+    ('protocol_compliance', 'user_id'): 'CASCADE',
+    ('protocol_compliance', 'protocol_id'): 'CASCADE',
+    ('protocol_events', 'user_id'): 'CASCADE',
+    ('protocol_events', 'protocol_id'): 'CASCADE',
+    ('user_activity', 'user_id'): 'CASCADE',         # account delete removes analytics (privacy-first)
+    ('invite_codes', 'used_by_user_id'): 'SET NULL',
+}
+
+
+def verify_fk_ondelete(engine):
+    """Introspect the live DB and compare every FK against EXPECTED_FK_ONDELETE.
+
+    Returns a list of human-readable mismatch strings (empty == schema is
+    correct). Engine-agnostic, so local SQLite and PostgreSQL are held to the
+    same declared matrix.
+    """
+    from sqlalchemy import inspect as sa_inspect
+
+    inspector = sa_inspect(engine)
+    tables = set(inspector.get_table_names())
+    problems = []
+
+    for (table, column), expected in sorted(EXPECTED_FK_ONDELETE.items()):
+        if table not in tables:
+            continue  # table not created yet (fresh DB mid-bootstrap)
+        actual = None
+        found = False
+        for fk in inspector.get_foreign_keys(table):
+            if column in (fk.get('constrained_columns') or []):
+                found = True
+                actual = (fk.get('options') or {}).get('ondelete')
+                break
+        if not found:
+            problems.append(f'{table}.{column}: no foreign key found (expected {expected})')
+            continue
+        normalised = (actual or 'NO ACTION').upper().replace('_', ' ')
+        if normalised != expected:
+            problems.append(f'{table}.{column}: ondelete is {normalised}, expected {expected}')
+
+    return problems
+
+
 class User(db.Model):
     __tablename__ = 'users'
 
@@ -63,7 +139,7 @@ class Symptom(db.Model):
     __tablename__ = 'symptoms'
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     name = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text, nullable=True)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
@@ -93,7 +169,7 @@ class Trigger(db.Model):
     __tablename__ = 'triggers'
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)  # NULL = global seed
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=True)  # NULL = global seed
     name = db.Column(db.String(100), nullable=False)  # tag-like; deliberately tighter than Symptom.name (200)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -107,7 +183,7 @@ class Episode(db.Model):
     __tablename__ = 'episodes'
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
 
     onset = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     peak_severity = db.Column(db.Integer, nullable=True)  # kept for migration; not used for new episodes
@@ -161,8 +237,8 @@ class SymptomScore(db.Model):
     __tablename__ = 'symptom_scores'
 
     id = db.Column(db.Integer, primary_key=True)
-    episode_id = db.Column(db.Integer, db.ForeignKey('episodes.id'), nullable=False)
-    symptom_id = db.Column(db.Integer, db.ForeignKey('symptoms.id'), nullable=False)
+    episode_id = db.Column(db.Integer, db.ForeignKey('episodes.id', ondelete='CASCADE'), nullable=False)
+    symptom_id = db.Column(db.Integer, db.ForeignKey('symptoms.id', ondelete='CASCADE'), nullable=False)
     # Exactly one of score / value_bool is populated, determined by Symptom.input_type.
     # Filtering on `score IS NOT NULL` excludes binary entries from scale-only aggregates;
     # filtering on `value_bool IS NOT NULL` excludes scale entries from binary aggregates.
@@ -182,8 +258,8 @@ class EpisodeIntervention(db.Model):
     __tablename__ = 'episode_interventions'
 
     id = db.Column(db.Integer, primary_key=True)
-    episode_id = db.Column(db.Integer, db.ForeignKey('episodes.id'), nullable=False)
-    protocol_id = db.Column(db.Integer, db.ForeignKey('protocols.id'), nullable=False)
+    episode_id = db.Column(db.Integer, db.ForeignKey('episodes.id', ondelete='CASCADE'), nullable=False)
+    protocol_id = db.Column(db.Integer, db.ForeignKey('protocols.id', ondelete='CASCADE'), nullable=False)
     effectiveness = db.Column(db.Integer, nullable=True)  # 1-10
     time_to_relief_hours = db.Column(db.Float, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -204,11 +280,12 @@ class EpisodeTrigger(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
-    episode_id = db.Column(db.Integer, db.ForeignKey('episodes.id'), nullable=False)
-    # No ondelete on trigger_id: triggers are only ever soft-deactivated
-    # (is_active=False), never hard-deleted, so this FK never needs to cascade.
-    # DB-level ondelete directives are a deliberate later pass (P2 backlog).
-    trigger_id = db.Column(db.Integer, db.ForeignKey('triggers.id'), nullable=False)
+    episode_id = db.Column(db.Integer, db.ForeignKey('episodes.id', ondelete='CASCADE'), nullable=False)
+    # CASCADE even though triggers are normally only soft-deactivated
+    # (is_active=False): account deletion DOES hard-delete a user's custom
+    # triggers, and those links must go with them. Global triggers (user_id
+    # NULL) are never deleted, so this only ever fires on custom ones.
+    trigger_id = db.Column(db.Integer, db.ForeignKey('triggers.id', ondelete='CASCADE'), nullable=False)
     # Provenance: 'user' = picked/typed on the episode form; 'ai' = inferred by
     # AI check-in parsing. Added at the write-path increment while zero rows
     # existed, so no backfill guess. Editing the episode form re-links as 'user'
@@ -228,7 +305,7 @@ class Protocol(db.Model):
     __tablename__ = 'protocols'
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
 
     name = db.Column(db.String(200), nullable=False)
     type = db.Column(db.String(20), nullable=False)  # preventative or rescue
@@ -256,10 +333,10 @@ class Experiment(db.Model):
     __tablename__ = 'experiments'
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     name = db.Column(db.String(200), nullable=False)
     hypothesis = db.Column(db.Text, nullable=True)
-    protocol_id = db.Column(db.Integer, db.ForeignKey('protocols.id'), nullable=True)
+    protocol_id = db.Column(db.Integer, db.ForeignKey('protocols.id', ondelete='SET NULL'), nullable=True)
     start_date = db.Column(db.Date, nullable=False)
     stabilization_weeks = db.Column(db.Integer, default=3, nullable=False)
     status = db.Column(db.String(20), nullable=False, default='active')  # active/completed/abandoned
@@ -302,10 +379,10 @@ class CheckIn(db.Model):
     __tablename__ = 'checkins'
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     role = db.Column(db.String(10), nullable=False)   # 'user' | 'assistant'
     content = db.Column(db.Text, nullable=False)
-    episode_id = db.Column(db.Integer, db.ForeignKey('episodes.id'), nullable=True)
+    episode_id = db.Column(db.Integer, db.ForeignKey('episodes.id', ondelete='SET NULL'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):
@@ -319,8 +396,8 @@ class ProtocolCompliance(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    protocol_id = db.Column(db.Integer, db.ForeignKey('protocols.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    protocol_id = db.Column(db.Integer, db.ForeignKey('protocols.id', ondelete='CASCADE'), nullable=False)
     date = db.Column(db.Date, nullable=False)
     took = db.Column(db.Boolean, nullable=False, default=True)   # True=taken, False=missed
     notes = db.Column(db.Text, nullable=True)
@@ -337,8 +414,8 @@ class ProtocolEvent(db.Model):
     __tablename__ = 'protocol_events'
 
     id = db.Column(db.Integer, primary_key=True)
-    protocol_id = db.Column(db.Integer, db.ForeignKey('protocols.id'), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    protocol_id = db.Column(db.Integer, db.ForeignKey('protocols.id', ondelete='CASCADE'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     # event_type: 'started' | 'paused' | 'stopped' | 'reactivated' | 'dose_changed'
     event_type = db.Column(db.String(30), nullable=False)
     detail = db.Column(db.Text, nullable=True)   # e.g. dose change description
@@ -365,7 +442,7 @@ class InviteCode(db.Model):
     code = db.Column(db.String(100), unique=True, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     used_at = db.Column(db.DateTime, nullable=True)
-    used_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    used_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
 
     def __repr__(self):
         return f'<InviteCode {self.code}>'
@@ -376,7 +453,7 @@ class UserActivity(db.Model):
     __tablename__ = 'user_activity'
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=True)
     event_type = db.Column(db.String(50), nullable=False)  # signup, login, page_view
     detail = db.Column(db.String(200), nullable=True)       # e.g. endpoint name
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)

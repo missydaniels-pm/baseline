@@ -125,6 +125,21 @@ Local `.env` file uses `load_dotenv(override=True)` to ensure `.env` always wins
 
 ---
 
+## Foreign Keys / ON DELETE
+
+All 20 foreign keys carry DB-level `ON DELETE` directives, declared once in `database.EXPECTED_FK_ONDELETE` (16 `CASCADE`, 3 `SET NULL`). That dict is authoritative for the model `ondelete=` kwargs, the PostgreSQL migration (`migrate_fk_ondelete`), and `verify_fk_ondelete()`.
+
+- **`SET NULL` is only** `checkins.episode_id`, `experiments.protocol_id`, `invite_codes.used_by_user_id` — the children that deliberately outlive their parent. Changing one to `CASCADE` destroys user history.
+- **Increment 1 (shipped 8/8/26) is behaviour-preserving** — the hand-ordered child cleanup in the delete routes still runs first, so the constraints are inert. **Increment 2** removes that cleanup and adds `passive_deletes=True`.
+- **`check_fk_ondelete()`** runs at startup, warn-only, and reports any live-schema mismatch. On local SQLite the fix is to delete `instance/migraine_tracker.db` and restart — SQLite cannot alter constraints in place.
+- **`check_fk_orphans.py`** is a read-only pre-flight to run against staging and production *before* the migration: `ADD CONSTRAINT` validates existing rows, and one orphan leaves that FK on its old behaviour while the rest migrate.
+
+```bash
+DATABASE_URL='postgresql://...' python3 check_fk_orphans.py   # use the PUBLIC Railway URL
+```
+
+---
+
 ## Local Development
 
 ### Prerequisites

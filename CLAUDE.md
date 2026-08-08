@@ -182,6 +182,8 @@ Two distinct failure modes — keep them separate. **Rule 1 is about *where stat
 
 ---
 
+**Foreign keys / ON DELETE:** all 20 FKs carry DB-level directives, declared once in `database.EXPECTED_FK_ONDELETE` (16 CASCADE, 3 SET NULL) — that dict is the single source of truth for the model kwargs, the PostgreSQL migration, and `verify_fk_ondelete()`. **Increment 1 (8/8/26) is behaviour-preserving**: the hand-ordered child cleanup still runs first, so the constraints are inert safety nets. **Increment 2** removes that cleanup and adds `passive_deletes=True` — gated on running `check_fk_orphans.py` (read-only pre-flight; `ADD CONSTRAINT` validates existing rows and one orphan leaves that FK unmigrated) and `verify_fk_ondelete()` against the target DB first. SQLite is dev-only and cannot alter constraints in place — a stale local schema is caught by the startup check; fix by deleting `instance/migraine_tracker.db`. See CONVENTIONS.md.
+
 ## Known Issues / Active Investigation
 
 - **Open:** blank names accepted on `new_protocol` / `new_rescue_option` / `new_experiment` (8/8/26) — an empty name creates a nameless record; `new_symptom` guards correctly with `if not name` (Rule 3 divergence). Found while testing the submit guard. See BACKLOG → Open Bugs.

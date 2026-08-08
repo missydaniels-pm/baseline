@@ -15,7 +15,7 @@ from flask_wtf.csrf import CSRFProtect, CSRFError, generate_csrf
 from flask_limiter.util import get_remote_address
 from sqlalchemy import text, or_
 from sqlalchemy.exc import IntegrityError
-from database import db, User, Episode, Protocol, Symptom, SymptomScore, EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode, UsedVerifyToken, UserActivity, Trigger, EpisodeTrigger
+from database import db, User, Episode, Protocol, Symptom, SymptomScore, EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode, UsedVerifyToken, UserActivity, Trigger, EpisodeTrigger, EXPECTED_FK_ONDELETE, verify_fk_ondelete
 from collections import defaultdict
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
@@ -609,6 +609,9 @@ def run_migrations():
                 conn.commit()
                 print("Migration complete.")
 
+        # --- FK cleanup Increment 1: DB-level ON DELETE directives ---------
+        migrate_fk_ondelete(conn, inspector, is_sqlite)
+
         # --- Structured triggers: partial unique indexes + global seed list ---
         # Tables (triggers, episode_triggers) are auto-created by db.create_all().
         # Enforce name uniqueness at the DB level: app-level match-and-link is the
@@ -660,6 +663,15 @@ def cleanup_stale_unverified_users():
             # signup UserActivity row (FK to users). Anonymize it (user_id=NULL)
             # so signup analytics stay accurate while the account is removed.
             # Before 7/12/26 this FK silently aborted the whole cleanup batch.
+            #
+            # LOAD-BEARING for FK cleanup Increment 2 — do not delete this line.
+            # user_activity.user_id is declared ON DELETE CASCADE (matching
+            # delete_account, which removes a real user's analytics for privacy).
+            # This path wants the OPPOSITE: anonymize, don't delete, because a
+            # never-verified signup should still count in signup analytics. One
+            # DB-level directive cannot express both, so this explicit UPDATE
+            # must survive Increment 2's cleanup removal. Removing it would
+            # silently start deleting signup analytics instead of anonymizing.
             UserActivity.query.filter_by(user_id=u.id).update({'user_id': None})
             db.session.delete(u)
             db.session.commit()
@@ -728,6 +740,98 @@ def log_activity(event_type, detail=None, user_id=None):
             conn.commit()
     except Exception as e:
         app.logger.warning('log_activity failed: %s: %s', type(e).__name__, e)
+
+
+def migrate_fk_ondelete(conn, inspector, is_sqlite):
+    """Bring every FK up to the behaviour declared in EXPECTED_FK_ONDELETE.
+
+    Increment 1 ONLY adds the constraints — the hand-ordered child cleanup in
+    the delete routes still runs first, so these never actually fire yet. That
+    is deliberate: it separates "did the schema migration apply cleanly" from
+    "does the app behave correctly when the DB does the cascading" (Increment
+    2), so a production problem can't be ambiguous about which caused it.
+
+    PostgreSQL only. SQLite cannot alter a constraint in place, and it is
+    local-dev only — a fresh local DB gets the right constraints straight from
+    create_all(). A stale local SQLite schema is caught loudly by
+    check_fk_ondelete() at startup rather than silently tolerated.
+
+    Returns the list of SQL statements executed, so the PostgreSQL path can be
+    exercised without a PostgreSQL server (this branch never runs locally, so
+    without that it would first execute on staging completely unproven).
+    """
+    executed = []
+    if is_sqlite:
+        return executed
+
+    for (table, column), expected in sorted(EXPECTED_FK_ONDELETE.items()):
+        if table not in inspector.get_table_names():
+            continue
+        fk = next((f for f in inspector.get_foreign_keys(table)
+                   if column in (f.get('constrained_columns') or [])), None)
+        if not fk or not fk.get('name'):
+            continue
+        actual = ((fk.get('options') or {}).get('ondelete') or 'NO ACTION').upper().replace('_', ' ')
+        if actual == expected:
+            continue
+        referred_table = fk.get('referred_table')
+        referred_cols = fk.get('referred_columns') or ['id']
+        print(f"Migrating FK {table}.{column}: {actual} -> {expected}...")
+        # Drop and re-add: PostgreSQL has no ALTER CONSTRAINT for ON DELETE.
+        drop_sql = f'ALTER TABLE {table} DROP CONSTRAINT {fk["name"]}'
+        add_sql = (f'ALTER TABLE {table} ADD CONSTRAINT {fk["name"]} '
+                   f'FOREIGN KEY ({column}) REFERENCES {referred_table} ({referred_cols[0]}) '
+                   f'ON DELETE {expected}')
+        try:
+            conn.execute(text(drop_sql))
+            conn.execute(text(add_sql))
+            conn.commit()
+            executed.extend([drop_sql, add_sql])
+            print("Migration complete.")
+        except Exception:
+            # Roll back so a failure leaves the ORIGINAL constraint intact
+            # rather than a table with no FK at all — the one outcome worse
+            # than not migrating.
+            conn.rollback()
+            app.logger.warning('FK ondelete migration failed for %s.%s', table, column, exc_info=True)
+    return executed
+
+
+def check_fk_ondelete():
+    """Assert the live schema matches the declared ON DELETE matrix.
+
+    This is the guard against local SQLite (built by create_all) and PostgreSQL
+    (built by hand-written ALTERs) drifting apart — the real risk of a
+    hand-rolled migration system with no Alembic. Both engines are checked
+    against the same dict in database.py, so a typo'd or missed ALTER shows up
+    as a loud startup warning instead of a silent difference nobody notices
+    until production behaves unlike dev.
+
+    Warn-only, never fatal: a schema mismatch must not take the app down for
+    real users. Locally the usual fix is a stale dev DB — delete
+    instance/migraine_tracker.db and let create_all() rebuild it.
+    """
+    try:
+        problems = verify_fk_ondelete(db.engine)
+    except Exception:
+        # Reflection itself failing must not take the app down — this is a
+        # diagnostic, not a gate. Every sibling startup task guards its work
+        # the same way.
+        app.logger.warning('FK ondelete verification could not run', exc_info=True)
+        return
+    if not problems:
+        return
+    is_sqlite = str(db.engine.url).startswith('sqlite')
+    app.logger.warning('FK ondelete schema mismatch (%d):', len(problems))
+    for p in problems:
+        app.logger.warning('  %s', p)
+    if is_sqlite:
+        app.logger.warning(
+            'Local SQLite schema is stale. SQLite cannot alter constraints in '
+            'place; delete instance/migraine_tracker.db and restart to rebuild '
+            'it from the models. Dev will NOT reproduce production cascade '
+            'behaviour until you do.'
+        )
 
 
 def run_data_migrations():
@@ -3982,8 +4086,12 @@ def delete_protocol(protocol_id):
             flash(f'{protocol.name} has been removed. Historical episode data is preserved.', 'success')
             return redirect(url_for('protocols'))
 
-    # No historical usage (or preventative) — hard delete, removing children first
-    # (PostgreSQL enforces these FKs; SQLite does not, so local testing won't catch omissions).
+    # No historical usage (or preventative) — hard delete, removing children first.
+    # (Both engines enforce these FKs: PostgreSQL always, local SQLite via the
+    # PRAGMA foreign_keys=ON listener in database.py, so omissions DO reproduce
+    # in dev. As of FK cleanup Increment 1 the FKs also carry ON DELETE
+    # directives; this manual cleanup still runs first, so they stay inert until
+    # Increment 2 removes it.)
     # Experiments are detached (protocol_id=NULL), not deleted — hypothesis/outcome history
     # survives the protocol; templates guard with {% if exp.protocol %} and simply omit
     # the protocol line for detached experiments.
@@ -4332,6 +4440,7 @@ with app.app_context():
     migrate_episode_interventions()
     ensure_admin_user()
     backfill_resend_contacts()
+    check_fk_ondelete()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True)

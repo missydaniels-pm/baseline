@@ -90,23 +90,25 @@ def main():
             db.session.rollback()
             print("PASS: duplicate (episode, trigger) rejected")
 
-        # 6b. FK is enforced: deleting the parent Episode while links exist fails.
-        #     (Proves the manual delete ordering in delete_account/dev_reset is
-        #     load-bearing, not decorative.)
-        try:
-            Episode.query.filter_by(user_id=u1.id).delete(synchronize_session=False)
-            db.session.commit()
-            raise SystemExit("FAIL: episode delete with live EpisodeTrigger links did not raise")
-        except IntegrityError:
-            db.session.rollback()
-            print("PASS: FK enforced — episode delete blocked while links exist")
-
-        # 6c. Correct ordering (mirrors delete_account / dev_reset): links, then
-        #     episodes, then this user's custom triggers. Globals + the OTHER
-        #     user's custom must survive.
-        eids = db.session.query(Episode.id).filter_by(user_id=u1.id)
-        EpisodeTrigger.query.filter(EpisodeTrigger.episode_id.in_(eids)).delete(synchronize_session=False)
+        # 6b. CHANGED by FK cleanup Increment 1 (8/8/26). This previously asserted
+        #     that deleting the parent Episode while links exist RAISES, proving the
+        #     manual delete ordering was load-bearing. episode_triggers.episode_id
+        #     is now ON DELETE CASCADE, so the DB cleans the links up itself and the
+        #     delete succeeds. The manual ordering in delete_account/dev_reset is
+        #     therefore now redundant rather than load-bearing — Increment 2 removes
+        #     it. Asserting the new contract so a silent regression to NO ACTION
+        #     (e.g. a dropped migration on a fresh environment) still fails loudly.
+        eids_before = [e.id for e in Episode.query.filter_by(user_id=u1.id).all()]
         Episode.query.filter_by(user_id=u1.id).delete(synchronize_session=False)
+        db.session.commit()
+        db.session.expire_all()
+        assert EpisodeTrigger.query.filter(
+            EpisodeTrigger.episode_id.in_(eids_before)
+        ).count() == 0, "episode delete must cascade its EpisodeTrigger links"
+        print("PASS: episode delete cascades EpisodeTrigger links (FK ondelete)")
+
+        # 6c. The rest of the ordering still holds: this user's custom triggers go,
+        #     globals + the OTHER user's custom must survive.
         Trigger.query.filter_by(user_id=u1.id).delete(synchronize_session=False)
         db.session.commit()
 
