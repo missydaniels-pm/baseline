@@ -1,5 +1,11 @@
 .venv
 instance/
+# Any SQLite file anywhere, not just instance/ — a stray root-level
+# migraine_tracker.db is easy to create by accident and would be real health
+# data. Never committable.
+*.db
+*.sqlite
+*.sqlite3
 .env
 .DS_Store
 # Personal/local Claude tooling configs, anywhere in the tree — root OR a stray

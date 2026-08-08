@@ -70,6 +70,30 @@ here in the same commit.
   ≥44px. This pills=multi / dropdown=single split is deliberate (decided 7/15/26);
   don't reach for a dropdown when the field is genuinely multi-select.
 
+## Action buttons: never a live-looking silent no-op
+- **An enabled button must always do something visible.** If a button's action
+  requires an input that isn't there yet, **disable it until it is** — don't let
+  the click fall through a `if (!value) return;` guard with no feedback. A dead
+  tap is indistinguishable from a broken app, especially for a user in a flare.
+- Canonical pair, both on the episode form: `#addSymptomBtn` (disabled until the
+  `<select>` has a real value — toggled inside `refreshAddSection()`, which is the
+  single place that computes both "is the section visible" and "is the button
+  enabled") and `#addTriggerBtn` (disabled until `normalize(input.value)` is
+  non-empty, toggled on an `input` listener). Both also carry `disabled` in the
+  **markup**, so a JS failure fails safe (inert) rather than unsafe (clickable
+  and dead).
+- Use plain `disabled`, not `aria-disabled` — it matches every other guarded
+  button in the app (`#pw-submit-btn`, the char-limit guards in `base.html`).
+- Styling comes from the global **`.btn:disabled`** rule (opacity `0.55`, default
+  cursor, with `:hover`/`:active` neutralised so a disabled button can't brighten
+  on hover). Don't add a scoped copy — that rule was `.tp-card`-scoped until
+  8/8/26 and left disabled buttons undimmed everywhere else.
+- If disabling a control can make it (or its whole section) vanish while focused,
+  **move focus somewhere stable first** — `addSymptomBack()` focuses the restored
+  symptom row rather than letting focus drop to `<body>`.
+- Established 8/8/26 fixing the "'Add' symptom did nothing" bug, where the button
+  looked live and silently no-op'd on the placeholder selection.
+
 ## Match-and-link writes (shared dimensions: triggers)
 - A user-extensible dimension backed by curated globals + per-user customs
   (currently **triggers**) resolves a typed name through **`_resolve_trigger()`**,

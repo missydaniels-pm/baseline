@@ -138,6 +138,13 @@ a:hover { text-decoration: underline; }
 .btn:hover { opacity: 0.88; text-decoration: none; }
 .btn:active { transform: scale(0.98); }
 
+/* A disabled .btn reads as unavailable everywhere. Was previously scoped to
+   .tp-card only, so other disabled buttons (settings, check-in send, the
+   episode-form "+ Add") looked live while being unclickable. */
+.btn:disabled { opacity: 0.55; cursor: default; }
+.btn:disabled:hover { opacity: 0.55; }
+.btn:disabled:active { transform: none; }
+
 .btn-primary {
   background: var(--accent);
   color: #fff;
@@ -3111,8 +3118,6 @@ button.tp-dot-btn:hover .tp-dot { transform: scale(1.12); }
   background: rgba(180, 100, 100, 0.22);
   color: #f0d4d4;
 }
-
-.tp-card .btn:disabled { opacity: 0.55; cursor: default; }
 
 /* Optional note revealed under a missed row */
 .tp-note { margin: 2px 0 10px; }

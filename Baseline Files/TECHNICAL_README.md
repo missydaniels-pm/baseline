@@ -153,6 +153,14 @@ cd ~/migraine-tracker && claude        # new session
 claude --resume                         # resume previous session
 ```
 
+### Gotcha — editing CSS alone requires a server restart
+
+`static/css/style.css` is cache-busted by `CSS_VERSION`, an md5 of the file computed **once at import time** (`app.py`, `_compute_asset_version`). The Flask dev reloader only watches `.py` files, so **editing CSS alone does not restart the app** — the stale hash keeps getting served, the browser cache-hits the old URL, and your CSS changes appear to do nothing. Restart the server after a CSS-only edit.
+
+**Production is unaffected** — every Railway deploy restarts the process, so the hash is always recomputed against the deployed file. This is a local-dev-loop wrinkle only, not a bug to fix. (Noted 8/8/26 after it cost real debugging time.)
+
+Killing the dev server: `pkill -f "python3 app.py"` does **not** match it — the process shows as the framework interpreter's absolute path. Use `lsof -nP -iTCP:5001 -sTCP:LISTEN` to find the pid and `kill` it, or the restart silently fails with "Address already in use" while the old process keeps serving.
+
 ---
 
 ## Routes
@@ -327,8 +335,8 @@ The experiments page (`experiments.html`) shows a muted preview of the full asse
 
 ## Known Issues / Active Investigation
 
-- **Open:** "Add" symptom did nothing (7/18/26) — adding a new symptom after a check-in appeared to do nothing; needs repro (episode-form inline add is a likely UX gap vs. the `/symptoms` create flow being a real bug). See BACKLOG → Open Bugs.
-- Resolved: partial-week charts (now shown with an asterisk label); future episode dates (decided keep-blocked 7/14/26, guard made exact in tz Increment 2).
+- **Open:** duplicate records from double-tapping Save (8/8/26, **reproduced**) — no classic form POST has double-submit protection, so two rapid taps on a slow response create two records. Proven on `/episodes/new`; same exposure on `/protocols/new`, `/rescue-options/new`, `/experiments/new`. Not exposed where a uniqueness check or upsert already guards (`/symptoms/new`, `/register`, custom triggers, compliance logging) or where a client guard exists (`/checkin`). See BACKLOG → Open Bugs.
+- Resolved: "Add" symptom did nothing (7/18/26; reproduced and fixed 8/8/26 — the episode form's "+ Add" was a silent no-op on the placeholder selection, now disabled-until-valid); partial-week charts (now shown with an asterisk label); future episode dates (decided keep-blocked 7/14/26, guard made exact in tz Increment 2).
 
 ---
 

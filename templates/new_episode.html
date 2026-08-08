@@ -61,9 +61,11 @@
 
     <div class="form-group" id="symptom-add-section" hidden>
       <label for="symptomAddSelect">Add symptom to this episode</label>
+      <div class="field-hint">Choose a symptom, then tap Add.</div>
       <div class="symptom-add-row">
         <select id="symptomAddSelect"><option value="">— select —</option></select>
-        <button type="button" class="btn btn-secondary btn-sm" id="addSymptomBtn">+ Add</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="addSymptomBtn"
+                aria-label="Add symptom to episode" disabled>+ Add</button>
       </div>
     </div>
 
@@ -95,7 +97,8 @@
       <div class="trigger-add-row">
         <input type="text" id="triggerAddInput" maxlength="100"
                placeholder="Add your own…" aria-label="Add a custom trigger">
-        <button type="button" class="btn btn-secondary btn-sm" id="addTriggerBtn">+ Add</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="addTriggerBtn"
+                aria-label="Add custom trigger" disabled>+ Add</button>
       </div>
     </div>
 
@@ -159,6 +162,9 @@
   });
 
   // Remove / add-back symptoms for this episode.
+  // NOTE: this block mirrors the equivalent one in edit_episode.html — keep the
+  // two in sync. They have silently drifted twice (the init call, and the
+  // button-disabled state); the React rebuild componentises this properly.
   var addSection = document.getElementById('symptom-add-section');
   var addSelect = document.getElementById('symptomAddSelect');
   var addBtn = document.getElementById('addSymptomBtn');
@@ -167,6 +173,9 @@
     // Show the add section only when there's at least one removed symptom.
     var hasOptions = addSelect.options.length > 1;
     addSection.hidden = !hasOptions;
+    // "+ Add" no-ops while the placeholder is selected — disable it rather than
+    // letting the tap do nothing silently.
+    addBtn.disabled = !addSelect.value;
   }
 
   function removeSymptom(group) {
@@ -190,6 +199,11 @@
     if (opt) opt.remove();
     addSelect.value = '';
     refreshAddSection();
+    // "+ Add" disables itself here, and the whole section can disappear if that
+    // was the last option — hand focus to the row we just restored rather than
+    // letting the browser drop it to <body>.
+    var restored = group.querySelector('input[type="range"], .binary-toggle-btn');
+    if (restored) restored.focus();
   }
 
   document.querySelectorAll('.symptom-remove').forEach(function(btn) {
@@ -199,10 +213,14 @@
     });
   });
 
+  addSelect.addEventListener('change', refreshAddSection);
+
   addBtn.addEventListener('click', function() {
     var sid = addSelect.value;
     if (sid) addSymptomBack(sid);
   });
+
+  refreshAddSection();
 
   var rescueOptions = [
     {% for opt in rescue_options %}
@@ -343,11 +361,18 @@
       input.value = '';
     }
 
-    addBtn.addEventListener('click', addCustom);
+    // Same rule as the symptom "+ Add" above: never leave a live-looking button
+    // that silently does nothing. Disabled until there's a name to add.
+    function refreshAddBtn() { addBtn.disabled = !normalize(input.value); }
+    function addCustomAndSync() { addCustom(); refreshAddBtn(); }
+
+    input.addEventListener('input', refreshAddBtn);
+    addBtn.addEventListener('click', addCustomAndSync);
     input.addEventListener('keydown', function(e) {
       if (e.isComposing) return;  // don't commit mid-IME-composition
-      if (e.key === 'Enter') { e.preventDefault(); addCustom(); }
+      if (e.key === 'Enter') { e.preventDefault(); addCustomAndSync(); }
     });
+    refreshAddBtn();
     // Flush any text still sitting in the input when the episode form submits,
     // so a typed-but-not-"+Add"ed trigger isn't silently lost.
     var triggerForm = input.closest('form');
