@@ -187,7 +187,7 @@
 // Auto-save: any toggle inside a form marked data-autosave submits on change.
 // The flash banner at the top of the reloaded page is the save confirmation.
 document.querySelectorAll('form[data-autosave] input[type="checkbox"]').forEach(function(cb) {
-  cb.addEventListener('change', function() { cb.form.submit(); });
+  cb.addEventListener('change', function() { cb.form.requestSubmit(); });
 });
 </script>
 
@@ -217,6 +217,9 @@ document.querySelectorAll('form[data-autosave] input[type="checkbox"]').forEach(
   });
 
   confirmInput.addEventListener('input', function() {
+    // Never re-enable a button the double-submit guard has latched (base.html) —
+    // typing here during an in-flight delete would otherwise hand the button back.
+    if (confirmBtn.getAttribute('data-guard-disabled') === '1') return;
     var match = confirmInput.value.trim() === 'DELETE';
     confirmBtn.disabled = !match;
     confirmBtn.style.opacity = match ? '1' : '.5';
@@ -273,6 +276,9 @@ document.querySelectorAll('form[data-autosave] input[type="checkbox"]').forEach(
       matchError.style.display = 'none';
     }
 
+    // Same rule as above: the double-submit guard's latch wins over this
+    // validator, so typing during an in-flight password change can't re-arm it.
+    if (btn.getAttribute('data-guard-disabled') === '1') return;
     btn.disabled = !(meetsRequirements(val) && val === cval && cval.length > 0);
   }
 

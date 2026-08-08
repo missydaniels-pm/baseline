@@ -202,7 +202,12 @@
               anyOver = true;
             }
           });
-          buttons.forEach(function(b) { b.disabled = anyOver; });
+          // Never re-enable a button the double-submit guard has latched — a
+          // user typing in the notes field while a slow save is in flight
+          // would otherwise get the Save button back and could submit twice.
+          buttons.forEach(function(b) {
+            b.disabled = anyOver || b.getAttribute('data-guard-disabled') === '1';
+          });
         }
       }
       update();
@@ -225,6 +230,73 @@
   document.querySelectorAll('.nav-link').forEach(function(link) {
     link.addEventListener('click', function() {
       document.body.classList.remove('nav-open');
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Global double-submit guard.
+  //
+  // Two rapid taps on a slow response used to create two records — proven on
+  // /episodes/new (two identical episodes). Nothing on a classic form POST
+  // stopped it. This generalises the flag+disable pattern checkin.html has
+  // used all along, so every POST form gets it without opting in.
+  //
+  // The flag on the form is the actual protection; disabling the button is
+  // only feedback (and it can be undone by the char-limit guard above, so it
+  // must not be what correctness rests on).
+  //
+  // NOT a substitute for server-side idempotency — it cannot stop a retried
+  // request, only a second human tap. DB-backed idempotency keys are the
+  // durable fix and are specced for the rebuild's API layer (see BACKLOG).
+  // ---------------------------------------------------------------------
+  function guardedSubmitButtons(form) {
+    // Same collection rule as the char-limit guard: buttons inside the form,
+    // plus any linked from outside via form="id" (edit_episode's Save is one).
+    var buttons = [];
+    form.querySelectorAll('[type="submit"]').forEach(function(b) { buttons.push(b); });
+    if (form.id) {
+      document.querySelectorAll('[type="submit"][form="' + form.id + '"]').forEach(function(b) { buttons.push(b); });
+    }
+    return buttons;
+  }
+
+  document.addEventListener('submit', function(e) {
+    var form = e.target;
+    if (!form || form.tagName !== 'FORM') return;
+    // GET forms are idempotent; opt out with data-no-submit-guard if a form
+    // ever genuinely needs to be submitted twice.
+    if ((form.method || 'get').toLowerCase() !== 'post') return;
+    if (form.getAttribute('data-no-submit-guard') === '1') return;
+
+    if (form.getAttribute('data-submitting') === '1') {
+      e.preventDefault();          // already in flight — swallow the duplicate
+      return;
+    }
+    // Runs in the bubble phase, so a cancelled confirm() (the delete/pause
+    // forms) or a failed validity check has already marked this prevented —
+    // don't latch the form shut on a submit that isn't happening.
+    if (e.defaultPrevented) return;
+
+    form.setAttribute('data-submitting', '1');
+    guardedSubmitButtons(form).forEach(function(b) {
+      b.setAttribute('data-guard-disabled', '1');
+      b.disabled = true;
+    });
+  });
+
+  // Back/forward restore serves the page from bfcache with the DOM exactly as
+  // it was left — including a latched form and a disabled button. Release it,
+  // or the user returns to a form they can never submit again.
+  window.addEventListener('pageshow', function(e) {
+    if (!e.persisted) return;
+    document.querySelectorAll('form[data-submitting="1"]').forEach(function(form) {
+      form.removeAttribute('data-submitting');
+      guardedSubmitButtons(form).forEach(function(b) {
+        if (b.getAttribute('data-guard-disabled') === '1') {
+          b.removeAttribute('data-guard-disabled');
+          b.disabled = false;
+        }
+      });
     });
   });
 </script>

@@ -126,6 +126,9 @@
       matchError.style.display = 'none';
     }
 
+    // The double-submit guard's latch (base.html) wins over this validator —
+    // editing a field during an in-flight registration must not re-arm submit.
+    if (btn.getAttribute('data-guard-disabled') === '1') return;
     // Enable/disable submit
     btn.disabled = !(meetsRequirements(val) && val === cval && cval.length > 0 && ack.checked);
   }

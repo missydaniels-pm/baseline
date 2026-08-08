@@ -142,6 +142,21 @@ a:hover { text-decoration: underline; }
    .tp-card only, so other disabled buttons (settings, check-in send, the
    episode-form "+ Add") looked live while being unclickable. */
 .btn:disabled { opacity: 0.55; cursor: default; }
+
+/* In-flight submit: a trailing ellipsis turns "Save Episode" into
+   "Save Episode…" for the duration of the request. Dimming alone reads as
+   "this button broke" on a slow save — which is what made a second tap feel
+   reasonable in the first place. Done in CSS rather than by swapping
+   textContent so it works for every verb in the app (Save / Delete / Pause /
+   Resume / Next / Log in) without generating awkward gerunds, and so no
+   button can be left stranded showing stale busy text. Deliberately static —
+   no spinner or pulse; this audience does not need motion on every save. */
+.btn[data-guard-disabled="1"]::after {
+  content: "…";
+  /* .btn is inline-flex with gap:6px, so this pseudo-element becomes a flex
+     item and inherits that gap — cancel it so it reads "Saving…" not "Saving …". */
+  margin-left: -6px;
+}
 .btn:disabled:hover { opacity: 0.55; }
 .btn:disabled:active { transform: none; }
 

@@ -101,7 +101,7 @@
   document.getElementById('modalContinue').addEventListener('click', function() {
     allowSubmit = true;
     document.getElementById('experimentWarning').classList.remove('visible');
-    document.getElementById('protocolForm').submit();
+    document.getElementById('protocolForm').requestSubmit();
   });
 </script>
 {% endif %}

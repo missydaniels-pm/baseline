@@ -120,7 +120,9 @@
       if (clientTimeInput) clientTimeInput.value = localISOString();
 
       // Prevent double-submit: disable button only (not textarea — disabled fields aren't submitted)
-      if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = 'Sending…'; }
+      // No ellipsis here — the global in-flight rule appends one via CSS
+      // (.btn[data-guard-disabled]::after), so adding it again reads "Sending……".
+      if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = 'Sending'; }
       if (textarea) textarea.style.opacity = '0.5';
       submitting = true;
 
@@ -129,7 +131,10 @@
         var safe = msg.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
                       .replace(/\n/g,'<br>');
         var userBubble = document.createElement('div');
-        userBubble.className = 'chat-bubble-wrap user';
+        // Marked optimistic so a bfcache restore can tell it apart from a
+        // server-rendered bubble and drop it — otherwise a send that never
+        // landed still looks recorded.
+        userBubble.className = 'chat-bubble-wrap user chat-optimistic';
         userBubble.innerHTML = '<div><div class="chat-bubble chat-bubble-user">' + safe + '</div></div>';
         chatEl.appendChild(userBubble);
 
@@ -139,6 +144,27 @@
                            '<span></span><span></span><span></span></div></div>';
         chatEl.appendChild(typing);
         chatEl.scrollTop = chatEl.scrollHeight;
+      }
+    });
+
+    // base.html's guard releases the shared latch on a bfcache restore, but it
+    // knows nothing about this page's own `submitting` flag or the "Sending…"
+    // label. Without this, coming Back to a mid-send check-in leaves a button
+    // that looks live and enabled but silently swallows every tap — the exact
+    // dead-control pattern CONVENTIONS.md forbids. Reset our state too.
+    window.addEventListener('pageshow', function(e) {
+      if (!e.persisted) return;
+      submitting = false;
+      if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Send'; }
+      if (textarea) textarea.style.opacity = '';
+      // Drop the optimistic bubble + typing indicator for a send that never
+      // landed. The user's text is still in the textarea, so nothing is lost.
+      if (chatEl) {
+        chatEl.querySelectorAll('.chat-optimistic').forEach(function(el) { el.remove(); });
+        chatEl.querySelectorAll('.chat-typing').forEach(function(t) {
+          var wrap = t.closest('.chat-bubble-wrap');
+          if (wrap) wrap.remove();
+        });
       }
     });
   }

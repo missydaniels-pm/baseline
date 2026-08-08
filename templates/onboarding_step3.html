@@ -32,11 +32,11 @@
 
     <div style="display:flex; flex-direction:column; gap:12px; margin-top:8px;">
       <button type="button" class="btn btn-primary" style="justify-content:center;"
-              onclick="document.getElementById('choiceInput').value='enable'; document.getElementById('step3Form').submit();">
+              onclick="document.getElementById('choiceInput').value='enable'; document.getElementById('step3Form').requestSubmit();">
         Enable AI logging
       </button>
       <button type="button" class="btn btn-secondary" style="justify-content:center;"
-              onclick="document.getElementById('choiceInput').value='skip'; document.getElementById('step3Form').submit();">
+              onclick="document.getElementById('choiceInput').value='skip'; document.getElementById('step3Form').requestSubmit();">
         No thanks, I'll use the forms
       </button>
     </div>

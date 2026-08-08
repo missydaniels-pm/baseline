@@ -184,7 +184,8 @@ Two distinct failure modes — keep them separate. **Rule 1 is about *where stat
 
 ## Known Issues / Active Investigation
 
-- **Open:** duplicate records from double-tapping Save (Missy 8/8/26, **reproduced**) — no classic form POST in the app has double-submit protection, so two rapid taps while the response is slow create two records. Proven on `/episodes/new`; same exposure on `/protocols/new`, `/rescue-options/new`, `/experiments/new`. Guarded already where uniqueness or an upsert exists (`/symptoms/new`, `/register`, custom triggers, compliance logging) and on `/checkin` (client-side). Needs its own increment — a global submit guard touches every form. See BACKLOG → Open Bugs.
+- **Open:** blank names accepted on `new_protocol` / `new_rescue_option` / `new_experiment` (8/8/26) — an empty name creates a nameless record; `new_symptom` guards correctly with `if not name` (Rule 3 divergence). Found while testing the submit guard. See BACKLOG → Open Bugs.
+- Resolved: duplicate records from double-tapping Save (Missy 8/8/26 — reproduced, then fixed by the global client submit guard in `base.html`, see CONVENTIONS.md "Double-submit protection"). **Two tabs and retried requests are deliberately still uncovered** — DB-backed idempotency keys are specced for the rebuild's API layer (Rule 1 compliant; the store is the shared DB, and `UsedVerifyToken` is the existing precedent).
 - Resolved: "Add" symptom did nothing (7/18/26 — reproduced and fixed 8/8/26; the episode form's "+ Add" silently no-op'd on the placeholder selection, now disabled-until-valid, see CONVENTIONS.md "Action buttons: never a live-looking silent no-op"); partial-week chart display (asterisk label); future-episode-dates (reviewed 7/14/26 — keep blocked; guard made exact in tz Increment 2, no change needed).
 
 ---

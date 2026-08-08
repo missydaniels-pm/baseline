@@ -94,6 +94,43 @@ here in the same commit.
 - Established 8/8/26 fixing the "'Add' symptom did nothing" bug, where the button
   looked live and silently no-op'd on the placeholder selection.
 
+## Double-submit protection (every POST form, automatic)
+- `base.html` carries a **global submit guard**. New forms get it for free —
+  there is nothing to opt into. It listens for `submit` on `document` in the
+  **bubble** phase, so every form-level listener has already run.
+- Attribute protocol:
+  - **`data-submitting="1"`** — set on the form once a real submit is in flight.
+    A second submit is `preventDefault()`ed. *This flag is the actual
+    protection.*
+  - **`data-guard-disabled="1"`** — set on each of that form's submit buttons.
+    Purely feedback: it drives the dimming (`.btn:disabled`) and the trailing
+    ellipsis (`.btn[data-guard-disabled="1"]::after`), so "Save Episode" reads
+    "Save Episode…" while in flight. Never make correctness depend on it.
+  - **`data-no-submit-guard="1"`** — opt out. Needs a stated reason.
+- **Bubble phase is required, not incidental.** `e.defaultPrevented` is how the
+  guard knows a submit isn't really happening — a cancelled
+  `onsubmit="return confirm(...)"`, a failed validity check, the
+  active-experiment modal's own `preventDefault()`. A capture-phase listener
+  would latch forms shut on submits that never happen.
+- **Any code that recomputes a submit button's `disabled` on input must respect
+  the latch** — early-return (or `|| data-guard-disabled`) when it is set.
+  Precedents: the char-limit guard in `base.html`, the password-strength
+  validators in `settings.html` + `register.html`, the delete-account confirm.
+  Miss this and typing during a slow save hands the button back.
+- **PITFALL — `form.submit()` bypasses all of this.** `HTMLFormElement.submit()`
+  dispatches **no** `submit` event (per spec), so no listener anywhere runs: not
+  the guard, not `onsubmit`, and *not native constraint validation*. Always use
+  **`form.requestSubmit()`** for a JS-driven resubmit. This silently exempted
+  the "active experiment → continue anyway" path on `/protocols/new`,
+  `/protocols/<id>/edit` and `/experiments/new` until 8/8/26 — and, because
+  validation was skipped too, let a **blank-name protocol** be created.
+- **What this does NOT cover** — a retried/replayed request, or two browser tabs
+  (the flag lives in one tab's DOM; two tabs still duplicate). The durable fix
+  is DB-backed idempotency keys, specced for the rebuild's API layer (BACKLOG).
+  Don't describe this guard as making duplicates impossible.
+- Established 8/8/26 after two rapid taps on `/episodes/new` were proven to
+  create two identical episodes.
+
 ## Match-and-link writes (shared dimensions: triggers)
 - A user-extensible dimension backed by curated globals + per-user customs
   (currently **triggers**) resolves a typed name through **`_resolve_trigger()`**,

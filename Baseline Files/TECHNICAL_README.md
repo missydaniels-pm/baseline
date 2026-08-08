@@ -335,7 +335,8 @@ The experiments page (`experiments.html`) shows a muted preview of the full asse
 
 ## Known Issues / Active Investigation
 
-- **Open:** duplicate records from double-tapping Save (8/8/26, **reproduced**) — no classic form POST has double-submit protection, so two rapid taps on a slow response create two records. Proven on `/episodes/new`; same exposure on `/protocols/new`, `/rescue-options/new`, `/experiments/new`. Not exposed where a uniqueness check or upsert already guards (`/symptoms/new`, `/register`, custom triggers, compliance logging) or where a client guard exists (`/checkin`). See BACKLOG → Open Bugs.
+- **Open:** blank names accepted on `new_protocol` / `new_rescue_option` / `new_experiment` (8/8/26) — they only check `if name_val and len(name_val) > 200`, so an empty name creates a nameless record. `new_symptom` guards correctly with `if not name`; converge on that. See BACKLOG → Open Bugs.
+- Resolved: duplicate records from double-tapping Save (8/8/26 — reproduced, then fixed by the global client submit guard in `base.html`; see CONVENTIONS.md "Double-submit protection"). **Residual by design:** two browser tabs and retried requests are *not* covered — DB-backed idempotency keys are specced for the rebuild.
 - Resolved: "Add" symptom did nothing (7/18/26; reproduced and fixed 8/8/26 — the episode form's "+ Add" was a silent no-op on the placeholder selection, now disabled-until-valid); partial-week charts (now shown with an asterisk label); future episode dates (decided keep-blocked 7/14/26, guard made exact in tz Increment 2).
 
 ---
