@@ -77,8 +77,15 @@
   </form>
 
   <div class="form-actions">
+    {% set testing_this = active_experiment and active_experiment.protocol_id == protocol.id %}
+    {% set delete_warning = 'Delete this preventative? Its daily compliance history will be permanently deleted too.'
+       ~ (' The experiment testing it (' ~ active_experiment.name ~ ') will be marked abandoned — its hypothesis and results are kept.'
+          if testing_this else ' Experiment records are kept.') %}
+    {# |tojson so an apostrophe in the experiment name can't break the inline
+       confirm() string and fire a destructive delete with no dialog (the
+       7/15/26 trigger-pause bug). #}
     <form class="delete-form" method="POST" action="{{ url_for('delete_protocol', protocol_id=protocol.id) }}"
-          onsubmit="return confirm('Delete this preventative? Its daily compliance history will be permanently deleted too. Experiment records are kept.')">
+          onsubmit='return confirm({{ delete_warning | tojson }})'>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="btn btn-danger">Delete</button>
     </form>

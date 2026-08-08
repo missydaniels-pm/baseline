@@ -216,6 +216,12 @@ here in the same commit.
   route → add the same two lines.
 - Prefer **soft-deactivate** (`is_active=False`) over hard delete for records with
   history (triggers, rescue options). Never hard-delete a row others reference.
+- **`SET NULL` keeps the row, but ask what the row now *means*.** A detached child
+  can be left in a state that no longer makes sense — deleting a protocol used to
+  leave its experiment **Active**, counting down, testing nothing (found 8/8/26).
+  `delete_protocol` therefore marks such experiments `abandoned` before deleting.
+  That is a **product rule living in the route**, not cascade handling: it can't
+  be expressed as an `ondelete`, and must not be removed when simplifying deletes.
 - Both engines enforce FKs — local SQLite via `PRAGMA foreign_keys=ON` — so
   cascade behaviour reproduces in dev, including multi-hop chains.
 - Gotcha for later: with `passive_deletes`, children are never expunged from the

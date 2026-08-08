@@ -4141,10 +4141,26 @@ def delete_protocol(protocol_id):
     # No historical usage (or preventative) — hard delete. One DELETE; the
     # database does the rest (FK cleanup Increment 2). EpisodeIntervention /
     # ProtocolCompliance / ProtocolEvent cascade. Experiments are DETACHED
-    # (protocol_id=NULL) by ON DELETE SET NULL, not deleted — hypothesis/outcome
-    # history survives the protocol exactly as the delete dialog promises;
-    # templates guard with {% if exp.protocol %} and omit the protocol line.
+    # (protocol_id=NULL) by ON DELETE SET NULL, not deleted — hypothesis and
+    # results survive the protocol; templates guard with {% if exp.protocol %}.
+    #
+    # But detaching alone leaves an ACTIVE experiment testing nothing: it stays
+    # under Active, keeps counting down to an assessment date, and still trips
+    # the "you have an active experiment" warning — while its subject no longer
+    # exists (found on staging 8/8/26). So mark it abandoned. This is deliberate
+    # business logic in a route Increment 2 otherwise emptied — a product rule,
+    # not referential integrity, which is why the FK stays SET NULL and this
+    # cannot be "cleaned up" as leftover cascade handling.
+    #
+    # Must run BEFORE the delete: afterwards ON DELETE SET NULL has cleared
+    # protocol_id and there is no way left to find these rows. Completed and
+    # already-abandoned experiments are left alone — their outcome is recorded.
+    abandoned = 0
     try:
+        # .update() returns the row count, so the flash can say what happened.
+        abandoned = Experiment.query.filter_by(
+            protocol_id=protocol.id, user_id=user.id, status='active'
+        ).update({'status': 'abandoned'}, synchronize_session=False)
         db.session.delete(protocol)
         db.session.commit()
     except IntegrityError:
@@ -4152,7 +4168,7 @@ def delete_protocol(protocol_id):
         app.logger.warning('delete_protocol failed for protocol %s', protocol_id, exc_info=True)
         flash("Couldn't delete this protocol — please try again.", 'error')
         return redirect(url_for('edit_protocol', protocol_id=protocol_id))
-    flash('Deleted.', 'success')
+    flash('Deleted.' + (' The experiment testing it was marked abandoned.' if abandoned else ''), 'success')
     return redirect(url_for('protocols'))
 
 

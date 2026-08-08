@@ -55,7 +55,11 @@ def check(label, condition):
 
 def _fixture():
     """A user with one of everything, wired together."""
-    u = User(name='FK Test', email=f'fk{datetime.utcnow().timestamp()}@test.com')
+    # onboarding_complete/is_active matter for the route-level test below —
+    # without them the auth guard redirects to onboarding before the delete
+    # route is ever reached, and the assertion fails for the wrong reason.
+    u = User(name='FK Test', email=f'fk{datetime.utcnow().timestamp()}@test.com',
+             onboarding_complete=True, is_active=True)
     db.session.add(u)
     db.session.flush()
 
@@ -327,6 +331,37 @@ def main():
               and EpisodeTrigger.query.filter_by(episode_id=ep4_id).count() == 0)
         check('global triggers still survive an ORM user delete',
               Trigger.query.filter_by(user_id=None).count() > 0)
+
+        # 10. Product rule layered on top of the SET NULL (found on staging
+        #     8/8/26): detaching alone leaves an ACTIVE experiment testing a
+        #     protocol that no longer exists — still under Active, still
+        #     counting down, still tripping the "active experiment" warning.
+        #     delete_protocol marks it abandoned. Guarded here because this is
+        #     app logic in a route the FK work otherwise emptied, and is exactly
+        #     the kind of thing a later "simplify the delete routes" pass would
+        #     strip out as leftover cascade handling.
+        u5, ep5, proto5, sym5, trig5 = _fixture()
+        done = Experiment(user_id=u5.id, protocol_id=proto5.id, name='Finished',
+                          hypothesis='h', start_date=date.today(),
+                          status='completed', outcome_rating=7)
+        db.session.add(done)
+        db.session.commit()
+        u5_id, proto5_id, done_id = u5.id, proto5.id, done.id
+        active_id = Experiment.query.filter_by(user_id=u5_id, status='active').first().id
+
+        from app import delete_protocol  # noqa: F401  (route under test, called via client)
+        client = app.test_client()
+        with client.session_transaction() as sess:
+            sess['user_id'] = u5_id
+        client.post(f'/protocols/{proto5_id}/delete')
+        db.session.expire_all()
+
+        act, fin = Experiment.query.get(active_id), Experiment.query.get(done_id)
+        check('deleting a protocol abandons the ACTIVE experiment testing it',
+              act is not None and act.status == 'abandoned' and act.protocol_id is None
+              and act.hypothesis is not None)
+        check('a COMPLETED experiment keeps its status and outcome',
+              fin is not None and fin.status == 'completed' and fin.outcome_rating == 7)
 
     print()
     if failures:
