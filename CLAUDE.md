@@ -41,7 +41,7 @@ Live at: https://mybaselineapp.com (custom domain; Railway default: baseline-hea
 app.py                  — all routes and business logic
 database.py             — SQLAlchemy models
 requirements.txt        — Python dependencies
-Procfile                — gunicorn for production (web: gunicorn app:app)
+Procfile                — gunicorn for production (created 8/12/26; previously documented here but never existed)
 run.sh                  — local startup script
 .env                    — environment variables (not committed)
 generate_icons.py       — PWA icon generation script
@@ -90,7 +90,7 @@ Baseline Files/
 Required in .env locally and in Railway variables in production:
 - `ANTHROPIC_API_KEY` — Anthropic API key for AI check-in
 - `SECRET_KEY` — Flask session secret key (also backs CSRF tokens)
-- `DEBUG` — set to `true` locally only, `false` in production
+- `DEBUG` — set to `true` locally only; **unset/false in production**. This is now the *only* thing that turns on `app.debug` and therefore the only thing that ungates the `/dev/*` routes. `run.sh` exports it for local dev. Until 8/12/26 `app.py`'s `__main__` block hardcoded `debug=True`, and because there was no Procfile and no Railway start command the builder ran `python app.py` — so **production served the Werkzeug debugger and ungated dev routes**. See Decision Log.
 - `WTF_CSRF_ENABLED` — CSRF on by default (unset = on, incl. local dev + prod). Set to `false` **only** in test harnesses that POST via the Flask test client without tokens. Never set in production.
 - `DATABASE_URL` — set automatically by Railway from PostgreSQL service reference
 - `APP_URL` — base URL for email links (production: `https://mybaselineapp.com`)

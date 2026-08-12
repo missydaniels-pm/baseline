@@ -23,6 +23,7 @@ Backend / data-model work that should land before the React rebuild, plus small 
 ### Remaining
 | Item | Size | Notes |
 |---|---|---|
+| **Pre-rebuild exit gate — full code + documentation review (Fable)** | M | **Owner decision 8/12/26.** Before the React rebuild starts, run a full-codebase review and a full documentation review using the **Fable** model, rather than the per-increment Sonnet reviews used during the build. Rationale: the per-increment reviews are scoped to a diff and have repeatedly caught defects but by construction can't see whole-codebase drift — and two days running the recurring miss was *class-vs-instance* (a fix applied to the routes in front of me but not their siblings), which is exactly what a whole-codebase pass finds. Docs review matters equally: TECHNICAL_README carried two stale delete descriptions for four days after FK Increment 2 changed the behaviour. Run it as the last pre-rebuild step so the rebuild starts from a verified baseline. |
 | Episode diary — physician / insurance export | L | **Schema identified 8/12/26 → `SPEC-episode-diary.md`.** Generic by design: pick a tracked item, get its episodes + rescue protocols, counted per month. Two migrations needed pre-rebuild (`Protocol.med_class`, a `User` diary-mode flag); stop-reason likely needs none (`ProtocolEvent.detail` exists). Rendering is post-rebuild. **Open:** the 11pm–2am boundary rule, and free-text vs controlled list for stop reason. |
 | AI check-in — multi-episode / bulk logging | L | "a migraine each day for 7 days" = 7 episodes; today's check-in makes at most one. Needs a list + per-episode default time + a confirm gate before bulk-creating records. **Design pending** — build backend pre-rebuild vs. defer whole. |
 
@@ -143,6 +144,21 @@ Condensed record of completed work; full detail in the Decision Log where marked
 ---
 
 ## Decision Log
+
+### Production was running the Flask dev server with the debugger exposed
+**August 12, 2026 — found while diagnosing an unrelated failed build.**
+
+`CLAUDE.md` documented `Procfile — gunicorn for production`. **No Procfile had ever been committed**, `gunicorn` was not in `requirements.txt`, and Railway had no Custom Start Command — so the builder auto-detected `python app.py`, which hit `app.run(host='0.0.0.0', port=5001, debug=True)`. Nothing else in `app.py` ever set `app.debug`.
+
+**Confirmed against production, not inferred:** `/?__debugger__=yes&cmd=resource&f=debugger.js` returned **200 with 10KB of debugger JavaScript** — that endpoint exists only when Flask debug mode is on. `/dev/bootstrap` answered **200 unauthenticated**; `/dev/reset` and `/dev/seed` were live behind login.
+
+**Exposure:** any unhandled exception serves the interactive traceback — source, local variables (health data on this app) and environment (`SECRET_KEY`, `ANTHROPIC_API_KEY`) — and the debugger console permits arbitrary code execution to anyone who obtains the PIN. Almost certainly true since the app first deployed, since no Procfile exists anywhere in git history.
+
+**Fixed:** real `Procfile` (`gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120`), `gunicorn` added to requirements, and the entrypoint env-gated on `DEBUG` so a stray `python app.py` in production is safe regardless. `run.sh` exports `DEBUG=true` so local dev routes still work — `.env` never had it. Verified locally under gunicorn: dev routes 403, no debugger; and with `DEBUG=true` unset/set, gated/ungated as intended.
+
+**Deliberately conservative choices.** Gunicorn defaults to **one worker**, matching today's single-process behaviour — adding workers would make the startup migrations run concurrently, which is a separate risk not worth bundling into a security fix. `--timeout 120` because the in-request Anthropic check-in call can exceed gunicorn's 30s default, which would have turned working check-ins into 502s. Python pinned to **3.10** via `.python-version` to match the tested dev version; the builder had drifted to 3.13.14.
+
+**Process failure worth recording:** the deploy that surfaced this was pushed to `staging` and `main` in the same command, without waiting for or verifying the staging build. Staging was a waypoint, not a gate. Had it been a gate, the failed build would have stopped at staging and production would never have been touched. `STAGING_SETUP.md` documents the correct flow; it was not followed.
 
 ### Protocol event dating + the missing assessment event
 **August 12, 2026.** Backlog scoped this as "add a date-stopped field." **No schema change was needed** — `ProtocolEvent` already carried `date` (when it happened) and `created_at` (when recorded); every route just wrote `date = user_today()`. Form + validation only. Second time in two days the column already existed and nothing wrote to it.

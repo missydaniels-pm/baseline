@@ -88,6 +88,7 @@ no logging? Rather than have the system infer, **ask the user at print time**:
 
 - "You have no episodes recorded on 14 days in this range. Were those episode-free?"
 - "Import period data from Apple Health?" (when HealthKit lands — see G5)
+- "An episode running past midnight counts as both days / only its start day?" (G4)
 
 The user attests; the system doesn't guess. For a document going to a physician under
 the user's name that is the correct division of responsibility, and it costs nothing on
@@ -108,10 +109,15 @@ the numbers a clinician reads:
   is nullable, so no migration — but a blank duration silently undercounts a multi-day
   episode to one day. This is the strongest reason for diary mode (G3) to make duration
   required *there and only there*.
-- **Boundary rule to decide:** an episode from 11pm–2am touches two calendar days.
-  "Any overlap counts the day" matches what someone filling in a paper diary would do,
-  but inflates at the margins — the opposite risk to undercounting. **Recommend any-
-  overlap, disclosed on the export.** Owner decision pending.
+- **Boundary rule is a user SETTING, not an assumption** (owner decision 8/12/26). An
+  episode from 11pm–2am touches two calendar days. "Any overlap counts the day" is what
+  someone filling in a paper diary would do, but it inflates at the margins — the
+  opposite risk to undercounting. Rather than pick for the user, expose it in diary
+  mode (G3): **"An episode that runs past midnight counts as — [both days / only the day
+  it started]."** Default: both days. The user knows how their clinician and insurer
+  count; the system shouldn't guess, and the same attestation logic applies as for
+  blank days. Whichever is chosen, **state it on the export** so the reader knows the
+  rule behind the number.
 - **Severity when a day has several episodes → max.** The calendar form's own wording
   ("the worst pain you have experienced") supports this.
 - **Scale mismatch.** The form is 0–10 where 0 = no pain; Baseline scale symptoms are
