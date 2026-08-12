@@ -24,13 +24,14 @@ Backend / data-model work that should land before the React rebuild, plus small 
 | Item | Size | Notes |
 |---|---|---|
 | **Pre-rebuild exit gate — full code + documentation review (Fable)** | M | **Owner decision 8/12/26.** Before the React rebuild starts, run a full-codebase review and a full documentation review using the **Fable** model, rather than the per-increment Sonnet reviews used during the build. Rationale: the per-increment reviews are scoped to a diff and have repeatedly caught defects but by construction can't see whole-codebase drift — and two days running the recurring miss was *class-vs-instance* (a fix applied to the routes in front of me but not their siblings), which is exactly what a whole-codebase pass finds. Docs review matters equally: TECHNICAL_README carried two stale delete descriptions for four days after FK Increment 2 changed the behaviour. Run it as the last pre-rebuild step so the rebuild starts from a verified baseline. |
-| Episode diary — physician / insurance export | L | **Schema identified 8/12/26, both open decisions closed 8/13/26 → `SPEC-episode-diary.md`. Ready to build.** Generic by design: pick a tracked item, get its episodes + rescue protocols, counted per month. **Three** migrations pre-rebuild, all additive nullable columns, landable in one increment: `Protocol.med_class`; a `User` diary-mode flag + midnight-boundary setting; `ProtocolEvent.stop_reason` + `stop_reason_note`. Rendering is post-rebuild. **Decided:** midnight boundary defaults to **both days** (setting retained — undercounting is the direction that costs an authorisation); stop reason is a **controlled list + optional note**. **Count changed 2 → 3** because the spec's "stop-reason likely needs no migration" was checked and proved false — `ProtocolEvent.detail` is already written on a status event by `assess_experiment` (`app.py:2813`), so reusing it would give one column two meanings and make neither queryable. |
+| Episode diary — physician / insurance export | L | **Layer A (schema) BUILT 8/13/26; capture + rendering are React (Layer B/C). → `SPEC-episode-diary.md`, Decision Log below.** Five nullable columns shipped (`Protocol.med_class`; `ProtocolEvent.stop_reason`+`stop_reason_note` w/ event-type+vocabulary CHECK; `User.diary_mode_enabled`+`diary_span_counts_both_days`), unwritten in the monolith. Owner-accepted the pre-rebuild capture gaps (med_class backfillable; stop reasons for protocols stopped before the rebuild won't be recorded). Generic by design: pick a tracked item, get its episodes + rescue protocols, counted per month. **Three** migrations pre-rebuild, all additive nullable columns, landable in one increment: `Protocol.med_class`; a `User` diary-mode flag + midnight-boundary setting; `ProtocolEvent.stop_reason` + `stop_reason_note`. Rendering is post-rebuild. **Decided:** midnight boundary defaults to **both days** (setting retained — undercounting is the direction that costs an authorisation); stop reason is a **controlled list + optional note**. **Count changed 2 → 3** because the spec's "stop-reason likely needs no migration" was checked and proved false — `ProtocolEvent.detail` is already written on a status event by `assess_experiment` (`app.py:2813`), so reusing it would give one column two meanings and make neither queryable. |
 | AI check-in — multi-episode / bulk logging | L | "a migraine each day for 7 days" = 7 episodes; today's check-in makes at most one. Needs a list + per-episode default time + a confirm gate before bulk-creating records. **Design pending** — build backend pre-rebuild vs. defer whole. |
 
 ### Follow-ups (small, do anytime)
 | Item | Size | Notes |
 |---|---|---|
 | Seed check-in history in `seed_staging.py` | S | The seeder writes no `CheckIn` rows (they only come from the live check-in route), so seeded staging can't exercise the `checkins.episode_id` SET NULL path — Missy had to create one by hand to verify it 8/8/26. **Owner decision 8/8/26: not a blocker, do it alongside the next feature that touches AI chat** (the async check-in / Conversational-Capture work is the natural home). |
+| Seed episode-diary Layer A columns in `seed_staging.py` | S | QA flagged 8/13/26: the seeder leaves `med_class`, `stop_reason`/`_note`, `diary_mode_enabled`, `diary_span_counts_both_days` all NULL/default (both seeded protocols stay `active`, so no stop event ever carries a reason). Nothing renders these until React, so there's nothing to eyeball in the seeded UI regardless — **deferred to Layer B (React capture)**, the feature that touches this area, matching the CheckIn-seed decision above. Until then a column smoke-check would be raw-SQL only. |
 | Experiment protocol field is repointable once detached | S | `edit_experiment.html:22` renders a protocol dropdown; a detached experiment (protocol deleted) can be silently repointed at a *different* protocol, misrepresenting when its data was gathered. Low reach now that such experiments auto-abandon (8/8/26), but the edit page still allows it. Fix: render read-only "protocol deleted" when `protocol_id` is NULL. Owner deferred 8/8/26. |
 | Post-CSRF hardening | S | `ProxyFix` for `X-Forwarded-Proto` (do near Redis — also fixes rate-limiter IP keying); `/logout` GET→POST (forgeable); privacy-line for the anon session cookie. |
 | Trigger review cleanups | S | Accepted low-risk findings: add `source` DB CHECK; non-ASCII case-fold; history N+1; chip ✕-remove; fieldset/legend a11y; rename reused `symptom-*` CSS classes; reconcile seed↔custom name collision when the seed list grows. |
@@ -144,6 +145,49 @@ Condensed record of completed work; full detail in the Decision Log where marked
 ---
 
 ## Decision Log
+
+### Episode diary — Layer A (data structures only, pre-rebuild schema)
+**August 13, 2026.** Built the schema the React rebuild's diary feature will need, and *only* the
+schema. Owner drew the line explicitly: "build what is necessary to make sure the data structures
+are set up prior to the React rebuild — I do not want to build the feature yet." Three layers named:
+**A** = schema, **B** = capture (input fields), **C** = rendering/export. Only A shipped; B and C are
+React. Nothing in the monolith writes to these columns — no form, no AI check-in, no export.
+
+**Shipped (five nullable columns, three tables, one increment):** `Protocol.med_class`;
+`ProtocolEvent.stop_reason` + `stop_reason_note`; `User.diary_mode_enabled` (default False) +
+`diary_span_counts_both_days` (default True). `database.py` models + `run_migrations()`;
+`test_episode_diary_schema.py`.
+
+**Owner-accepted consequences of schema-without-capture** (the honest tradeoff — Layer A pre-stages
+the migration but preserves no data until capture lands): (1) **`med_class`** is set-once and
+backfillable by editing a protocol later, so no pre-rebuild capture is needed. (2) **`stop_reason`**
+is the one time-sensitive field — a reason is lost the moment a protocol is stopped without recording
+it — so **stop reasons for protocols stopped before the rebuild won't be recorded** (`ProtocolEvent`
+still logs *that* it stopped and *when*). Accepted given the small user base and infrequent stops.
+Layer A's value is de-risking the schema-heavy migration ahead of the rebuild, same as tz/FK.
+
+**Two design calls, both to keep DB-level self-enforcement where the vocabulary is settled:**
+`stop_reason` carries a CHECK scoped to `event_type IN ('stopped','paused')` **and** the decided
+controlled list; `med_class` gets **no** CHECK because its vocabulary is type-dependent and ratified
+with the React UI. `stop_reason` lives on `ProtocolEvent`, not `Protocol` (the reason belongs to the
+stop *event*), and `detail` is deliberately not reused — `assess_experiment` already writes it on a
+status event, so overloading it would give one column two meanings (the same class of collision the
+8/12 protocol-event work surfaced). Predicate defined once (`STOP_REASON_CHECK_SQL`, `database.py`)
+and imported by the migration so model DDL and migration can't drift — stronger than the
+`symptoms_input_type_check` precedent, which hand-duplicates its vocabulary.
+
+**Reviewed** QA + Code — **0 blockers.** Fixed two warnings: SQL-escape the CHECK vocabulary builder
+(`_sql_str_in` doubled quotes — no live bug since values are apostrophe-free slugs, but a future
+`"doctor's advice"` would have produced broken DDL that crashes startup), and added a `stopped`+NULL
+acceptance case to the test. Accepted/deferred: the migration block is deliberately **not**
+try/except-wrapped (converges with `symptoms_input_type_check`; a failure to enforce this invariant
+should surface loudly at startup, not be swallowed) — which makes staging-Postgres verification
+load-bearing, since the `ADD CONSTRAINT` DDL runs unproven off-SQLite (Code W2). Seed coverage for the
+new columns deferred to Layer B (nothing renders them yet — follow-up logged).
+
+**Verified on SQLite** (both fresh `create_all` and the `run_migrations` path; CHECK enforces on both;
+idempotent; app boots on the real dev DB). **PostgreSQL execution verified on the staging gate before
+`main`** — not inferred from the SQLite result.
 
 ### Deploy-truth cleanup: one definition of how the app starts
 **August 13, 2026.** Follow-up to the 8/12 incident. Nothing user-facing changed; this closes the

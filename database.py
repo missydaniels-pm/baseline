@@ -117,6 +117,16 @@ class User(db.Model):
     # server-side instead of cookie-dependent. Null until the first authed request
     # syncs it; callers fall back to the cookie, then server UTC.
     timezone = db.Column(db.String(64), nullable=True)
+    # Episode-diary Layer A (unwritten in the monolith — see the banner above ProtocolEvent).
+    # diary_mode_enabled: opt-in "use Baseline as an episode diary for my doctor" toggle
+    #   (default False — off for the majority who don't need a clinical export), following
+    #   the ai_logging_enabled / email_updates_enabled boolean precedent.
+    # diary_span_counts_both_days: how an episode crossing midnight is counted for day totals
+    #   (True = both days, the owner-decided default that never undercounts against insurer
+    #   thresholds; False = only the day it started). Pure render-time preference, consumed
+    #   post-rebuild — no historical data depends on it. See SPEC G3/G4.
+    diary_mode_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    diary_span_counts_both_days = db.Column(db.Boolean, default=True, nullable=False)
 
     episodes = db.relationship('Episode', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)
     protocols = db.relationship('Protocol', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)
@@ -318,6 +328,12 @@ class Protocol(db.Model):
     why = db.Column(db.Text, nullable=True)  # "Why I'm doing this" — surfaced in compliance messaging
     notes = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # Episode-diary Layer A (unwritten in the monolith — see the banner above ProtocolEvent).
+    # Drug class for step-therapy documentation: preventive class (proves N different classes
+    # were tried) or a rescue letter. Vocabulary is type-dependent and ratified with the React
+    # capture UI, so NO CHECK yet (SPEC G2). Set once per protocol; backfillable by editing an
+    # existing protocol later (owner-accepted the pre-rebuild gap 8/13/26).
+    med_class = db.Column(db.String(30), nullable=True)
 
     def __repr__(self):
         return f'<Protocol {self.name}>'
@@ -411,6 +427,42 @@ class ProtocolCompliance(db.Model):
         return f'<ProtocolCompliance user={self.user_id} protocol={self.protocol_id} date={self.date} took={self.took}>'
 
 
+# --- Episode-diary schema (SPEC-episode-diary.md) --------------------------
+# Layer A = DATA STRUCTURES ONLY (owner-approved 8/13/26): the columns below are
+# pre-staged so the React rebuild builds capture + rendering against a schema
+# that already exists, not schema+capture at once. NOTHING in the monolith writes
+# to them yet — no form field, no AI path, no export. Do not add capture here.
+#
+# The stop-reason vocabulary is DECIDED (owner + code review 8/13/26); the med_class
+# vocabulary is deliberately NOT constrained yet (two vocabularies by protocol type,
+# ratified with the capture UI in React — see SPEC G2). Defined once here so the
+# model DDL (create_all, fresh DBs) and run_migrations() (existing DBs) can't drift.
+STOP_REASON_VALUES = ('ineffective', 'side_effects', 'cost', 'doctors_advice', 'other')
+STOP_REASON_EVENT_TYPES = ('stopped', 'paused')
+
+
+def _sql_str_in(values):
+    """Render a tuple of string literals as a SQL IN-list: ('a','b') -> \"('a', 'b')\".
+
+    Single quotes are SQL-escaped (doubled) so a future vocabulary value containing an
+    apostrophe (e.g. "doctor's advice") produces valid DDL instead of a syntactically
+    broken CHECK that would crash startup. Inputs are hardcoded constants, never user
+    input — this is future-proofing the constant, not sanitising untrusted data.
+    """
+    return '(' + ', '.join("'%s'" % v.replace("'", "''") for v in values) + ')'
+
+
+# The prefix `stop_reason IS NULL OR ...` is load-bearing twice: it is the semantic
+# rule (a reason belongs only to a real stop/pause of a controlled value) AND it is
+# what makes the PostgreSQL ADD CONSTRAINT valid against the populated prod table —
+# every existing row has stop_reason = NULL and passes the NULL branch. Drop it and
+# the migration fails on every existing protocol_events row. See SPEC G1.
+STOP_REASON_CHECK_SQL = (
+    "stop_reason IS NULL OR (event_type IN %s AND stop_reason IN %s)"
+    % (_sql_str_in(STOP_REASON_EVENT_TYPES), _sql_str_in(STOP_REASON_VALUES))
+)
+
+
 class ProtocolEvent(db.Model):
     """Status changes and dose changes recorded automatically or on creation."""
     __tablename__ = 'protocol_events'
@@ -423,6 +475,17 @@ class ProtocolEvent(db.Model):
     detail = db.Column(db.Text, nullable=True)   # e.g. dose change description
     date = db.Column(db.Date, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # Episode-diary Layer A (unwritten in the monolith — see banner above). Step-therapy
+    # documentation needs *why* a preventive was discontinued. `stop_reason` is a controlled
+    # value scoped to stop/pause events by the CHECK; `stop_reason_note` is the free-text
+    # escape hatch (esp. for 'other'). detail is deliberately NOT reused — assess_experiment
+    # already writes it on a status event, so overloading it would give one column two meanings.
+    stop_reason = db.Column(db.String(30), nullable=True)
+    stop_reason_note = db.Column(db.Text, nullable=True)
+
+    __table_args__ = (
+        db.CheckConstraint(STOP_REASON_CHECK_SQL, name='protocol_events_stop_reason_check'),
+    )
 
     def __repr__(self):
         return f'<ProtocolEvent {self.event_type} {self.date}>'

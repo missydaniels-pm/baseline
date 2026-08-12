@@ -319,6 +319,31 @@ here in the same commit.
 - Seed/index idempotently: `CREATE ... IF NOT EXISTS`, `INSERT ... WHERE NOT EXISTS`.
   Wrap in try/except log-and-continue so a migration can't block startup.
 - New tables are auto-created by `db.create_all()`; only seed/index needs a migration.
+- **A new column that carries a CHECK — engine-split, and NOT in the plain list.** Two canonical
+  precedents: `symptoms_input_type_check` (retrofit onto an *existing* column) and
+  `protocol_events_stop_reason_check` (a *new* column, 8/13/26). Rules:
+  - **Define the predicate once** as a constant in `database.py` (e.g. `STOP_REASON_CHECK_SQL`),
+    reference it from the model `__table_args__` `db.CheckConstraint(name=...)` *and* import it into
+    `run_migrations()`. Model DDL feeds fresh-DB `create_all()`; the migration feeds existing DBs.
+    One source of truth so the two can't drift (the input_type precedent hand-duplicates its
+    vocabulary — don't copy that half).
+  - **New column:** the CHECK rides the `ADD COLUMN` on **SQLite** (`ADD COLUMN … CHECK (…)`), because
+    SQLite can't `ALTER TABLE ADD CONSTRAINT`; on **PostgreSQL**, `ADD COLUMN` then a **named**
+    `ADD CONSTRAINT … CHECK (…)`, guarded by an `information_schema.table_constraints` existence
+    check. Keep it OUT of the plain `migrations` list (that list has no CHECK support) and handle it
+    in a dedicated block, two idempotency states: column-absent (add both) vs column-present-but-
+    constraint-absent (PG only, add the constraint).
+  - **A cross-column CHECK must self-permit existing rows:** lead with `<newcol> IS NULL OR …`. Every
+    existing row has the new column NULL, so the NULL branch is what makes the PG `ADD CONSTRAINT`
+    valid against a populated table. Drop it and the migration fails on every existing row.
+  - **Do NOT try/except-wrap** a column/CHECK migration (unlike seed/index): a failure to enforce a
+    data invariant should surface loudly at startup. This makes **staging-Postgres verification
+    load-bearing** — the `ADD CONSTRAINT` DDL never runs on SQLite, so prove it on the staging gate,
+    never infer it from the local SQLite result.
+  - **Only constrain a settled vocabulary.** If the allowed values aren't ratified yet (or are
+    UI/context-dependent), ship the nullable column with **no** CHECK and add it when the vocabulary
+    is decided — a later `ADD CONSTRAINT` is the same cheap additive step. (`med_class` vs
+    `stop_reason`, 8/13/26.)
 
 ## Architecture rules (full text in CLAUDE.md)
 - **Rule 1** — backend stays stateless. **Rule 2** — slow work off the request path.

@@ -15,7 +15,7 @@ from flask_wtf.csrf import CSRFProtect, CSRFError, generate_csrf
 from flask_limiter.util import get_remote_address
 from sqlalchemy import text, or_
 from sqlalchemy.exc import IntegrityError
-from database import db, User, Episode, Protocol, Symptom, SymptomScore, EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode, UsedVerifyToken, UserActivity, Trigger, EpisodeTrigger, EXPECTED_FK_ONDELETE, verify_fk_ondelete
+from database import db, User, Episode, Protocol, Symptom, SymptomScore, EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode, UsedVerifyToken, UserActivity, Trigger, EpisodeTrigger, EXPECTED_FK_ONDELETE, verify_fk_ondelete, STOP_REASON_CHECK_SQL
 from collections import defaultdict
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
@@ -448,6 +448,13 @@ def run_migrations():
         ('protocols',             'why',                       'ALTER TABLE protocols ADD COLUMN why TEXT'),
         ('episode_triggers',      'source',                    "ALTER TABLE episode_triggers ADD COLUMN source VARCHAR(10) NOT NULL DEFAULT 'user'"),
         ('users',                 'timezone',                  'ALTER TABLE users ADD COLUMN timezone VARCHAR(64)'),
+        # Episode-diary Layer A (SPEC-episode-diary.md) — data structures only, no capture.
+        # Plain additive columns (both engines). stop_reason is handled separately below because
+        # it carries a CHECK that must ride the ADD COLUMN on SQLite (can't ALTER ADD CONSTRAINT).
+        ('protocols',             'med_class',                 'ALTER TABLE protocols ADD COLUMN med_class VARCHAR(30)'),
+        ('protocol_events',       'stop_reason_note',          'ALTER TABLE protocol_events ADD COLUMN stop_reason_note TEXT'),
+        ('users',                 'diary_mode_enabled',        'ALTER TABLE users ADD COLUMN diary_mode_enabled BOOLEAN NOT NULL DEFAULT FALSE'),
+        ('users',                 'diary_span_counts_both_days','ALTER TABLE users ADD COLUMN diary_span_counts_both_days BOOLEAN NOT NULL DEFAULT TRUE'),
     ]
 
     # Widen symptoms.name from varchar(100) to varchar(200) on PostgreSQL
@@ -605,6 +612,52 @@ def run_migrations():
                 conn.execute(text(
                     "ALTER TABLE symptoms ADD CONSTRAINT symptoms_input_type_check "
                     "CHECK (input_type IN ('scale', 'binary'))"
+                ))
+                conn.commit()
+                print("Migration complete.")
+
+        # --- Episode-diary Layer A: protocol_events.stop_reason (+ CHECK) -------
+        # Add the column with its constraint on EXISTING DBs (fresh DBs get both from
+        # create_all via ProtocolEvent.__table_args__). Handled here, not in the plain
+        # `migrations` list, because the CHECK must be attached at ADD COLUMN time on
+        # SQLite — SQLite can't ALTER TABLE ADD CONSTRAINT, and stop_reason being a NEW
+        # column lets the CHECK ride the ADD (verified 8/13/26), sidestepping the full
+        # table rebuild that retrofitting onto an EXISTING column needs (cf. input_type).
+        # The predicate is imported from database.py so the model DDL and this migration
+        # can't drift. Idempotent: guarded on column existence (and, on PG, constraint
+        # existence). Not wrapped in try/except — a failure to enforce this invariant
+        # should surface loudly at startup, same as the input_type block above.
+        pe_cols = [c['name'] for c in inspector.get_columns('protocol_events')]
+        if 'stop_reason' not in pe_cols:
+            print("Migrating protocol_events: adding stop_reason (+ CHECK)...")
+            if is_sqlite:
+                conn.execute(text(
+                    "ALTER TABLE protocol_events ADD COLUMN stop_reason VARCHAR(30) "
+                    "CHECK (%s)" % STOP_REASON_CHECK_SQL
+                ))
+            else:
+                conn.execute(text(
+                    "ALTER TABLE protocol_events ADD COLUMN stop_reason VARCHAR(30)"
+                ))
+                conn.execute(text(
+                    "ALTER TABLE protocol_events ADD CONSTRAINT protocol_events_stop_reason_check "
+                    "CHECK (%s)" % STOP_REASON_CHECK_SQL
+                ))
+            conn.commit()
+            print("Migration complete.")
+        elif not is_sqlite:
+            # Column already present (e.g. added plain) but the named PG constraint may not be.
+            pe_check = conn.execute(text(
+                "SELECT 1 FROM information_schema.table_constraints "
+                "WHERE table_name = 'protocol_events' "
+                "AND constraint_type = 'CHECK' "
+                "AND constraint_name = 'protocol_events_stop_reason_check'"
+            )).first()
+            if not pe_check:
+                print("Migrating protocol_events: adding stop_reason CHECK constraint...")
+                conn.execute(text(
+                    "ALTER TABLE protocol_events ADD CONSTRAINT protocol_events_stop_reason_check "
+                    "CHECK (%s)" % STOP_REASON_CHECK_SQL
                 ))
                 conn.commit()
                 print("Migration complete.")

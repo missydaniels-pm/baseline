@@ -1,12 +1,34 @@
 # Spec — Episode Diary (physician / insurance export)
 
-Status: **schema identified; both open decisions closed 8/13/26 — ready to build** ·
+Status: **Layer A (data structures) built + owner-accepted 8/13/26; pending review + staging
+verification. Capture (Layer B) and rendering (Layer C) remain post-rebuild.** ·
 Started 8/12/26 · Owner: Missy
 
 **Decisions closed 8/13/26:** (1) midnight boundary defaults to **both days**, setting retained
 (G4); (2) stop reason is a **controlled list + optional note** (G1). Verification of G1's
 "no migration needed" assumption showed it was wrong, so the pre-rebuild migration count went
 **2 → 3**. Rendering remains post-rebuild.
+
+**Scope decision — Layer A only (owner-approved 8/13/26).** "Build" here means **data structures
+only**, explicitly *not* the user-facing feature. Three layers: **A** = schema (the columns +
+constraints below), **B** = capture (the input fields that populate them), **C** = rendering/export.
+Only **A** is being built pre-rebuild; **B and C are built in React**. The point is that the rebuild
+starts from a schema that already exists, rather than doing schema + capture + UI at once. Nothing
+in the monolith writes to these columns — no form, no AI check-in, no export.
+
+**Owner-ACCEPTED consequences of Layer-A-only (8/13/26):**
+- **`med_class` — backfillable, so no pre-rebuild capture needed.** A drug's class is set once and
+  doesn't change; a user can add it by editing an existing protocol after the rebuild. Not
+  time-sensitive → the column existing now is sufficient. *Accepted.*
+- **`stop_reason` — a real pre-rebuild capture gap, accepted.** This is the one time-sensitive
+  field (a stop reason is lost the moment a protocol is stopped without recording it). Because
+  Layer A adds the column but no capture, **stop reasons for protocols stopped between now and the
+  rebuild will not be recorded** — `ProtocolEvent` still records *that* it stopped and *when*, only
+  the structured reason is absent. Given the small user base and infrequent protocol stops, this is
+  an accepted tradeoff, not a defect. *Accepted.*
+- Layer A's value is therefore **de-risking the schema-heavy migration ahead of the rebuild**, the
+  same rationale as running the timezone/FK migrations pre-rebuild — not preserving data (that needs
+  capture = Layer B).
 
 **Purpose of this document.** Identify the **schema changes that must land before the
 React rebuild** so a physician-facing episode diary is possible later. It is not a
@@ -217,18 +239,22 @@ the numbers a clinician reads:
 
 ## Sequencing
 
-**Before the rebuild** (data capture — unrecoverable if skipped). **Three migrations, not
-two** — G1 moved into this list when verification showed `ProtocolEvent.detail` was already
-occupied (see G1):
-1. G2 — `Protocol.med_class` (nullable, vocabulary selected by `type`).
-2. G3 — the `User` diary-mode boolean (`ai_logging_enabled` / `email_updates_enabled`
-   precedent) plus the midnight-boundary setting, defaulting to "both days".
-3. G1 — `ProtocolEvent.stop_reason` + `stop_reason_note`, captured on the status-change
-   form. Highest clinical value of the three.
-4. G4 rules recorded in CONVENTIONS.
+**Before the rebuild** (schema — Layer A). **Three migrations, not two** — G1 moved into this
+list when verification showed `ProtocolEvent.detail` was already occupied (see G1). **All three
+BUILT 8/13/26** in one increment (`database.py` models + `run_migrations()`; `test_episode_diary_schema.py`):
+1. ✅ G2 — `Protocol.med_class` VARCHAR(30) nullable. **No CHECK** — vocabulary is type-dependent
+   and ratified with the React capture UI (see G2 note).
+2. ✅ G3 — `User.diary_mode_enabled` (bool, default False, `ai_logging_enabled` precedent) +
+   `User.diary_span_counts_both_days` (bool, default True = "both days", G4).
+3. ✅ G1 — `ProtocolEvent.stop_reason` VARCHAR(30) + `stop_reason_note` TEXT, with the
+   event-type-scoped + vocabulary CHECK (`protocol_events_stop_reason_check`). **Schema only —
+   the status-change *form* field is Layer B (React).**
+4. ◻ G4 counting rules — to record in CONVENTIONS when the query/render is built (Layer C).
 
-All three are additive nullable columns, so they follow the existing `run_migrations()`
-ALTER pattern (CONVENTIONS → Migrations) and can land in one increment.
+All additive nullable columns via the `run_migrations()` ALTER pattern; `stop_reason`'s CHECK is
+engine-split (SQLite inline-on-ADD, Postgres ADD CONSTRAINT) per the `symptoms_input_type_check`
+precedent. Verified on SQLite (both fresh `create_all` and the migration path); **Postgres verified
+on the staging gate** before `main`.
 
 **During / after the rebuild** (rendering and querying — throwaway if built now):
 4. The diary query itself (filter by tracked item, date range, monthly counts).
