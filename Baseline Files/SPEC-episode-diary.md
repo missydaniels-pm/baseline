@@ -1,6 +1,12 @@
 # Spec — Episode Diary (physician / insurance export)
 
-Status: **draft, schema-identification only** · Started 8/12/26 · Owner: Missy
+Status: **schema identified; both open decisions closed 8/13/26 — ready to build** ·
+Started 8/12/26 · Owner: Missy
+
+**Decisions closed 8/13/26:** (1) midnight boundary defaults to **both days**, setting retained
+(G4); (2) stop reason is a **controlled list + optional note** (G1). Verification of G1's
+"no migration needed" assumption showed it was wrong, so the pre-rebuild migration count went
+**2 → 3**. Rendering remains post-rebuild.
 
 **Purpose of this document.** Identify the **schema changes that must land before the
 React rebuild** so a physician-facing episode diary is possible later. It is not a
@@ -41,21 +47,84 @@ migraine-specific concept.
 
 ## Schema changes needed before the rebuild
 
-### G1 — Reason a protocol was stopped  ← highest value, likely **no migration**
+### G1 — Reason a protocol was stopped  ← highest value; **needs a migration after all**
 Step therapy documentation explicitly requires *why* each preventive was discontinued
 ("ineffective", "side effects", "cost"). Baseline captures nothing today: a protocol
 stopped outside an experiment records only that it stopped.
 
-**`ProtocolEvent.detail` (Text) already exists** and is currently written only for
-`dose_changed`. A stop/pause reason fits it exactly — the same finding as the effective
-date (the column existed; nothing wrote to it). Verify before assuming, but the likely
-answer is **capture-only, no migration**: a reason field on the status-change form,
-written to `detail`.
+**DECIDED 8/13/26 — controlled list + optional note** (owner). A controlled vocabulary is
+far more useful in a document an insurer reads, and it is the only version that can be
+*counted* — "prove 2–3 different classes were tried and failed" is a query, not a
+paragraph. Free text would leave the central step-therapy claim to be assembled by hand
+every time. Precedent verified: `symptoms_input_type_check` in `database.py:154` is a
+real CHECK constraint on a short vocabulary, so this matches an established pattern.
 
-Open question: free text, or a short controlled list (ineffective / side effects /
-cost / doctor's advice / other + note)? A controlled list is far more useful for a
-document an insurer reads, and mirrors the existing `input_type`-style CHECK constraint
-precedent. **Recommend controlled list + optional note.**
+Proposed vocabulary: `ineffective` · `side_effects` · `cost` · `doctors_advice` ·
+`other`, plus a free-text note (the `other` escape hatch, and useful detail on
+`side_effects` regardless).
+
+> **⚠️ The earlier "likely no migration" plan does not survive verification.** This spec
+> said `ProtocolEvent.detail` "is currently written only for `dose_changed`" and told the
+> reader to verify before assuming. Verified 8/13/26 — **it is false.** `assess_experiment`
+> (`app.py:2813`) already writes `detail=f'From assessing "{experiment.name}"'` **on a
+> status event**, which is precisely the stop path a stop-reason targets. Reusing `detail`
+> would therefore either overwrite that provenance or concatenate two unrelated meanings
+> into one free-text column — and a column with two meanings cannot be queried for either.
+> Combined with the controlled-list decision (which wants a constrained column anyway),
+> **G1 needs its own migration.** That takes the pre-rebuild count from two to three.
+
+**Proposed shape** (implementation detail, confirm at build time): two nullable columns on
+**`ProtocolEvent`**, not on `Protocol` — the reason belongs to the *stop event*, so a
+protocol paused, reactivated and later stopped records a distinct reason each time, which
+is what a step-therapy history actually looks like.
+- `stop_reason` — `String(30)`, nullable, CHECK-constrained to the vocabulary above.
+- `stop_reason_note` — `Text`, nullable.
+
+`detail` keeps its existing single meaning (dose-change description, assessment
+provenance) and is deliberately **not** overloaded. Nullable throughout: existing rows
+cannot be backfilled, and users not producing a clinical document should never be asked.
+
+> **Build-time decision (raised by Code review 8/13/26) — scope the CHECK to the event
+> type, don't just constrain the vocabulary.** A plain `CHECK (stop_reason IN (...))`
+> polices the *value* but not *which rows* may carry it: nothing would stop a
+> `stop_reason` landing on a `'dose_changed'` or `'started'` row, which is meaningless in
+> a clinical export. That is the *same* unpoliced-column-meaning hazard that made the
+> `detail` collision above possible — so closing it here rather than repeating it is the
+> consistent move. **Recommend Option B**, a compound constraint
+> `CHECK (stop_reason IS NULL OR event_type IN ('stopped','paused'))`, matching the
+> load-bearing self-enforcement rationale behind `symptoms_input_type_check` (`app.py:557`).
+> App-layer-only (Option A) is acceptable and matches how `event_type` itself is validated,
+> but the DB-level version is cheap now and expensive to discover missing later (a bad row
+> silently entering a physician document).
+>
+> **Cross-engine (SQLite dev / PostgreSQL staging+prod) — verified where possible, and it
+> works on both, but each path must be written explicitly. Follow the
+> `symptoms_input_type_check` precedent (`app.py:557–608`), which is already engine-split:**
+> - **Model DDL** — put a *named* constraint in `ProtocolEvent.__table_args__`:
+>   `db.CheckConstraint("stop_reason IS NULL OR event_type IN ('stopped','paused')",
+>   name='protocol_events_stop_reason_check')`. This is what `create_all()` applies on a
+>   **fresh** DB, both engines — the common local path (CLAUDE.md: a stale local SQLite DB
+>   is fixed by deleting `instance/migraine_tracker.db`, not migrating in place).
+> - **PostgreSQL (existing staging/prod DB)** — the additive migration adds the nullable
+>   column, then adds the constraint as a **named table constraint**, guarded by the same
+>   `information_schema.table_constraints` existence check the `symptoms` branch uses:
+>   `ALTER TABLE protocol_events ADD CONSTRAINT protocol_events_stop_reason_check
+>   CHECK (stop_reason IS NULL OR event_type IN ('stopped','paused'))`. A named *table*
+>   constraint (not an inline column CHECK) avoids Postgres's column-vs-table-constraint
+>   ambiguity for a cross-column predicate, and being named makes it idempotency-checkable.
+> - **SQLite** — no retrofit rebuild needed: `stop_reason` is a *new* column, so unlike
+>   `input_type` (which retrofitted a CHECK onto an existing column and thus needed the
+>   full table rebuild), the CHECK rides the `ADD COLUMN`. **Verified 8/13/26** against a
+>   scratch SQLite DB: `ALTER TABLE … ADD COLUMN stop_reason … CHECK (stop_reason IS NULL
+>   OR event_type IN ('stopped','paused'))` is accepted *and* enforced — a `stop_reason` on
+>   a `dose_changed`/`started` row is rejected, `NULL` and stop/pause rows pass.
+> - **The `stop_reason IS NULL OR …` prefix is load-bearing twice:** it is the semantic
+>   rule, *and* it is what makes the Postgres `ADD CONSTRAINT` valid against the populated
+>   prod table — every existing row has `stop_reason = NULL` and passes the NULL branch.
+>   Without it, the migration would fail on every existing `protocol_events` row.
+> - **Not verifiable off-Railway:** the PostgreSQL execution itself (no local Postgres).
+>   That is precisely the staging gate's job — the migration runs against staging Postgres
+>   and is confirmed there before `main`. Don't merge on the SQLite result alone.
 
 ### G2 — Medication class on `Protocol`  ← needs a migration
 Needed twice, for different vocabularies:
@@ -109,15 +178,20 @@ the numbers a clinician reads:
   is nullable, so no migration — but a blank duration silently undercounts a multi-day
   episode to one day. This is the strongest reason for diary mode (G3) to make duration
   required *there and only there*.
-- **Boundary rule is a user SETTING, not an assumption** (owner decision 8/12/26). An
-  episode from 11pm–2am touches two calendar days. "Any overlap counts the day" is what
-  someone filling in a paper diary would do, but it inflates at the margins — the
-  opposite risk to undercounting. Rather than pick for the user, expose it in diary
-  mode (G3): **"An episode that runs past midnight counts as — [both days / only the day
-  it started]."** Default: both days. The user knows how their clinician and insurer
-  count; the system shouldn't guess, and the same attestation logic applies as for
-  blank days. Whichever is chosen, **state it on the export** so the reader knows the
-  rule behind the number.
+- **Boundary rule is a user SETTING, not an assumption** (owner decision 8/12/26), and the
+  **default is "both days" — DECIDED 8/13/26** (owner). An episode from 11pm–2am touches
+  two calendar days. "Any overlap counts the day" is what someone filling in a paper diary
+  would do, and three things point the same way: it is what the union-of-calendar-days rule
+  two bullets above already computes (so the default needs no special case — "only the day
+  it started" is the deviation, implemented as a *narrowing* of the union), it errs away
+  from undercounting, and undercounting is the direction that costs a user their
+  authorisation at the ≥4/≥8/≥15 thresholds. Inflation at the margins is the milder failure:
+  it is visible to a clinician reading the diary, whereas a missing day is not.
+  The setting stays, because a user whose insurer counts start-day-only must be able to say
+  so — the system should not guess on their behalf (same principle as G3's attestation).
+  Exposed in diary mode (G3) as: **"An episode that runs past midnight counts as — [both
+  days / only the day it started]."** Whichever is chosen, **state it on the export** so the
+  reader knows the rule behind the number.
 - **Severity when a day has several episodes → max.** The calendar form's own wording
   ("the worst pain you have experienced") supports this.
 - **Scale mismatch.** The form is 0–10 where 0 = no pain; Baseline scale symptoms are
@@ -143,10 +217,18 @@ the numbers a clinician reads:
 
 ## Sequencing
 
-**Before the rebuild** (data capture — unrecoverable if skipped):
-1. G2 `Protocol.med_class` and G3's `User` diary-mode flag — the two migrations.
-2. G1 stop reason — verify `ProtocolEvent.detail` suffices, then capture.
-3. G4 rules recorded in CONVENTIONS.
+**Before the rebuild** (data capture — unrecoverable if skipped). **Three migrations, not
+two** — G1 moved into this list when verification showed `ProtocolEvent.detail` was already
+occupied (see G1):
+1. G2 — `Protocol.med_class` (nullable, vocabulary selected by `type`).
+2. G3 — the `User` diary-mode boolean (`ai_logging_enabled` / `email_updates_enabled`
+   precedent) plus the midnight-boundary setting, defaulting to "both days".
+3. G1 — `ProtocolEvent.stop_reason` + `stop_reason_note`, captured on the status-change
+   form. Highest clinical value of the three.
+4. G4 rules recorded in CONVENTIONS.
+
+All three are additive nullable columns, so they follow the existing `run_migrations()`
+ALTER pattern (CONVENTIONS → Migrations) and can land in one increment.
 
 **During / after the rebuild** (rendering and querying — throwaway if built now):
 4. The diary query itself (filter by tracked item, date range, monthly counts).

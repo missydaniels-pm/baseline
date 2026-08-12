@@ -24,7 +24,7 @@ Backend / data-model work that should land before the React rebuild, plus small 
 | Item | Size | Notes |
 |---|---|---|
 | **Pre-rebuild exit gate — full code + documentation review (Fable)** | M | **Owner decision 8/12/26.** Before the React rebuild starts, run a full-codebase review and a full documentation review using the **Fable** model, rather than the per-increment Sonnet reviews used during the build. Rationale: the per-increment reviews are scoped to a diff and have repeatedly caught defects but by construction can't see whole-codebase drift — and two days running the recurring miss was *class-vs-instance* (a fix applied to the routes in front of me but not their siblings), which is exactly what a whole-codebase pass finds. Docs review matters equally: TECHNICAL_README carried two stale delete descriptions for four days after FK Increment 2 changed the behaviour. Run it as the last pre-rebuild step so the rebuild starts from a verified baseline. |
-| Episode diary — physician / insurance export | L | **Schema identified 8/12/26 → `SPEC-episode-diary.md`.** Generic by design: pick a tracked item, get its episodes + rescue protocols, counted per month. Two migrations needed pre-rebuild (`Protocol.med_class`, a `User` diary-mode flag); stop-reason likely needs none (`ProtocolEvent.detail` exists). Rendering is post-rebuild. **Open:** the 11pm–2am boundary rule, and free-text vs controlled list for stop reason. |
+| Episode diary — physician / insurance export | L | **Schema identified 8/12/26, both open decisions closed 8/13/26 → `SPEC-episode-diary.md`. Ready to build.** Generic by design: pick a tracked item, get its episodes + rescue protocols, counted per month. **Three** migrations pre-rebuild, all additive nullable columns, landable in one increment: `Protocol.med_class`; a `User` diary-mode flag + midnight-boundary setting; `ProtocolEvent.stop_reason` + `stop_reason_note`. Rendering is post-rebuild. **Decided:** midnight boundary defaults to **both days** (setting retained — undercounting is the direction that costs an authorisation); stop reason is a **controlled list + optional note**. **Count changed 2 → 3** because the spec's "stop-reason likely needs no migration" was checked and proved false — `ProtocolEvent.detail` is already written on a status event by `assess_experiment` (`app.py:2813`), so reusing it would give one column two meanings and make neither queryable. |
 | AI check-in — multi-episode / bulk logging | L | "a migraine each day for 7 days" = 7 episodes; today's check-in makes at most one. Needs a list + per-episode default time + a confirm gate before bulk-creating records. **Design pending** — build backend pre-rebuild vs. defer whole. |
 
 ### Follow-ups (small, do anytime)
@@ -145,6 +145,82 @@ Condensed record of completed work; full detail in the Decision Log where marked
 
 ## Decision Log
 
+### Deploy-truth cleanup: one definition of how the app starts
+**August 13, 2026.** Follow-up to the 8/12 incident. Nothing user-facing changed; this closes the
+loose ends and the doc drift that made the original bug invisible.
+
+**Verified before changing anything** (the 8/12 lesson: don't trust what's written, including what
+*I* wrote yesterday). Production and staging both clean — `/?__debugger__=yes&…&f=debugger.js`
+returns **302**, not the 200-with-10KB-of-JS it returned on 8/12; `/dev/bootstrap` returns **403
+`Not available in production.`**, which is only reachable when `app.debug` is False. That 403 is the
+artifact-level proof; the 302 alone would not be. `railway logs --build` independently confirms the
+build: `load build definition from Dockerfile`, `python:3.10-slim@sha256:63669fd…` — no `mise`, no
+railpack.
+
+**Deleted `Procfile` and `.python-version`.** Both confirmed inert by that build log: Railway builds
+from the Dockerfile, so the Procfile is never read, and `.python-version` was only ever a `mise`
+input (no `pyenv` locally either). **Owner decision: delete rather than comment.** The 8/12 bug was
+caused by a start command that was documented but never executed — keeping a second, ignored one
+re-arms exactly that trap, and a comment is itself a claim that has to stay true. The Dockerfile now
+says in its own header that it is the only in-repo definition of how the app starts.
+
+**A claimed Dockerfile defect that turned out not to be one — recorded because the correction is
+the useful part.** A build-log warning nobody had read (`JSONArgsRecommended … OS signals`) led to
+the standard diagnosis: shell-form `CMD` leaves `/bin/sh` as PID 1 with gunicorn as its child, dash
+doesn't forward SIGTERM, so redeploys SIGKILL workers mid-request — which would matter here, since
+`--timeout 120` exists precisely because the AI check-in's Anthropic call runs in-request. Plausible,
+widely repeated, and **it did not reproduce.** A POSIX shell given `sh -c '<single command>'`
+implicit-execs it, so gunicorn replaced the shell under *both* forms. Confirmed the test could
+actually detect the failure case with a control the shell cannot optimize (`sh -c 'gunicorn …; true'`),
+which did show `sh` as the wrapper. dash performs the same optimization, so redeploys were almost
+certainly already draining gracefully.
+
+`CMD` still changed to `["sh","-c","exec gunicorn …"]`, but as **hardening, not a fix**: it makes the
+guarantee explicit instead of resting on a shell optimization that is conventional but not
+contractual, and it fails safe if anyone later appends a second command to that line. **Not
+verified:** PID 1 inside the real Railway container — `railway ssh` + `cat /proc/1/comm` would settle
+it and requires generating an SSH key first. Worth doing opportunistically, not urgent.
+
+The reason this is in the log at all: the wrong version had already been written into the Dockerfile,
+this entry and `TECHNICAL_README.md` before it was tested. Three files asserting a confident,
+plausible, unverified mechanism — the identical shape as the gunicorn sentence this whole session
+exists to clean up, produced *while* cleaning it up. Received wisdom plus a build warning is a
+hypothesis, not a finding.
+
+**Swept the class, not the instance — and the sweep found a site no checklist covered.** The bug
+class is "a file asserting how Baseline is built, served, or deployed." Seven sites, four genuinely
+wrong:
+- `TECHNICAL_README.md` — "**baseline — Flask app, gunicorn, Python 3.13**". Wrong on the version
+  (3.10 since the Dockerfile) and wrong on gunicorn before 8/12. Corrected in place with a note.
+- `app.py` `__main__` — the 8/12 fix commit wrote *"Production runs gunicorn via the Procfile"*, a
+  fresh copy of the very sentence it was correcting.
+- **`.claude/agents/code-reviewer.md` — "Auto-deploys from GitHub main. No staging. Every push is
+  production."** False since 7/17/26, i.e. for four weeks, **in the context of the agent whose job is
+  reviewing deploy safety**. `qa-tester.md` still called staging "in progress." Neither file is on
+  CLAUDE.md's documentation-sweep list, which covers `Baseline Files/`, the root README and the
+  user-facing help surfaces — so the agents' own project context could not drift *into* view.
+  Both corrected, and the sweep list extended to `.claude/agents/*.md`.
+- `Procfile`/structure listings in `CLAUDE.md` + `TECHNICAL_README.md`, and the BACKLOG/STAGING_SETUP
+  "(False under gunicorn)" claim (annotated rather than rewritten — the wrong sentence is the
+  evidence).
+- Root `README.md` "Hosting: Railway (auto-deploys from this repo)" — not false, but the one
+  hosting-description site the first pass skipped; Code review flagged it as the same class one level
+  down. Updated to name the Docker deploy + staging/main split, kept portfolio-narrative brief.
+
+Two corrections landed after review, both recorded so the fix isn't quietly better than the record:
+(1) the "single definition of how the app starts" phrasing was too strong — Railway's dashboard
+**Custom Start Command** is an out-of-repo override that no build-log check would reveal, so every
+instance was softened to "only *in-repo* definition" and a dashboard-blank check added to
+STAGING_SETUP's verification list. (2) A superseded-note blockquote in the 8/12 entry still stated
+the disproven SIGTERM theory as fact — a fresh instance of this session's own target pattern, caught
+by QA and corrected. Net: **eight sites, five wrong or over-strong.**
+
+**Staging written up as a gate, not a waypoint** in `CLAUDE.md`, `TECHNICAL_README.md` and
+`STAGING_SETUP.md`, with the failure named explicitly: never push `staging` and `main` in one
+command, wait for the build, verify the artifact, and only then merge. The standing
+debugger/dev-route `curl` checks are now recorded in all three so "verify" has a concrete meaning
+rather than being an instruction to be diligent.
+
 ### Production was running the Flask dev server with the debugger exposed
 **August 12, 2026 — found while diagnosing an unrelated failed build.**
 
@@ -159,6 +235,8 @@ Condensed record of completed work; full detail in the Decision Log where marked
 **Build had to move to a Dockerfile.** Railway's railpack builder installs Python at build time via `mise`, and on 8/12/26 that failed repeatedly: first on `python@3.13.14` (its own pick), then on `python@3.10.19` after pinning — same transport error both times (`http2 error: stream error received: refused stream`), same `mise` build (2026.8.4, released 2026-08-11), with Railway status reporting no incident. Two versions, one failure mode, so not transient. A `Dockerfile` on `python:3.10-slim` pulls a prebuilt image from a registry and removes that download path entirely — and pins the runtime for real, ending the drift between the 3.13 the builder chose and the 3.10.7 development is tested on.
 
 **Deliberately conservative choices.** Gunicorn defaults to **one worker**, matching today's single-process behaviour — adding workers would make the startup migrations run concurrently, which is a separate risk not worth bundling into a security fix. `--timeout 120` because the in-request Anthropic check-in call can exceed gunicorn's 30s default, which would have turned working check-ins into 502s. Python pinned to **3.10** via `.python-version` to match the tested dev version; the builder had drifted to 3.13.14.
+
+> **Superseded 8/13/26 on two points.** (a) `.python-version` and the `Procfile` were both **deleted** — once the build moved to the Dockerfile, Railway stopped reading either one, and the real pin is the `python:3.10-slim` base image. (b) The `CMD` was changed to `sh -c "exec gunicorn …"` — **hardening, not a bug fix.** The obvious "shell form makes gunicorn a child of `sh`, which swallows SIGTERM" story was tested and did **not** reproduce (`sh -c '<single command>'` implicit-execs), so redeploys were almost certainly already draining; `exec` just makes that explicit and fails safe. See the "Deploy-truth cleanup" entry **above** for the full account. *(This blockquote first read the disproven story as settled fact — corrected 8/13/26 after QA flagged it, itself a fresh instance of the exact write-it-thrice-verify-it-never pattern this session exists to kill.)*
 
 **Process failure worth recording:** the deploy that surfaced this was pushed to `staging` and `main` in the same command, without waiting for or verifying the staging build. Staging was a waypoint, not a gate. Had it been a gate, the failed build would have stopped at staging and production would never have been touched. `STAGING_SETUP.md` documents the correct flow; it was not followed.
 
@@ -254,6 +332,7 @@ Shipped: a back-datable effective date on the status/dose change (revealed only 
 1. **Same Railway project, new `staging` environment** (vs. a separate project) — purpose-built Railway feature, one project to manage; each environment gets its own Postgres + variables, staging tracking the `staging` branch. Owner call 7/17/26. (Fallback if the plan doesn't support environments: a separate project — same end state, more manual.)
 2. **Email off on staging** (`RESEND_API_KEY` unset) — the code already fails email sends silently when unset, so registration flows can be tested with zero risk of emailing a real person. `RESEND_AUDIENCE_ID` and `BACKFILL_RESEND_CONTACTS` stay unset too.
 3. **Dev routes stay blocked on staging.** `/dev/seed` + `/dev/reset` gate on `app.debug` (False under gunicorn), so they're inert on the public staging URL — intentional (no destructive reset exposed). Staging is seeded via a **standalone `seed_staging.py` run through `railway run`** instead.
+   > **Correction 8/13/26 — "(False under gunicorn)" was false when written.** Gunicorn was not running anywhere: there was no Procfile and no start command, so the builder ran `python app.py` with a hardcoded `debug=True`, and the dev routes were live on staging and production for four weeks after this entry claimed they were inert. The same sentence was written into `STAGING_SETUP.md` and went unchallenged there too. It is *now* true, but for a different reason and via a different mechanism — `app.debug` follows the `DEBUG` env var, which is unset in both deployed environments. Left in place rather than rewritten, because being able to see the wrong claim is the point: it is the clearest example of an assertion that was believed because it was written down three times. Verified 8/13/26 by request, not inference — `/dev/bootstrap` returns `403 Not available in production.` on both.
 4. **Shared seed logic (Rule 3).** Rather than duplicate ~90 lines into the script, extracted `/dev/seed`'s body into a module-level `seed_test_data(user)` that both the route and the script call — one implementation, no drift. Behavior-preserving; verified the route path still imports and the script produces identical data.
 5. **Seed now covers the newest features** (owner asked 7/17/26): the pre-trigger seed was extended to write **custom triggers + `EpisodeTrigger` links** (global + custom scope, mixed `source='user'/'ai'`), a **binary symptom** (`value_bool`), and **`Protocol.why`** — so staging exercises exactly the junction tables and columns the FK-cleanup migration reworks. `/dev/seed` locally gets the richer data too.
 6. **Script safety guards:** refuses without `CONFIRM_SEED=yes`; hard-refuses if `APP_URL` matches a production marker; idempotent (skips a user with ≥20 episodes). Verified both guards fire and a real run against a scratch SQLite DB produces 39 episodes / 78 scale + 39 binary scores / 24 trigger links / both protocols with `why`.

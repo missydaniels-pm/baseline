@@ -40,10 +40,44 @@ COPY . .
 # different things.
 EXPOSE 8080
 
-# Shell form so $PORT expands.
-# --timeout 120 because the AI check-in makes the Anthropic call in-request and
-# can exceed gunicorn's 30s default, which would turn working check-ins into
-# 502s. One worker, matching the previous single-process behaviour: adding
+# THIS FILE IS THE ONLY IN-REPO DEFINITION OF HOW BASELINE STARTS. Railway builds
+# from this Dockerfile (confirmed in the build log: "load build definition from
+# Dockerfile"), so a Procfile or a railpack/mise start command would be read by
+# nothing. The Procfile added on 8/12/26 was deleted for exactly that reason —
+# a start command that is written down but never executed is what hid the
+# debug-server bug for months. If you change how the app starts, change it here.
+#
+# ONE override lives OUTSIDE the repo: Railway's dashboard "Custom Start Command"
+# (Settings -> Deploy) supersedes this CMD at the deploy layer and does NOT show
+# in the build log. It must be blank for this file to be what actually runs —
+# STAGING_SETUP.md's verification list has the check. Don't upgrade this comment
+# back to an unqualified "only definition": that field is the exact kind of
+# out-of-band start command this whole cleanup is about.
+#
+# `sh -c` + explicit `exec`. This is HARDENING, NOT A BUG FIX — read on before
+# assuming it repaired something, because the obvious story about it is wrong.
+#
+# The tempting claim (and the one the build log's JSONArgsRecommended warning
+# invites) is: shell form leaves /bin/sh as PID 1 with gunicorn as its child, sh
+# never forwards SIGTERM, so redeploys SIGKILL workers mid-request. That was
+# tested on 8/13/26 and did NOT reproduce: a POSIX shell given `sh -c '<single
+# command>'` implicit-execs it, so gunicorn replaced the shell under BOTH the
+# plain and the exec form. Verified with a control (`sh -c 'gunicorn ...; true'`,
+# which the shell cannot optimize) that did show `sh` as the wrapper, proving the
+# test could detect the failure case. dash does the same optimization, so
+# redeploys were almost certainly already draining.
+#
+# Keeping `exec` anyway: it makes the guarantee explicit rather than resting on a
+# shell optimization that is conventional but not contractual, and any future
+# edit that appends a second command to this line (`... ; something`) would
+# silently reintroduce the real hazard. The `sh -c` wrapper keeps ${PORT}
+# expansion, which a bare JSON array would lose.
+#
+# NOT verified: PID 1 inside the actual Railway container. `railway ssh` +
+# `cat /proc/1/comm` would settle it and needs an SSH key generated first.
+#
+# --timeout 120: see above — gunicorn's 30s default would turn working check-ins
+# into 502s. One worker, matching the previous single-process behaviour: adding
 # workers would make the startup migrations run concurrently, which is a
 # separate change and not one to bundle in here.
-CMD gunicorn app:app --bind 0.0.0.0:${PORT:-8080} --timeout 120
+CMD ["sh", "-c", "exec gunicorn app:app --bind 0.0.0.0:${PORT:-8080} --timeout 120"]

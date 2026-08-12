@@ -4675,9 +4675,10 @@ if __name__ == '__main__':
     # exposing health data and env vars, and the /dev/* routes ungated because
     # nothing else in this file ever sets app.debug (found 8/12/26).
     #
-    # Production runs gunicorn via the Procfile, so this block should never
-    # execute there at all. It is env-gated anyway: defence in depth is cheap,
-    # and one hardcoded True is exactly what caused this.
+    # Production runs gunicorn via the Dockerfile's CMD — that file is the only
+    # definition of how the app starts — so this block should never execute
+    # there at all. It is env-gated anyway: defence in depth is cheap, and one
+    # hardcoded True is exactly what caused this.
     debug_mode = os.environ.get('DEBUG', '').strip().lower() == 'true'
     port = int(os.environ.get('PORT', 5001))
     app.run(host='0.0.0.0', port=port, debug=debug_mode)

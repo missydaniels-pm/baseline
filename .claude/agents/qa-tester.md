@@ -14,7 +14,7 @@ You are a QA tester for Baseline, a Flask health tracking app. Your job is to re
 - **Stack:** Flask, SQLAlchemy, Jinja2, vanilla JS, Chart.js, PostgreSQL (prod) / SQLite (local)
 - **Key files:** `app.py` (all routes), `database.py` (models), `templates/`, `static/css/style.css`
 - **Auth:** Session-based, bcrypt, invite-code registration
-- **Deployment:** Every push to main auto-deploys to Railway. Staging environment in progress (7/17/26) — a `staging` branch/env deploys from the `staging` branch to its own Postgres, seeded via `seed_staging.py` (which reuses `app.seed_test_data`). See `Baseline Files/STAGING_SETUP.md`.
+- **Deployment:** Railway, built from the repo's `Dockerfile` (`python:3.10-slim`), served by gunicorn via its `CMD` (1 worker, `--timeout 120`) — that file is the only *in-repo* definition of how the app starts (a Railway dashboard Custom Start Command could override it; STAGING_SETUP.md has the check). Staging is **live** (since 7/17/26) and is a **gate**: `staging` branch → staging env with its own Postgres, verified there, then merged to `main` → production. Staging is seeded via `seed_staging.py` (which reuses `app.seed_test_data`). See `Baseline Files/STAGING_SETUP.md`.
 
 ## Your Checklist
 

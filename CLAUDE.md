@@ -29,7 +29,7 @@ Live at: https://mybaselineapp.com (custom domain; Railway default: baseline-hea
 - **Database:** SQLAlchemy ORM — PostgreSQL in production, SQLite locally
 - **Frontend:** Jinja2 templates, vanilla JavaScript, Chart.js
 - **AI:** Anthropic API (claude-sonnet-4-6) for check-in parsing
-- **Hosting:** Railway (auto-deploys from GitHub main branch), custom domain via Cloudflare DNS
+- **Hosting:** Railway, custom domain via Cloudflare DNS. Built from the repo's **`Dockerfile`** (`python:3.10-slim`), the **only in-repo definition of how the app starts** — `CMD` runs gunicorn. Railway's own builder (railpack/`mise`) is not used. One caveat that isn't in the repo: Railway's dashboard has a per-service **Custom Start Command** that would override the image `CMD` and does *not* show in `railway logs --build` — it must be confirmed **blank** to trust the Dockerfile (STAGING_SETUP.md verification list). Two environments: `staging` branch → staging, `main` branch → production.
 - **Auth:** Flask sessions, bcrypt password hashing, self-serve registration with email verification (itsdangerous signed tokens, 24h TTL, SHA-256 replay protection), Flask-Limiter rate limiting, CSRF protection (Flask-WTF `CSRFProtect`, all forms + JSON fetch endpoints)
 - **PWA:** manifest.json, service worker, home screen icons
 
@@ -41,8 +41,9 @@ Live at: https://mybaselineapp.com (custom domain; Railway default: baseline-hea
 app.py                  — all routes and business logic
 database.py             — SQLAlchemy models
 requirements.txt        — Python dependencies
-Procfile                — gunicorn for production (created 8/12/26; previously documented here but never existed)
-run.sh                  — local startup script
+Dockerfile              — THE production build + start command (gunicorn). Railway builds from this.
+.dockerignore           — keeps .env, the local SQLite DB and Baseline Files/ out of the image
+run.sh                  — local startup script (exports DEBUG=true, runs the Flask dev server)
 .env                    — environment variables (not committed)
 generate_icons.py       — PWA icon generation script
 static/
@@ -172,13 +173,30 @@ Two distinct failure modes — keep them separate. **Rule 1 is about *where stat
 
 ## Deployment Workflow
 
-1. Make changes locally
-2. Test at http://localhost:5001
-3. `git add . && git commit -m "description" && git push`
-4. Railway auto-deploys from GitHub main branch
-5. Watch Railway for green deployment
+**Staging is a gate, not a waypoint.** Pushing `staging` and `main` in the same command defeats
+the entire point of having staging — that is exactly how the 8/12/26 broken build reached
+production. Never push both in one step; never push `main` until staging is verified.
 
-**Important:** Every push to main deploys to production immediately. Real users are on the app. Always test locally before pushing.
+1. Make changes locally; test at http://localhost:5001
+2. Commit and **push `staging` only**
+3. **Wait for the staging build to finish, then verify against the staging URL** — a green
+   Railway badge is not verification (see below)
+4. Only then merge `staging → main` and push; production deploys
+5. Verify production the same way you verified staging
+
+**Verify the artifact, never a proxy signal.** A 200, a green deployment badge, or the word
+"ACTIVE" says a container started — not that *your* code is serving. Check something only the
+new build can produce (a new route, a changed string, a flag that flipped). The two standing
+checks for the debug-server regression, which must hold on staging and production:
+
+```bash
+# expect NOT 200 (a 200 with ~10KB of JS means the Werkzeug debugger is exposed)
+curl -s -o /dev/null -w "%{http_code}\n" "$URL/?__debugger__=yes&cmd=resource&f=debugger.js"
+# expect 403 "Not available in production." — only reachable when app.debug is False
+curl -s -w " %{http_code}\n" "$URL/dev/bootstrap"
+```
+
+**Important:** Every push to main deploys to production immediately. Real users are on the app.
 
 ---
 
@@ -227,6 +245,14 @@ Two markdown files live in `Baseline Files/` and must be updated directly as par
 
 **`README.md`** (repo root) — the **public / portfolio-facing** project overview (what Baseline is, the story, tech stack at a glance, product decisions, what's next). Distinct from `TECHNICAL_README.md` (internal engineering detail). It is read by outsiders, so it drifts silently and is easy to forget — added to this list 7/31/26 after it lagged behind shipped features (self-serve registration, triggers, multiple interventions). Update when a **headline user-facing feature ships or is deprecated**, the **registration/auth model changes**, the **tech stack changes**, or the **"What's next" roadmap shifts**. It is narrative, not exhaustive — sweep it for anything now false, don't mirror every internal change.
 
+**`.claude/agents/*.md`** — the review agents' own **Project Context** blocks (stack, deployment
+topology, user count, key files). These are instructions that shape every review, so a stale line
+here silently degrades every future review rather than showing up on a page someone reads. Added to
+this list 8/13/26 after `code-reviewer.md` was found asserting *"No staging. Every push is
+production"* — false for four weeks, in the context of the agent that reviews deploy safety, and
+invisible because the sweep list only covered `Baseline Files/`, the root README and the user-facing
+surfaces. Update when the **stack, hosting/build, deployment topology or branch workflow** changes.
+
 ### User-facing help & support surfaces (keep ALL in sync):
 
 These describe features/workflows/terminology to users, so **any change that adds, renames, or reworks a user-facing feature or term must sweep every surface below in the same commit** — not just `help.html`. They drift silently and independently (the welcome tour lagged behind shipped features because it wasn't on this list — added 7/17/26). When you touch a feature, ask "which of these now says something stale?" and fix each.
@@ -243,6 +269,12 @@ These describe features/workflows/terminology to users, so **any change that add
 **`Baseline Files/baseline-vision-roadmap.docx`** — Note significant product direction changes for Missy to update.
 
 ### Session end checklist:
+0. If the **stack, hosting/build, deployment topology or branch workflow** changed, sweep **every**
+   file that asserts how Baseline is built, served or deployed — `Dockerfile`, `app.py`'s `__main__`
+   comment, `CLAUDE.md`, `TECHNICAL_README.md`, `STAGING_SETUP.md`, root `README.md`, and
+   `.claude/agents/*.md`. Grep, don't recall: `grep -rniE "gunicorn|procfile|dockerfile|railpack|mise|python 3\.|auto-deploy|staging"`.
+   This class of claim has now propagated wrong **twice** (8/12, 8/13), both times because it was
+   written in several places and re-read in none.
 1. Update TECHNICAL_README.md and BACKLOG.md directly
 2. If a headline feature, the registration/auth model, the tech stack, or the roadmap changed, sweep the root **README.md** (public-facing) and fix anything now false
 3. If user-facing features, workflows, or terminology changed, sweep **all** user-facing help & support surfaces (help.html, the welcome tour slides in index.html, the welcome email, onboarding copy — see list above) and fix any that went stale

@@ -1,6 +1,6 @@
 # Staging Environment — Setup Runbook
 
-Last updated: July 17, 2026
+Last updated: August 13, 2026
 
 Staging is a **separate deploy of Baseline that mirrors production** but runs from the `staging`
 git branch against its **own throwaway PostgreSQL database**. It exists to de-risk the schema-heavy
@@ -63,7 +63,13 @@ Set these **on the staging environment only**. Leave production untouched.
 > Corrected 8/12/26: this note used to say "which is False under gunicorn", but there was no Procfile
 > and no start command, so gunicorn was never running — the builder ran `python app.py`, which
 > hardcoded `debug=True`. The dev routes were live and the Werkzeug debugger was exposed. Fixed by
-> the Dockerfile + Procfile + env-gated entrypoint; see BACKLOG Decision Log.
+> the **`Dockerfile` `CMD`** + the env-gated entrypoint; see BACKLOG Decision Log. (The Procfile
+> added the same day was deleted 8/13/26 — Railway builds from the Dockerfile, so it was never read,
+> and a start command that is written down but never executed is what hid this bug in the first place.)
+>
+> **Gunicorn is genuinely running now, but don't restate that as the gate** — `app.debug` is False
+> because `DEBUG` is unset, and that is the only thing holding these routes shut. Verify it, don't
+> assume it: `curl` `/dev/bootstrap` and expect `403 Not available in production.`
 
 ## Part C — Push the staging branch
 
@@ -123,9 +129,36 @@ The script:
 ## Part E — Ongoing workflow
 
 ```
-feature work  →  push to `staging`  →  verify on the staging URL  →  merge `staging → main`  →  prod deploys
+feature work  →  push `staging`  →  WAIT for the build  →  VERIFY on the staging URL  →  merge `staging → main`  →  prod deploys  →  verify prod
 ```
 
+**Staging is a gate, not a waypoint.** The gate only works if something can fail at it:
+
+- **Never push `staging` and `main` in the same command.** On 8/12/26 exactly that happened — a
+  broken build reached production because staging was pushed *alongside* main rather than *ahead*
+  of it, so there was nothing to stop at. This is the single most important line in this runbook.
+- **Wait for the staging build to finish before merging.** A push that hasn't built yet has proven
+  nothing.
+- **Verify the artifact on staging, not the badge.** A green deployment, an `ACTIVE` status or a
+  200 means a container booted. Check a marker only the new build can produce — a new route, a
+  changed string, a flipped flag. Standing checks (`$URL` = the staging URL, then production's):
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" "$URL/?__debugger__=yes&cmd=resource&f=debugger.js"  # expect NOT 200
+curl -s -w " %{http_code}\n" "$URL/dev/bootstrap"                                             # expect 403
+```
+
+- If the build config changed, confirm the *build* too: `railway logs --build` should show
+  `load build definition from Dockerfile` and `python:3.10-slim` — never `mise` or railpack.
+- **Confirm the dashboard isn't overriding the image.** Railway's service **Settings → Deploy →
+  Custom Start Command** overrides the Dockerfile `CMD` at the deploy layer and does **not** appear
+  in `railway logs --build`. It must be **blank** for the Dockerfile to be what actually runs — the
+  behavioural `curl` checks above prove `DEBUG` is unset but would pass identically whether gunicorn
+  or a bare `python app.py` is serving, so they can't catch a stray start-command override. Check it
+  on both environments; this is the one "how the app starts" input that lives outside the repo.
+- **"Deployed" and "reachable" are different things.** A deployment can be ACTIVE and healthy in
+  the logs while Railway's public-domain **target port** still points at the previous deployment's
+  port, 502-ing every request. Hitting the real URL is what catches this; the dashboard won't.
 - Do risky migrations on `staging` first; watch them run against the staging Postgres before `main`.
 - Keep `staging` and `main` from drifting: after a prod deploy, fast-forward `staging` to `main`
   (or rebase) so staging keeps mirroring prod.

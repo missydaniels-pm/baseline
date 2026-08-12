@@ -19,7 +19,7 @@ Live at: **https://mybaselineapp.com** (custom domain; Railway default: baseline
 - **Frontend:** Jinja2 templates, vanilla JavaScript, Chart.js
 - **AI:** Anthropic API (claude-sonnet-4-6) for check-in parsing. Onset is **classify-and-resolve** (7/17/26): the model returns a time phrase + type (never a computed date); `resolve_onset()` resolves it deterministically against the message anchor using **`dateparser`** + a colloquial-normalization layer, never logging a future onset.
 - **Auth:** Flask sessions, bcrypt password hashing, self-serve registration with email verification (itsdangerous signed tokens, 24h TTL), Flask-Limiter rate limiting, CSRF protection (Flask-WTF)
-- **Hosting:** Railway (auto-deploys from GitHub main branch)
+- **Hosting:** Railway. Built from the repo's **`Dockerfile`** (`python:3.10-slim`), not Railway's railpack/`mise` builder — the base image is what pins the runtime. The Dockerfile's `CMD` (gunicorn, 1 worker, `--timeout 120`) is the **only in-repo definition of how the app starts**; there is deliberately no Procfile. **Caveat:** Railway's dashboard **Custom Start Command** field overrides the image `CMD` at the deploy layer and does not appear in `railway logs --build`, so "the Dockerfile decides" only holds while that field is blank — confirm it (STAGING_SETUP.md verification list). Two environments: `staging` branch → staging, `main` branch → production.
 - **PWA:** manifest.json, service worker, home screen icons (Pillow-generated)
 
 ---
@@ -44,8 +44,9 @@ Slow/blocking work must not run synchronously in-request when the caller doesn't
 app.py                        — all routes and business logic
 database.py                   — SQLAlchemy models
 requirements.txt              — Python dependencies
-Procfile                      — gunicorn for production
-run.sh                        — local startup script
+Dockerfile                    — THE production build + start command (gunicorn); Railway builds from this
+.dockerignore                 — keeps .env, instance/*.db and Baseline Files/ out of the image
+run.sh                        — local startup script (exports DEBUG=true, runs the Flask dev server)
 seed_staging.py               — seed the staging DB (railway run; reuses app.seed_test_data)
 CLAUDE.md                     — Claude Code persistent context document
 generate_icons.py             — PWA icon generation (Pillow)
@@ -237,13 +238,31 @@ All dev routes are grouped in a clearly marked section at the bottom of `app.py`
 
 ## Deployment
 
-### Workflow
+### Workflow — staging is a **gate**, not a waypoint
 1. Make and test changes locally at http://localhost:5001
-2. `git add . && git commit -m "description" && git push`
-3. Railway auto-deploys from GitHub main branch
-4. Watch Railway dashboard for green deployment
+2. Commit and push **`staging` only** — never `staging` and `main` in one command
+3. Wait for the staging build to finish, then **verify against the staging URL**
+4. Only then merge `staging → main` and push; production deploys
+5. Verify production the same way
 
-**Important:** Every push to main deploys to production immediately. Real users are on the app. Always test locally before pushing.
+**Verify the artifact, not a proxy signal.** A green Railway badge, an `ACTIVE` status or an HTTP 200
+means a container booted — not that your code is serving. Check a marker only the new build can
+produce. Two standing checks (must hold on staging *and* production):
+
+```bash
+# expect NOT 200 — a 200 with ~10KB of JS means the Werkzeug debugger is exposed
+curl -s -o /dev/null -w "%{http_code}\n" "$URL/?__debugger__=yes&cmd=resource&f=debugger.js"
+# expect 403 "Not available in production." — only reachable when app.debug is False
+curl -s -w " %{http_code}\n" "$URL/dev/bootstrap"
+```
+
+Confirm the *build* too when the build config changed — `railway logs --build` should show
+`load build definition from Dockerfile` and `python:3.10-slim`, never `mise` or railpack.
+
+**Important:** Every push to main deploys to production immediately. Real users are on the app.
+Both times this bit us (8/12/26) the deploy looked healthy: once because staging was pushed
+alongside main instead of ahead of it, and once because the deployment was ACTIVE while Railway's
+public-domain **target port** still pointed at the previous deployment's port, so every request 502'd.
 
 ### Staging (live since 7/17/26)
 - Separate Railway **environment** (`staging`) in the same project, its own Postgres, deploying from the **`staging` branch**. `main` → production.
@@ -252,7 +271,17 @@ All dev routes are grouped in a clearly marked section at the bottom of `app.py`
 - Workflow: feature work → push `staging` → verify on staging URL → merge `staging → main` → prod deploys.
 
 ### Railway Services
-- **baseline** — Flask app, gunicorn, Python 3.13
+- **baseline** — Flask app on **Python 3.10** (from the `python:3.10-slim` base image), served by
+  **gunicorn** via the Dockerfile `CMD`: one worker, `--timeout 120`, bound to `$PORT` (8080).
+  One worker matches the historical single-process behaviour — more workers would run the startup
+  migrations concurrently. `--timeout 120` because the AI check-in's Anthropic call is in-request
+  and would exceed gunicorn's 30s default. `CMD` uses `sh -c "exec gunicorn …"`; the explicit `exec`
+  is **hardening, not a fix** — the familiar "shell form leaves `sh` as PID 1 and swallows SIGTERM"
+  story was tested 8/13/26 and did not reproduce (`sh -c '<single command>'` implicit-execs), so it
+  just makes the guarantee explicit and fails safe if a second command is ever appended. PID 1 in the
+  real container is unverified.
+  *(Corrected 8/13/26: this line read "gunicorn, Python 3.13" — gunicorn was not actually running
+  at all before 8/12/26, and the version became 3.10 when the build moved to the Dockerfile.)*
 - **Postgres** — PostgreSQL database with persistent volume
 
 ### Database Handling
