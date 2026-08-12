@@ -58,9 +58,12 @@ Set these **on the staging environment only**. Leave production untouched.
 | `WTF_CSRF_ENABLED` | **leave UNSET** (= on) | Match prod so the CSRF token flow is exercised on staging too. |
 | `DATABASE_URL` | auto (staging Postgres reference) | Set by Railway; just confirm it points at the **staging** Postgres (see A3). |
 
-> **Note on dev routes:** `/dev/seed` and `/dev/reset` are gated on `app.debug`, which is False under
-> gunicorn — so they stay **blocked on staging just like prod**. That's intentional (a public
-> staging URL shouldn't expose a destructive reset). Seed staging with the script in Part D instead.
+> **Note on dev routes:** `/dev/seed` and `/dev/reset` are gated on `app.debug`, which is now driven
+> **only by the `DEBUG` env var** — leave it unset on staging and production and they stay blocked.
+> Corrected 8/12/26: this note used to say "which is False under gunicorn", but there was no Procfile
+> and no start command, so gunicorn was never running — the builder ran `python app.py`, which
+> hardcoded `debug=True`. The dev routes were live and the Werkzeug debugger was exposed. Fixed by
+> the Dockerfile + Procfile + env-gated entrypoint; see BACKLOG Decision Log.
 
 ## Part C — Push the staging branch
 

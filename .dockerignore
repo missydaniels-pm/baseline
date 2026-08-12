@@ -1,0 +1,15 @@
+# Keep secrets and local state out of the image. Deliberately NOT excluding
+# seed_staging.py or check_fk_orphans.py — STAGING_SETUP.md documents running
+# the seeder inside the container, and the FK pre-flight is an operational tool.
+# A few KB is not worth breaking a runbook.
+.git
+.venv
+__pycache__
+*.pyc
+instance/
+*.db
+*.sqlite
+*.sqlite3
+.env
+.DS_Store
+Baseline Files/
