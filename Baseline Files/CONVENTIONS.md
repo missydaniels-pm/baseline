@@ -50,6 +50,39 @@ here in the same commit.
   Never import `flask.g`/`request`/`user_tz_name` into `database.py` — the model
   layer must stay reusable behind the future non-Flask API (owner decision 7/17/26).
 
+## Protocol events: when it happened vs when you recorded it
+- `ProtocolEvent` has **two** dates and they are not interchangeable. `date` = the day
+  the change actually took effect (user-supplied, back-datable). `created_at` = when the
+  row was written. Correlation against episode data uses `date`. Until 8/12/26 every
+  route wrote `date = user_today()`, so a stop recorded a week late correlated against
+  the wrong days — and that is not recoverable afterwards.
+- Resolve a user-supplied effective date through **`_resolve_effective_date(raw, today,
+  not_before, not_before_label)`** → `(date, error)`. Call it **before any assignment to
+  the model**, so a bad date rejects the whole edit instead of half-applying it.
+- **A status change may not be dated before the most recent existing status event**
+  (`STATUS_EVENT_TYPES`). Without that floor, pausing dated Aug 10 and then reactivating
+  dated Aug 5 both succeed and the timeline reads "reactivated, then paused" while the
+  live status says active — a replay of historical status becomes meaningless.
+  `dose_changed` is deliberately exempt: it carries no status meaning.
+- **Only log real transitions.** Both `edit_protocol` and `assess_experiment` write an
+  event only when the status actually changes. `protocol_events` is a log of what
+  happened *to the protocol*; if it was already paused, nothing happened to it. A
+  decision that changed nothing is still recorded on `Experiment.decision`.
+- One-shot actions (`assess_experiment`) check their own completed-state **before any
+  assignment**, so a resubmit can't overwrite a recorded outcome.
+
+## Forms: a validation error must not discard the user's input
+- On a validation failure, re-render with **`request.form.get('<field>', <stored value>)`**
+  for every field, not from the model. Rendering from the model throws away everything
+  the user just typed and silently reverts their selections — and if any JS compares
+  against "the original", it then reads the wrong baseline and the form can degrade into
+  a **silent no-op save**. Found on `edit_protocol` 8/12/26.
+- Any JS that needs the stored value for comparison reads it from a `data-original`
+  attribute, not from the field's current value.
+- Parse each submitted value **once**. Re-parsing the same string later with an
+  unguarded `strptime` is how a malformed date 500s the request while the guarded copy
+  two lines above flashes properly (found on `edit_protocol` + `new_protocol`, 8/12/26).
+
 ## Compliance writes
 - Go through the shared helpers: `_commit_compliance()` → `_upsert_compliance()` /
   `_delete_compliance()`. Never write `ProtocolCompliance` rows directly.

@@ -2776,6 +2776,14 @@ def assess_experiment(exp_id):
     experiment = Experiment.query.filter_by(id=exp_id, user_id=user.id).first_or_404()
 
     if request.method == 'POST':
+        # Before ANY assignment: a bookmarked URL, a back-button resubmit or a
+        # second tab would otherwise overwrite the recorded outcome, and would
+        # make the status guard below double as replay protection, which is not
+        # what it is for.
+        if experiment.status == 'completed':
+            flash('That experiment has already been assessed.', 'error')
+            return redirect(url_for('experiments'))
+
         try:
             experiment.outcome_rating = max(1, min(10, int(request.form.get('outcome_rating', 5))))
         except (ValueError, TypeError):
@@ -2785,7 +2793,29 @@ def assess_experiment(exp_id):
         experiment.status = 'completed'
 
         if experiment.protocol and experiment.decision in ('pause', 'stop'):
-            experiment.protocol.status = {'pause': 'paused', 'stop': 'stopped'}[experiment.decision]
+            new_status = {'pause': 'paused', 'stop': 'stopped'}[experiment.decision]
+            # Record the event. Until 8/12/26 this path changed the protocol's
+            # status and wrote NOTHING to protocol_events — so the single most
+            # decision-driven stop ("the experiment said this isn't working")
+            # was invisible in the protocol's own history, and any replay of
+            # historical status from those events was wrong for it.
+            #
+            # Only when the status ACTUALLY changes. protocol_events is a log of
+            # what happened to the protocol, and if it was already paused then
+            # nothing happened to it — a second 'paused' with no intervening
+            # 'reactivated' would make a status replay read as two pauses. The
+            # decision itself is not lost: it is recorded on the Experiment
+            # (`decision`), which is where "what the experiment concluded"
+            # belongs. Replay safety is handled by the completed-check above,
+            # not by this comparison.
+            if experiment.protocol.status != new_status:
+                experiment.protocol.status = new_status
+                db.session.add(ProtocolEvent(
+                    protocol_id=experiment.protocol.id, user_id=user.id,
+                    event_type=new_status,
+                    detail=f'From assessing "{experiment.name}"',
+                    date=user_today(),
+                ))
 
         db.session.commit()
         flash(f'"{experiment.name}" assessed and completed.', 'success')
@@ -3802,11 +3832,18 @@ def new_protocol():
             flash('"Why I\'m doing this" must be 500 characters or fewer.', 'error')
             return render_template('new_protocol.html', active_experiment=active_experiment)
         start_date_str = request.form.get('start_date')
+        start_date_val = None
+        if start_date_str:
+            try:
+                start_date_val = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            except ValueError:
+                flash("That start date didn't look right — use the date picker.", 'error')
+                return render_template('new_protocol.html', active_experiment=active_experiment)
         protocol = Protocol(
             user_id=user.id,
             name=name_val,
             type='preventative',
-            start_date=datetime.strptime(start_date_str, '%Y-%m-%d').date() if start_date_str else None,
+            start_date=start_date_val,
             dose_frequency=request.form.get('dose_frequency') or None,
             status=request.form.get('status', 'active'),
             why=why_val or None,
@@ -3831,6 +3868,47 @@ def new_protocol():
     return render_template('new_protocol.html', active_experiment=active_experiment)
 
 
+# Event types that participate in a status replay — a status change may never
+# be dated before the most recent of these. 'dose_changed' is deliberately not
+# here: it carries no status meaning.
+STATUS_EVENT_TYPES = ('started', 'paused', 'stopped', 'reactivated')
+
+
+def _resolve_effective_date(raw, today, not_before=None, not_before_label='this protocol started'):
+    """Resolve the user-supplied effective date for a ProtocolEvent.
+
+    ProtocolEvent already separates `date` (when the change happened) from
+    `created_at` (when it was recorded) — the routes just always wrote today
+    into `date`, so a stop recorded a week late correlated against the wrong
+    days. This lets the user say when it actually happened.
+
+    Returns (date, error_message). Falls back to `today` when the field is
+    absent, so a no-JS submit still records something sensible rather than
+    failing. Future dates are refused, matching the future-episode-onset rule
+    (closed 7/14/26) — this is a log of what happened, not a schedule.
+
+    `not_before` is the floor the caller decides on. For a status change it is
+    the date of the LAST status event, not just the protocol's start: without
+    that, pausing dated Aug 10 and then reactivating dated Aug 5 both succeed
+    and the timeline reads "reactivated, then paused" while the live status
+    says active. Status events have to move forward or a replay of historical
+    status from this log is meaningless. Dose changes carry no such constraint
+    — they don't participate in a status replay.
+    """
+    if not raw:
+        return today, None
+    try:
+        parsed = datetime.strptime(raw.strip(), '%Y-%m-%d').date()
+    except (ValueError, AttributeError):
+        return None, "That date didn't look right — use the date picker."
+    if parsed > today:
+        return None, "That date is in the future. Record changes after they happen."
+    if not_before and parsed < not_before:
+        return None, (f"That's before {not_before_label} "
+                      f"({not_before.strftime('%b %-d, %Y')}). Check the date.")
+    return parsed, None
+
+
 @app.route('/protocols/<int:protocol_id>/edit', methods=['GET', 'POST'])
 def edit_protocol(protocol_id):
     user = get_user()
@@ -3839,28 +3917,77 @@ def edit_protocol(protocol_id):
     if active_experiment:
         active_experiment.wks_elapsed = active_experiment.weeks_elapsed(user_today())
 
+    # The date of the last status event, so the date picker's own `min` matches
+    # what the server will accept for a status change (see _resolve_effective_date).
+    _last_status = (ProtocolEvent.query
+                    .filter(ProtocolEvent.protocol_id == protocol.id,
+                            ProtocolEvent.event_type.in_(STATUS_EVENT_TYPES))
+                    .order_by(ProtocolEvent.date.desc(), ProtocolEvent.id.desc()).first())
+    last_status_date = _last_status.date if _last_status else None
+
     if request.method == 'POST':
         name_val = request.form.get('name', '').strip()
         notes_val = request.form.get('notes', '').strip()
         why_val = request.form.get('why', '').strip()
         if not name_val:
             flash('Give this preventative a name.', 'error')
-            return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment)
+            return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment,
+                               today=user_today(), last_status_date=last_status_date)
         if len(name_val) > 200:
             flash('Name must be 200 characters or fewer.', 'error')
-            return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment)
+            return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment,
+                               today=user_today(), last_status_date=last_status_date)
         if notes_val and len(notes_val) > 500:
             flash('Notes must be 500 characters or fewer.', 'error')
-            return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment)
+            return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment,
+                               today=user_today(), last_status_date=last_status_date)
         if why_val and len(why_val) > 500:
             flash('"Why I\'m doing this" must be 500 characters or fewer.', 'error')
-            return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment)
+            return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment,
+                               today=user_today(), last_status_date=last_status_date)
+        # Resolved before any assignment to `protocol`, so a bad date rejects
+        # the whole edit rather than half-applying it. Compare against the
+        # start date being SUBMITTED, not the stored one — someone can move the
+        # start date and stop the protocol in the same save, and validating
+        # against the old value would reject a legitimate combination.
+        # Parse ONCE, here, and reject a malformed value. The assignment below
+        # used to re-parse this same string with a bare strptime, so a
+        # non-empty malformed date 500'd the request instead of flashing like
+        # every other field on this form.
+        submitted_start_str = request.form.get('start_date')
+        submitted_start = None
+        if submitted_start_str:
+            try:
+                submitted_start = datetime.strptime(submitted_start_str, '%Y-%m-%d').date()
+            except ValueError:
+                flash("That start date didn't look right — use the date picker.", 'error')
+                return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment,
+                                       today=user_today(), last_status_date=last_status_date)
+
+        # A status change can't be dated before the last status change already
+        # on record, or the history contradicts itself (see the helper's
+        # docstring). Dose changes only have to clear the start date.
+        floor, floor_label = submitted_start, 'this protocol started'
+        if request.form.get('status', protocol.status) != protocol.status:
+            last_status = (ProtocolEvent.query
+                           .filter(ProtocolEvent.protocol_id == protocol.id,
+                                   ProtocolEvent.event_type.in_(STATUS_EVENT_TYPES))
+                           .order_by(ProtocolEvent.date.desc(), ProtocolEvent.id.desc()).first())
+            if last_status and (floor is None or last_status.date > floor):
+                floor = last_status.date
+                floor_label = f'the last status change ({last_status.event_type})'
+
+        effective_date, date_err = _resolve_effective_date(
+            request.form.get('effective_date'), user_today(), floor, floor_label)
+        if date_err:
+            flash(date_err, 'error')
+            return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment,
+                               today=user_today(), last_status_date=last_status_date)
         old_status = protocol.status
         old_dose = protocol.dose_frequency
 
-        start_date_str = request.form.get('start_date')
         protocol.name = name_val
-        protocol.start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date() if start_date_str else None
+        protocol.start_date = submitted_start  # already parsed and validated above
         protocol.dose_frequency = request.form.get('dose_frequency') or None
         protocol.status = request.form.get('status', protocol.status)
         protocol.why = why_val or None
@@ -3870,20 +3997,21 @@ def edit_protocol(protocol_id):
             event_type = {'active': 'reactivated', 'paused': 'paused', 'stopped': 'stopped'}.get(protocol.status, protocol.status)
             db.session.add(ProtocolEvent(
                 protocol_id=protocol.id, user_id=user.id,
-                event_type=event_type, date=user_today(),
+                event_type=event_type, date=effective_date,
             ))
         if old_dose != protocol.dose_frequency:
             detail = f'Changed from "{old_dose or "not set"}" to "{protocol.dose_frequency or "not set"}"'
             db.session.add(ProtocolEvent(
                 protocol_id=protocol.id, user_id=user.id,
-                event_type='dose_changed', detail=detail, date=user_today(),
+                event_type='dose_changed', detail=detail, date=effective_date,
             ))
 
         db.session.commit()
         flash('Preventative updated.', 'success')
         return redirect(url_for('protocols'))
 
-    return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment)
+    return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment,
+                               today=user_today(), last_status_date=last_status_date)
 
 
 @app.route('/protocols/<int:protocol_id>')

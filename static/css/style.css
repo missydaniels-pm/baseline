@@ -143,6 +143,16 @@ a:hover { text-decoration: underline; }
    episode-form "+ Add") looked live while being unclickable. */
 .btn:disabled { opacity: 0.55; cursor: default; }
 
+/* Screen-reader-only live region. Used by the Edit Preventative effective-date
+   field so its appearance is announced, not just visually apparent. */
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  clip: rect(0 0 0 0); clip-path: inset(50%);
+  overflow: hidden; white-space: nowrap;
+}
+
 /* In-flight submit: a trailing ellipsis turns "Save Episode" into
    "Save Episode…" for the duration of the request. Dimming alone reads as
    "this button broke" on a slow save — which is what made a second tap feel
@@ -1700,6 +1710,14 @@ input[type="range"]::-moz-range-thumb {
   .btn {
     padding: 12px 20px;
     font-size: 15px;
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  /* .btn-today sets its own 38px height, so the rule above can't reach it and
+     it stayed under the 44px minimum at every breakpoint. It now appears twice
+     on the Edit Preventative screen (start date + effective date). */
+  .btn-today {
     min-height: 44px;
     touch-action: manipulation;
   }

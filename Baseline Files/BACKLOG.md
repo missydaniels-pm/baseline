@@ -18,13 +18,12 @@ _None open._
 
 Backend / data-model work that should land before the React rebuild, plus small independent follow-ups. Frontend-heavy work is deliberately **not** here — it lives under React Rebuild so it isn't built twice.
 
-**Build order (agreed 7/15):** CSRF ✅ · Manage Triggers ✅ · Staging ✅ · Timezone ✅ · FK cleanup ✅ · **date-stopped ○** · **report-spec ○**. Foundations first; staging before the schema-heavy migrations. (Detail on the ✅ milestones → *DL*.)
+**Build order (agreed 7/15):** CSRF ✅ · Manage Triggers ✅ · Staging ✅ · Timezone ✅ · FK cleanup ✅ · date-stopped ✅ · **report-spec ◑ (schema identified)**. Foundations first; staging before the schema-heavy migrations. (Detail on the ✅ milestones → *DL*.)
 
 ### Remaining
 | Item | Size | Notes |
 |---|---|---|
-| "Date stopped" field on pause/stop | S | ProtocolEvent dates the click, not the actual stop day. Add an effective-date field so retroactive stops correlate with episode data. |
-| Neurologist report — backend spec only | L | Spec the rollup/query backend now; build the PDF during the rebuild (cleaner API-first). Shares the structured-rollups machinery with pattern detection; clinician-facing → hedging mandatory. |
+| Episode diary — physician / insurance export | L | **Schema identified 8/12/26 → `SPEC-episode-diary.md`.** Generic by design: pick a tracked item, get its episodes + rescue protocols, counted per month. Two migrations needed pre-rebuild (`Protocol.med_class`, a `User` diary-mode flag); stop-reason likely needs none (`ProtocolEvent.detail` exists). Rendering is post-rebuild. **Open:** the 11pm–2am boundary rule, and free-text vs controlled list for stop reason. |
 | AI check-in — multi-episode / bulk logging | L | "a migraine each day for 7 days" = 7 episodes; today's check-in makes at most one. Needs a list + per-episode default time + a confirm gate before bulk-creating records. **Design pending** — build backend pre-rebuild vs. defer whole. |
 
 ### Follow-ups (small, do anytime)
@@ -34,7 +33,7 @@ Backend / data-model work that should land before the React rebuild, plus small 
 | Experiment protocol field is repointable once detached | S | `edit_experiment.html:22` renders a protocol dropdown; a detached experiment (protocol deleted) can be silently repointed at a *different* protocol, misrepresenting when its data was gathered. Low reach now that such experiments auto-abandon (8/8/26), but the edit page still allows it. Fix: render read-only "protocol deleted" when `protocol_id` is NULL. Owner deferred 8/8/26. |
 | Post-CSRF hardening | S | `ProxyFix` for `X-Forwarded-Proto` (do near Redis — also fixes rate-limiter IP keying); `/logout` GET→POST (forgeable); privacy-line for the anon session cookie. |
 | Trigger review cleanups | S | Accepted low-risk findings: add `source` DB CHECK; non-ASCII case-fold; history N+1; chip ✕-remove; fieldset/legend a11y; rename reused `symptom-*` CSS classes; reconcile seed↔custom name collision when the seed list grows. |
-| AI check-in — episode duration capture | S | Check-in ignores `Episode.duration_hours`. Add duration to the schema + parse ("24/7 headache for 7 days" = one long episode). Fast-follow to tz. **Gated on the "is episode length useful?" investigation** (Needs Investigation) — don't build duration UI until that resolves. |
+| AI check-in — episode duration capture | S | Check-in ignores `Episode.duration_hours`. Add duration to the schema + parse ("24/7 headache for 7 days" = one long episode). Fast-follow to tz. **Ungated 8/12/26** — episode length is confirmed useful (days-per-month depends on it). Buildable. |
 | Richer delete protection for preventatives | S | Informed confirmation (history count) or soft-delete/archive. Decision pending: count vs. archive. |
 | YouTube feature-update videos | S | Record short walkthroughs; surface on Help + in update emails. No app change to start. |
 
@@ -110,8 +109,14 @@ The anchor is the **React frontend rebuild** (L, API-first, positions for React 
 
 | Item | Notes |
 |---|---|
-| Is episode *length* useful data to track? | Gates both duration items (the check-in "duration capture" follow-up + the episode start/stop timer widget). Chronic episodes are often long or continuous (tz Inc-3 spinoff: "24/7 headache for 7 days") — does an end-time / duration actually change any decision the user or a clinician makes, or is onset + severity + frequency enough? Answer before building any duration UI. Consider: is "how long" more of a burden-to-log than it's worth for this audience? (Missy 7/20) |
 | GDPR obligations if non-US users join | Not immediate — all current users are US-based. |
+
+> **Closed 8/12 — is episode length useful? YES.** Not for the reason originally framed
+> ("does an end-time change a decision?") but because **days-per-month cannot be computed
+> without it**: a 76-hour episode is four headache days, and insurance thresholds gate on
+> ≥4/≥8/≥15 days. Counting episodes instead of days undercounts in exactly the direction
+> that costs a user their authorisation. **Unblocks "AI check-in — episode duration
+> capture"**; the start/stop timer widget stays post-rebuild on its own merits. → *SPEC.*
 
 > **Closed 7/14 — future episode dates:** keep blocked (not a supported case). The guard is now **exact** as of tz Increment 2 (`user_now()` local comparison; edit-guard fires only on onset change). → *DL.*
 
@@ -138,6 +143,15 @@ Condensed record of completed work; full detail in the Decision Log where marked
 ---
 
 ## Decision Log
+
+### Protocol event dating + the missing assessment event
+**August 12, 2026.** Backlog scoped this as "add a date-stopped field." **No schema change was needed** — `ProtocolEvent` already carried `date` (when it happened) and `created_at` (when recorded); every route just wrote `date = user_today()`. Form + validation only. Second time in two days the column already existed and nothing wrote to it.
+
+Shipped: a back-datable effective date on the status/dose change (revealed only when an event will actually be written), refusing future dates, dates before the protocol started, and — after review — dates before the last status event. Plus **`assess_experiment` now writes the `ProtocolEvent` it never wrote**: completing an experiment with pause/stop changed `protocol.status` silently, so the most decision-driven stop in the app was invisible in its own history and the backlogged status-replay item would have been wrong for exactly those protocols. Forward-only, no backfill (owner decision).
+
+**Review found four blockers, none of which I'd have caught.** (1) Any validation error re-rendered from the untouched model, discarding the user's entire submission and then re-hiding the date field — degrading into a silent no-op save with a success flash. Pre-existing for the length checks; the new field made it bite. (2) Back-dating could build a self-contradictory history (pause Aug 10, reactivate Aug 5, both accepted) — fixed with a status floor, dose changes exempt since they don't participate in a replay. (3) Validation ran against the stale `start_date` while the same form could change it. (4) A malformed start date 500'd — with the try/except for that exact string sitting two lines above, written for a different variable.
+
+**Pattern worth naming:** twice in one day the failure was "fixed the instance in front of me, not the class" (create routes but not edit routes; the parse guard but not the assignment). Both are now written into CONVENTIONS. After the second, I swept and found the same unguarded parse on `new_protocol` that no reviewer had flagged.
 
 ### Blank-name validation + AI check-in tone
 **August 12, 2026.** Two small independent fixes.

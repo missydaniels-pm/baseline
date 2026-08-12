@@ -29,7 +29,7 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-group">
       <label for="name">Name</label>
-      <input type="text" id="name" name="name" required value="{{ protocol.name }}"
+      <input type="text" id="name" name="name" required value="{{ request.form.get('name', protocol.name) }}"
              data-charlimit="200">
       <div class="char-counter"><span id="name_count">0</span>/200</div>
     </div>
@@ -38,13 +38,14 @@
       <div class="form-group">
         <label for="dose_frequency">Dose / Frequency</label>
         <input type="text" id="dose_frequency" name="dose_frequency"
-               value="{{ protocol.dose_frequency or '' }}" placeholder="e.g. 25mg nightly">
+               value="{{ request.form.get('dose_frequency', protocol.dose_frequency or '') }}"
+               data-original="{{ protocol.dose_frequency or '' }}" placeholder="e.g. 25mg nightly">
       </div>
       <div class="form-group">
         <label for="start_date">Start Date</label>
         <div class="date-input-wrap">
           <input type="date" id="start_date" name="start_date"
-                 value="{{ protocol.start_date.strftime('%Y-%m-%d') if protocol.start_date else '' }}">
+                 value="{{ request.form.get('start_date', protocol.start_date.strftime('%Y-%m-%d') if protocol.start_date else '') }}">
           <button type="button" class="btn btn-today" onclick="document.getElementById('start_date').value=new Date().toLocaleDateString('en-CA');">Today</button>
         </div>
       </div>
@@ -52,17 +53,38 @@
 
     <div class="form-group">
       <label for="status">Status</label>
-      <select id="status" name="status">
+      <select id="status" name="status" data-original="{{ protocol.status }}">
         {% for s in ['active', 'paused', 'stopped'] %}
-        <option value="{{ s }}" {% if protocol.status == s %}selected{% endif %}>{{ s.capitalize() }}</option>
+        <option value="{{ s }}" {% if request.form.get('status', protocol.status) == s %}selected{% endif %}>{{ s.capitalize() }}</option>
         {% endfor %}
       </select>
+    </div>
+
+    {# Shown only once something that records a ProtocolEvent has actually
+       changed (status or dose). The event's date is what correlates with
+       episode data, so it has to be the day the change really happened —
+       not the day you got round to recording it. #}
+    <p class="visually-hidden" id="effective-date-status" aria-live="polite"></p>
+    <div class="form-group" id="effective-date-group" hidden
+         data-status-floor="{{ last_status_date.strftime('%Y-%m-%d') if last_status_date else '' }}">
+      <label for="effective_date">When did this change take effect?</label>
+      <div class="field-hint">Defaults to today — back-date it if you actually
+        stopped or changed this earlier.</div>
+      <div class="date-input-wrap">
+        <input type="date" id="effective_date" name="effective_date"
+               value="{{ request.form.get('effective_date', today.strftime('%Y-%m-%d')) }}"
+               data-start-floor="{{ protocol.start_date.strftime('%Y-%m-%d') if protocol.start_date else '' }}"
+               {% if protocol.start_date %}min="{{ protocol.start_date.strftime('%Y-%m-%d') }}"{% endif %}
+               max="{{ today.strftime('%Y-%m-%d') }}">
+        <button type="button" class="btn btn-today"
+                onclick="document.getElementById('effective_date').value='{{ today.strftime('%Y-%m-%d') }}';">Today</button>
+      </div>
     </div>
 
     <div class="form-group">
       <label for="why">Why I'm doing this <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
       <textarea id="why" name="why" placeholder="e.g. to cut down my weekly episodes"
-                data-charlimit="500">{{ protocol.why or '' }}</textarea>
+                data-charlimit="500">{{ request.form.get('why', protocol.why or '') }}</textarea>
       <div class="char-counter"><span id="why_count">0</span>/500</div>
       <div class="field-hint">Baseline uses this to keep you connected to your goal — you'll see it on days that don't go to plan.</div>
     </div>
@@ -70,7 +92,7 @@
     <div class="form-group">
       <label for="notes">Notes</label>
       <textarea id="notes" name="notes"
-                data-charlimit="500">{{ protocol.notes or '' }}</textarea>
+                data-charlimit="500">{{ request.form.get('notes', protocol.notes or '') }}</textarea>
       <div class="char-counter"><span id="notes_count">0</span>/500</div>
     </div>
 
@@ -124,4 +146,52 @@
   });
 </script>
 {% endif %}
+
+{# Deliberately OUTSIDE the active_experiment guard above — that block only
+   renders for a paused/stopped protocol with an active experiment, and the
+   effective-date field applies to every protocol. #}
+<script>
+  (function () {
+    var group = document.getElementById('effective-date-group');
+    var statusSel = document.getElementById('status');
+    var dose = document.getElementById('dose_frequency');
+    if (!group || !statusSel || !dose) return;
+
+    var originalDose = dose.getAttribute('data-original') || '';
+
+    // Only ask for a date when a ProtocolEvent will actually be written —
+    // i.e. the status or the dose really changed. Asking on every edit
+    // (renaming, editing notes) would be noise.
+    var live = document.getElementById('effective-date-status');
+    var input = document.getElementById('effective_date');
+    var statusFloor = group.getAttribute('data-status-floor') || '';
+    var startFloor = input.getAttribute('data-start-floor') || '';
+    var wasHidden = true;
+
+    function refresh(silent) {
+      var statusChanged = statusSel.value !== statusSel.getAttribute('data-original');
+      var changed = statusChanged || dose.value !== originalDose;
+      group.hidden = !changed;
+
+      // A status change can't predate the last status event; a dose change only
+      // has to clear the start date. Keep the picker's own limit in step with
+      // what the server will accept, so most rejections never happen.
+      var floor = statusChanged ? (statusFloor || startFloor) : startFloor;
+      if (floor) { input.min = floor; } else { input.removeAttribute('min'); }
+
+      // Announce only the hidden -> visible transition, so screen-reader users
+      // learn a field appeared below them instead of just tabbing into it.
+      if (!silent && wasHidden && changed) {
+        live.textContent = 'A date field was added below: when did this change take effect?';
+      } else if (!changed) {
+        live.textContent = '';
+      }
+      wasHidden = !changed;
+    }
+
+    statusSel.addEventListener('change', refresh);
+    dose.addEventListener('input', refresh);
+    refresh(true);  // initial call must not announce
+  })();
+</script>
 {% endblock %}
