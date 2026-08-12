@@ -2068,12 +2068,26 @@ def build_system_prompt(user, client_time=None):
         exp_text = f'\nActive experiment: "{active_exp.name}" (started {active_exp.start_date}).'
 
     rate_prompt_line = (
-        'If the user describes experiencing a scale-type symptom but does not give a severity score, still set had_episode to true and omit the score — but in suggested_response warmly ask them to rate it on a scale of 1–10 so it can be logged accurately.'
+        'If the user describes experiencing a scale-type symptom but does not give a severity score, still set had_episode to true and omit the score — but in suggested_response ask them plainly to rate it 1–10 so it can be logged accurately.'
         if has_scale else
-        'If a tracked symptom is mentioned but the user did not indicate yes/no clearly, omit it from symptom_scores and ask warmly in suggested_response.'
+        'If a tracked symptom is mentioned but the user did not indicate yes/no clearly, omit it from symptom_scores and ask plainly in suggested_response.'
     )
 
-    return f"""You are a warm, empathetic health companion helping someone track their migraines and health.
+    return f"""You are a calm, practical logging assistant for someone managing a chronic condition.
+
+TONE — this matters more than it looks. They log with you most days, often on a bad
+day. Repeated sympathy grates: hearing a fresh "I'm so sorry you're dealing with
+that" every single day makes the condition feel heavier, not lighter, and makes the
+app feel like it pities them. Be brief and matter-of-fact. Acknowledge what they
+said, confirm what you logged, stop. Validate by taking them seriously and getting
+the details right — not by commiserating.
+  Don't: "I'm so sorry you had another migraine today, that sounds really tough. I hope you feel better soon!"
+  Do:    "Logged — 7/10, started around 2pm."
+  Don't: "It's completely okay that you missed your magnesium, don't be hard on yourself!"
+  Do:    "Noted, magnesium missed."
+Never moralise about missed protocols or comment on how they're coping. No exclamation
+marks unless they used one first. Don't give medical advice.
+
 Today is {today}, current local time is approximately {current_time}.{exp_text}
 
 The user tracks these symptoms (use their exact IDs in your JSON):
@@ -2136,14 +2150,15 @@ Use this exact schema:
     }}
   ],
   "general_notes": "<string or null>",
-  "suggested_response": "<warm 1-3 sentence reply to the user>"
+  "suggested_response": "<brief, matter-of-fact 1-2 sentence reply>"
 }}
 
 If no episode occurred, set had_episode to false and episode_data fields to null/empty.
 {rate_prompt_line}
 If no interventions were used, set interventions to an empty array []. If no triggers came up, set triggers to an empty array [].
 For protocol_compliance: include an entry for every preventative protocol the user explicitly or implicitly addressed — "took everything" means every listed preventative with took=true; "I missed my magnesium" means that protocol with took=false (include their reason as the note if they gave one). Only include protocols the user actually addressed; leave out ones they didn't mention. Never treat a missed protocol as a failure in your reply — misses are useful data.
-Always populate suggested_response with a warm, brief reply."""
+Always populate suggested_response. Keep it to 1-2 short sentences: what you logged,
+plus a factual observation only if it's genuinely useful. No sympathy opener."""
 
 
 def parse_checkin(user, message_text, client_time=None):
@@ -2382,7 +2397,10 @@ def checkin():
                 _upsert_compliance(user.id, pid, compliance_date, took, note,
                                    preserve_note_if_none=True)
 
-            assistant_content = parsed.get('suggested_response') or 'Got it, thanks for the update!'
+            # Fallback matches the retuned tone — brief and flat, no exclamation.
+            # 'Noted.' not 'Logged.': this also fires when nothing was written
+            # (no episode, no compliance), where claiming a save would be false.
+            assistant_content = parsed.get('suggested_response') or 'Noted.'
 
         # Write user message and assistant reply in a single transaction
         db.session.add(CheckIn(user_id=user.id, role='user', content=message_text))
@@ -2446,7 +2464,8 @@ def new_symptom():
         if input_type not in ('scale', 'binary'):
             input_type = 'scale'
         if not name:
-            return redirect(url_for('symptoms'))
+            flash('Give this a name.', 'error')
+            return render_template('new_symptom.html', form_input_type=input_type)
         if len(name) > 200:
             flash('Name must be 200 characters or fewer.', 'error')
             return render_template('new_symptom.html', form_input_type=input_type)
@@ -2478,7 +2497,8 @@ def edit_symptom(symptom_id):
         name = request.form.get('name', '').strip()
         description = request.form.get('description', '').strip() or None
         if not name:
-            return redirect(url_for('symptoms'))
+            flash('Give this a name.', 'error')
+            return render_template('edit_symptom.html', symptom=symptom, has_entries=has_entries)
         if len(name) > 200:
             flash('Name must be 200 characters or fewer.', 'error')
             return render_template('edit_symptom.html', symptom=symptom, has_entries=has_entries)
@@ -2648,7 +2668,12 @@ def new_experiment():
     if request.method == 'POST':
         exp_name = request.form.get('name', '').strip()
         hypothesis_val = request.form.get('hypothesis', '').strip() or None
-        if exp_name and len(exp_name) > 200:
+        if not exp_name:
+            flash('Give this experiment a name.', 'error')
+            return render_template('new_experiment.html', preventatives=preventatives,
+                                   prefill_protocol_id=prefill_protocol_id, today=user_today(),
+                                   active_experiment=active_experiment)
+        if len(exp_name) > 200:
             flash('Experiment name must be 200 characters or fewer.', 'error')
             return render_template('new_experiment.html', preventatives=preventatives,
                                    prefill_protocol_id=prefill_protocol_id, today=user_today(),
@@ -2894,7 +2919,10 @@ def edit_experiment(exp_id):
     if request.method == 'POST':
         exp_name = request.form.get('name', '').strip()
         hypothesis_val = request.form.get('hypothesis', '').strip() or None
-        if exp_name and len(exp_name) > 200:
+        if not exp_name:
+            flash('Give this experiment a name.', 'error')
+            return render_template('edit_experiment.html', experiment=experiment, preventatives=preventatives)
+        if len(exp_name) > 200:
             flash('Experiment name must be 200 characters or fewer.', 'error')
             return render_template('edit_experiment.html', experiment=experiment, preventatives=preventatives)
         if hypothesis_val and len(hypothesis_val) > 500:
@@ -3761,7 +3789,10 @@ def new_protocol():
         name_val = request.form.get('name', '').strip()
         notes_val = request.form.get('notes', '').strip()
         why_val = request.form.get('why', '').strip()
-        if name_val and len(name_val) > 200:
+        if not name_val:
+            flash('Give this preventative a name.', 'error')
+            return render_template('new_protocol.html', active_experiment=active_experiment)
+        if len(name_val) > 200:
             flash('Name must be 200 characters or fewer.', 'error')
             return render_template('new_protocol.html', active_experiment=active_experiment)
         if notes_val and len(notes_val) > 500:
@@ -3812,7 +3843,10 @@ def edit_protocol(protocol_id):
         name_val = request.form.get('name', '').strip()
         notes_val = request.form.get('notes', '').strip()
         why_val = request.form.get('why', '').strip()
-        if name_val and len(name_val) > 200:
+        if not name_val:
+            flash('Give this preventative a name.', 'error')
+            return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment)
+        if len(name_val) > 200:
             flash('Name must be 200 characters or fewer.', 'error')
             return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment)
         if notes_val and len(notes_val) > 500:
@@ -4061,7 +4095,10 @@ def new_rescue_option():
     if request.method == 'POST':
         name_val = request.form.get('name', '').strip()
         notes_val = request.form.get('notes', '').strip()
-        if name_val and len(name_val) > 200:
+        if not name_val:
+            flash('Give this intervention a name.', 'error')
+            return render_template('new_rescue_option.html')
+        if len(name_val) > 200:
             flash('Name must be 200 characters or fewer.', 'error')
             return render_template('new_rescue_option.html')
         if notes_val and len(notes_val) > 500:
@@ -4093,7 +4130,10 @@ def edit_rescue_option(option_id):
     if request.method == 'POST':
         name_val = request.form.get('name', '').strip()
         notes_val = request.form.get('notes', '').strip()
-        if name_val and len(name_val) > 200:
+        if not name_val:
+            flash('Give this intervention a name.', 'error')
+            return render_template('edit_rescue_option.html', option=option)
+        if len(name_val) > 200:
             flash('Name must be 200 characters or fewer.', 'error')
             return render_template('edit_rescue_option.html', option=option)
         if notes_val and len(notes_val) > 500:

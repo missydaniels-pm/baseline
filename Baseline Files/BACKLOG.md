@@ -8,9 +8,9 @@ Last updated: July 20, 2026 · open self-serve registration
 
 ## 🔴 Open Bugs
 
-| Item | Size | Notes |
-|---|---|---|
-| **Blank names accepted on create routes** (found 8/8 while testing the submit guard) | S | `new_protocol`, `new_rescue_option` and `new_experiment` only check `if name_val and len(name_val) > 200` — an **empty name passes straight through and creates a nameless record** (reproduced accidentally: a nameless Protocol + its ProtocolEvent). `new_symptom` correctly guards with `if not name` — a Rule 3 divergence. The `required` attribute is client-side only, so a direct POST or JS-off still does it; the 8/8 `.submit()`→`.requestSubmit()` fix closed the *accidental* client path but not the underlying gap. Fix: converge on `new_symptom`'s guard in all three routes. |
+_None open._
+
+<!-- Blank-name validation closed 8/12/26 — see Decision Log. -->
 
 ---
 
@@ -35,7 +35,6 @@ Backend / data-model work that should land before the React rebuild, plus small 
 | Post-CSRF hardening | S | `ProxyFix` for `X-Forwarded-Proto` (do near Redis — also fixes rate-limiter IP keying); `/logout` GET→POST (forgeable); privacy-line for the anon session cookie. |
 | Trigger review cleanups | S | Accepted low-risk findings: add `source` DB CHECK; non-ASCII case-fold; history N+1; chip ✕-remove; fieldset/legend a11y; rename reused `symptom-*` CSS classes; reconcile seed↔custom name collision when the seed list grows. |
 | AI check-in — episode duration capture | S | Check-in ignores `Episode.duration_hours`. Add duration to the schema + parse ("24/7 headache for 7 days" = one long episode). Fast-follow to tz. **Gated on the "is episode length useful?" investigation** (Needs Investigation) — don't build duration UI until that resolves. |
-| AI check-in — response tone: fewer words, less sympathy | S | The prompt over-does empathy — "You are a warm, empathetic health companion" + repeated "warm" / "warm 1-3 sentence reply" (`build_system_prompt`, app.py). A chronic-illness user hears a fresh "I'm so sorry" every single day; daily sympathy grates and gets heavier, not lighter (Missy 7/20). Retune `suggested_response` to briefer, matter-of-fact, **validating-not-pitying** copy. Pure prompt-copy — no schema change, independently shippable. Feeds the rebuild's converse job (below) so the tuned voice carries forward. |
 | Richer delete protection for preventatives | S | Informed confirmation (history count) or soft-delete/archive. Decision pending: count vs. archive. |
 | YouTube feature-update videos | S | Record short walkthroughs; surface on Help + in update emails. No app change to start. |
 
@@ -139,6 +138,17 @@ Condensed record of completed work; full detail in the Decision Log where marked
 ---
 
 ## Decision Log
+
+### Blank-name validation + AI check-in tone
+**August 12, 2026.** Two small independent fixes.
+
+**Blank names (closed the last open bug).** `new_protocol`, `new_rescue_option`, `new_experiment` only checked `if name_val and len(name_val) > 200`, so an empty name created a nameless record. `new_symptom`/`edit_symptom` guarded but **redirected silently** — the user pressed Save, landed back on the list, and nothing said why. All now `flash` + re-render the same form.
+
+**Review found the fix was half done — and the half I missed was worse.** Both QA and Code independently flagged that the three *edit* routes had the identical gap: `edit_protocol`, `edit_rescue_option`, `edit_experiment` would **overwrite a live record's name with empty behind a success flash**. Reproduced before fixing (a protocol renamed to `''`), then fixed and re-verified on all three including whitespace-only input. A nameless new row is noise; a blanked existing name propagates to the dashboard, the protocol lists, the charts, and the AI prompt's protocol list — where name-matching would then match against an empty string. Lesson recorded in CONVENTIONS: **add the guard on both the create and the edit path.**
+
+**AI tone (owner feedback 7/20).** The prompt opened "You are a warm, empathetic health companion" and asked for "warm" replies throughout; a chronic-illness user hearing a fresh "I'm so sorry" daily finds it grating and it makes the condition feel heavier. Replaced with a calm/practical framing plus an explicit TONE block using do/don't examples (models follow examples better than adjectives): no sympathy openers, no moralising about missed protocols, no exclamation marks unless the user used one. Verified against the real model, not just read back — output went from sympathy-first to `"Logged — episode at 7/10, magnesium missed (third time this week). Any sense of when it started today?"`.
+
+**Code review caught a genuine hazard in my own example copy:** the do/don't exemplar included "That's three this week," but `build_system_prompt` passes the model **no episode-count data** — it would have been inviting fabricated statistics into a health log. Removed. Also softened the fallback from `'Logged.'` to `'Noted.'`, since that string also fires when nothing was actually written.
 
 ### FK cleanup — Increment 2: the database owns cascading (completes the milestone)
 **August 8, 2026:** Removed the hand-ordered child cleanup; `passive_deletes=True` on 11 relationships means SQLAlchemy no longer loads and deletes children in Python. `delete_account` went from ~14 bulk deletes to `db.session.delete(user)`; `delete_protocol` from 4 statements to 1; `delete_episode` no longer manually detaches check-ins; `dev_reset` from 11 statements to 6. Net **app.py −55/+30**, concentrated in the delete paths where the ordering was the fragile part.

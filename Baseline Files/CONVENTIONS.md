@@ -246,6 +246,25 @@ here in the same commit.
 - Never trust a client-supplied `user_id`; derive it from the session (`get_user()`).
 
 ## Validation
+- **Required fields are rejected server-side, always.** `required` in the HTML is a
+  convenience, not a guard — a raw POST, devtools, or JS-off walks straight past it.
+  Write `if not name_val:` **before** the length check and **before** any assignment
+  to the model, so a rejected edit can't half-apply.
+- **Where to send the user, by surface** (both are correct; pick by shape):
+  - **Dedicated create/edit page** → `flash(...)` + `render_template(<same form>,
+    <the same context the GET branch passes>)`. Context parity matters — drop
+    `preventatives`, `today`, `prefill_protocol_id` or `active_experiment` and the
+    re-rendered form is subtly broken. Exemplars: `new_protocol`, `new_experiment`,
+    `edit_symptom`.
+  - **Inline row action on a list page** → `flash(...)` + `redirect(<the list>)`.
+    There is no single form to re-render. Exemplar: `rename_trigger`.
+- **Never reject silently.** `new_symptom`/`edit_symptom` used to `redirect` with no
+  flash on a blank name: the user pressed Save, landed back on the list, and nothing
+  told them why. Same family as the banned silent no-op above.
+- History: the create routes shipped without a blank-name guard and produced nameless
+  records (8/8/26); the **edit** routes had the identical gap and were worse — a blank
+  name overwrote a live record's name behind a success flash (8/12/26). Both fixed.
+  If you add a named record, add the guard on **both** the create and the edit path.
 - Text caps: name ≤ 200, description/notes ≤ 500 (with a UI counter). Enforce on
   **every** write path for the same field — form, AI check-in, and dashboard/JSON —
   not just one.
