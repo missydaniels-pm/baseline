@@ -29,10 +29,21 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Shell form so $PORT expands — Railway injects it at runtime.
+# Railway injects PORT (8080 on this service — confirmed in the deploy logs) and
+# gunicorn binds it, so the fallback below is only for running this image
+# outside Railway. 8080 matches Railway's convention.
+#
+# NOTE: the container listening on the right port is only half of it. Railway's
+# public domain has its own target port, and if that still points at whatever
+# the previous deployment used, every request 502s while the deployment shows
+# ACTIVE and the logs look perfectly healthy. "Deployed" and "reachable" are
+# different things.
+EXPOSE 8080
+
+# Shell form so $PORT expands.
 # --timeout 120 because the AI check-in makes the Anthropic call in-request and
 # can exceed gunicorn's 30s default, which would turn working check-ins into
 # 502s. One worker, matching the previous single-process behaviour: adding
 # workers would make the startup migrations run concurrently, which is a
 # separate change and not one to bundle in here.
-CMD gunicorn app:app --bind 0.0.0.0:${PORT:-8000} --timeout 120
+CMD gunicorn app:app --bind 0.0.0.0:${PORT:-8080} --timeout 120
