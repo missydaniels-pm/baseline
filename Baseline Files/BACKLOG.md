@@ -25,7 +25,8 @@ Backend / data-model work that should land before the React rebuild, plus small 
 |---|---|---|
 | **Pre-rebuild exit gate — full code + documentation review (Fable)** ✅ **Complete 8/12/26** | M | **Run 8/12/26 — full report + verdicts + punch-list: `EXIT-GATE-REVIEW-2026-08.md`.** Verdicts: Q1 foundation Ready-with-conditions (live schema verified clean on staging **and** prod); Q2 systems Not-ready (no backups verified, no observability, no CI — each small); Q3 onboarding Ready-with-conditions (~80% doc-claim hit rate; misses enumerated). 13 findings; the ranked pre-rebuild punch-list (backups → threads → Sentry → dead startup paths → CI → ProxyFix → small correctness sweep → doc fixes) lives in the report, item by item, and is the working list before the rebuild starts. Two behavioral doc claims it found were corrected in the same commit. **Owner decision 8/12/26** (original scoping): Before the React rebuild starts, run a full-codebase review and a full documentation review using the **Fable** model, rather than the per-increment Sonnet reviews used during the build. Rationale: the per-increment reviews are scoped to a diff and have repeatedly caught defects but by construction can't see whole-codebase drift — and two days running the recurring miss was *class-vs-instance* (a fix applied to the routes in front of me but not their siblings), which is exactly what a whole-codebase pass finds. Docs review matters equally: TECHNICAL_README carried two stale delete descriptions for four days after FK Increment 2 changed the behaviour. Run it as the last pre-rebuild step so the rebuild starts from a verified baseline. **This is now the only firm pre-rebuild blocker** (8/13/26 — multi-episode check-in and duration capture both deferred to React). |
 
-| **Exit-gate punch-list** (working list from `EXIT-GATE-REVIEW-2026-08.md` §4) | — | **1 Backups (F2):** owner action, in progress 9/4/26 (Railway dashboard). **2 Concurrency (F1):** ✅ **built 9/4/26** — `--threads 4` + Anthropic client bound + `pool_pre_ping`; → *DL* "Gunicorn threads". **3 Observability (F3):** open — needs a Sentry account/DSN from the owner. **4 Dead startup paths (F4):** open. **5 CI:** open — next after threads lands, so the rest of the list runs under a regression net. **6 ProxyFix + `SESSION_COOKIE_SECURE` (F5/F10):** open — needs one prod log line first. **7 Correctness sweep (F7+F8+F9):** open. **8 Doc fixes §3 items 3–7:** open (1–2 done 8/12). |
+| **Nightly encrypted `pg_dump` → Cloudflare R2 + tested restore (exit-gate F2)** | M | **Next build item.** Decided 9/4/26 (→ *DL* "Backups — plan"). Owner side first: R2 bucket + API token + a backup passphrase, all via **step-by-step instructions written for the Cloudflare dashboard as it looks today** (Missy tried the R2/API-token flow once and got lost — the walkthrough must be the first thing the next session produces, before any code). Then: a small Railway cron service (Postgres client + ~40-line script), 03:00 America/Los_Angeles nightly, **production only** (staging is seeded data), 30 daily copies, `BACKUPS.md` runbook, and the **restore drill into staging with row-count verification — the drill is the deliverable.** |
+| **Exit-gate punch-list** (working list from `EXIT-GATE-REVIEW-2026-08.md` §4) | — | **1 Backups (F2):** **decided 9/4/26, build next session** — option B, nightly encrypted `pg_dump` → Cloudflare R2; → *DL* "Backups — plan" and the dedicated row below. **2 Concurrency (F1):** ✅ **deployed to production 9/4/26, verified** — `--threads 4` + Anthropic client bound + `pool_pre_ping`; → *DL* "Gunicorn threads". **3 Observability (F3):** open — needs a Sentry account/DSN from the owner. **4 Dead startup paths (F4):** open. **5 CI:** open — next after threads lands, so the rest of the list runs under a regression net. **6 ProxyFix + `SESSION_COOKIE_SECURE` (F5/F10):** open — needs one prod log line first. **7 Correctness sweep (F7+F8+F9):** open. **8 Doc fixes §3 items 3–7:** open (1–2 done 8/12). |
 
 ### Follow-ups (small, do anytime)
 | Item | Size | Notes |
@@ -147,6 +148,42 @@ Condensed record of completed work; full detail in the Decision Log where marked
 ---
 
 ## Decision Log
+
+### Backups — plan (exit-gate F2): nightly encrypted `pg_dump` to R2, restore drill into staging
+**September 4, 2026.** Punch-list item 1. Owner checked the Railway dashboard: the Postgres service has
+**no backup schedule**, scheduled backups and PITR are **Pro-plan only** (Baseline is on the free
+tier), and the two "Pre-Security-Patch Backup" entries shown (218 MB, 13 days / 1 month old) are
+**Railway-initiated snapshots taken before their own patches** — not a schedule, not under our
+control, and it is unconfirmed whether a free-tier account can even restore one. So as of today
+19 users' health histories have no backup we own and no restore anyone has run. Read-only checks
+from the CLI: the Postgres service exposes a public TCP-proxy URL (`DATABASE_PUBLIC_URL`), so an
+external job can reach it; the installed CLI (5.27.0) predates the `railway postgres` commands
+announced in Railway's 9/4/26 changelog (`railway upgrade` gets them; PITR stays Pro-gated).
+
+**Options weighed (learning-project trade-off):**
+- **A. Railway Pro (~$20/mo):** zero engineering, scheduled volume backups + PITR, dashboard
+  restore. Long-term: recurring cost, and the backups live in the same account as the database —
+  a lost account or lapsed billing loses both. Restore still untested until tried.
+- **B. Own nightly `pg_dump`** on a small Railway cron service, encrypted, uploaded to Cloudflare
+  R2 (free tier 10 GB; DNS is already on Cloudflare). ~half a day. Long-term: $0,
+  provider-independent, encrypted with a key only the owner holds, retention we control, and
+  restoring into staging becomes a repeatable drill. Rule 1 clean (separate service, not the app).
+- **C. Same as B from GitHub Actions:** free, no new service — but DB credentials and unencrypted
+  health data pass through GitHub's runners. Weakest fit with privacy-first.
+
+**Owner decision: B.** Schedule **03:00 America/Los_Angeles nightly**; **production only**
+(staging is seeded data); **30 daily copies** retained; dumps **encrypted before upload** with a
+passphrase held in Railway variables *and* the owner's password manager (an encrypted backup
+without its key is worthless). Revisit A when Baseline has revenue or needs HA. **Rebuild check:**
+does not obviate this — the rebuild keeps Postgres on Railway, and it is exactly when an untested
+restore path bites. **The deliverable is the restore drill**, not the upload: pull one dump,
+restore into staging, verify row counts match production.
+
+**Deferred to a later session (owner decision, 9/4/26).** Split of work when it resumes:
+*owner* creates the R2 bucket + API token and sets the Railway variables (Claude can't create
+accounts or enter credentials) — and needs **step-by-step instructions for the Cloudflare
+dashboard**, written first, because a previous solo attempt at the R2/API-token flow went
+nowhere; *Claude* writes the service, script, retention, `BACKUPS.md`, and runs the drill.
 
 ### Gunicorn threads — the app no longer serves one request at a time (exit-gate F1)
 **September 4, 2026.** Punch-list item 2. Until now the Dockerfile `CMD` ran gunicorn as **one sync

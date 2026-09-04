@@ -289,10 +289,13 @@ public-domain **target port** still pointed at the previous deployment's port, s
   is **hardening, not a fix** — the familiar "shell form leaves `sh` as PID 1 and swallows SIGTERM"
   story was tested 8/13/26 and did not reproduce (`sh -c '<single command>'` implicit-execs), so it
   just makes the guarantee explicit and fails safe if a second command is ever appended. PID 1 in the
-  real container is unverified.
+  real container: **verified 9/4/26** — both the staging and production boot logs show the gunicorn
+  master logging as `[1]` (`Listening at … (1)`), so gunicorn is PID 1 and receives SIGTERM directly.
+  *(The Dockerfile's own comment still says "NOT verified" — retire it in the next commit that touches
+  the Dockerfile; a comment-only change there rebuilds the image, so it wasn't bundled into a docs commit.)*
   *(Corrected 8/13/26: this line read "gunicorn, Python 3.13" — gunicorn was not actually running
   at all before 8/12/26, and the version became 3.10 when the build moved to the Dockerfile.)*
-- **Postgres** — PostgreSQL database with persistent volume
+- **Postgres** — PostgreSQL database with persistent volume. **No backups we own (9/4/26):** free tier, no schedule; Railway's own pre-patch snapshots are not under our control. Plan decided: nightly encrypted `pg_dump` → Cloudflare R2 with a tested restore into staging — BACKLOG *DL* "Backups — plan", not yet built.
 
 ### Database Handling
 - Production: `DATABASE_URL` environment variable (Railway reference). Engine options set `pool_pre_ping=True` (9/4/26): Railway's Postgres drops idle connections and a dead pooled connection was being handed to the next request — seen on staging as a `/login` 500 with `SSL SYSCALL error: EOF detected`. pre_ping checks the connection on checkout and replaces it transparently; added with `--threads 4` because more request threads means more idle pooled connections.
