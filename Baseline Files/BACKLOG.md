@@ -25,6 +25,8 @@ Backend / data-model work that should land before the React rebuild, plus small 
 |---|---|---|
 | **Pre-rebuild exit gate — full code + documentation review (Fable)** ✅ **Complete 8/12/26** | M | **Run 8/12/26 — full report + verdicts + punch-list: `EXIT-GATE-REVIEW-2026-08.md`.** Verdicts: Q1 foundation Ready-with-conditions (live schema verified clean on staging **and** prod); Q2 systems Not-ready (no backups verified, no observability, no CI — each small); Q3 onboarding Ready-with-conditions (~80% doc-claim hit rate; misses enumerated). 13 findings; the ranked pre-rebuild punch-list (backups → threads → Sentry → dead startup paths → CI → ProxyFix → small correctness sweep → doc fixes) lives in the report, item by item, and is the working list before the rebuild starts. Two behavioral doc claims it found were corrected in the same commit. **Owner decision 8/12/26** (original scoping): Before the React rebuild starts, run a full-codebase review and a full documentation review using the **Fable** model, rather than the per-increment Sonnet reviews used during the build. Rationale: the per-increment reviews are scoped to a diff and have repeatedly caught defects but by construction can't see whole-codebase drift — and two days running the recurring miss was *class-vs-instance* (a fix applied to the routes in front of me but not their siblings), which is exactly what a whole-codebase pass finds. Docs review matters equally: TECHNICAL_README carried two stale delete descriptions for four days after FK Increment 2 changed the behaviour. Run it as the last pre-rebuild step so the rebuild starts from a verified baseline. **This is now the only firm pre-rebuild blocker** (8/13/26 — multi-episode check-in and duration capture both deferred to React). |
 
+| **Exit-gate punch-list** (working list from `EXIT-GATE-REVIEW-2026-08.md` §4) | — | **1 Backups (F2):** owner action, in progress 9/4/26 (Railway dashboard). **2 Concurrency (F1):** ✅ **built 9/4/26** — `--threads 4` + Anthropic client bound + `pool_pre_ping`; → *DL* "Gunicorn threads". **3 Observability (F3):** open — needs a Sentry account/DSN from the owner. **4 Dead startup paths (F4):** open. **5 CI:** open — next after threads lands, so the rest of the list runs under a regression net. **6 ProxyFix + `SESSION_COOKIE_SECURE` (F5/F10):** open — needs one prod log line first. **7 Correctness sweep (F7+F8+F9):** open. **8 Doc fixes §3 items 3–7:** open (1–2 done 8/12). |
+
 ### Follow-ups (small, do anytime)
 | Item | Size | Notes |
 |---|---|---|
@@ -145,6 +147,61 @@ Condensed record of completed work; full detail in the Decision Log where marked
 ---
 
 ## Decision Log
+
+### Gunicorn threads — the app no longer serves one request at a time (exit-gate F1)
+**September 4, 2026.** Punch-list item 2. Until now the Dockerfile `CMD` ran gunicorn as **one sync
+worker**: the whole app handled exactly one request at a time, and the two documented Rule 2
+deviations (in-request Anthropic call, in-request Resend send) sat in that single slot. **Reproduced
+on staging before changing anything:** a public `GET /login` fired while a seeded user's check-in
+was in flight waited **3.4s** behind the check-in's 4.9s. Locally, under the same CMD, a `/login`
+behind one 6s request took 5.5s; with `--threads 4` and *three* 6s requests in flight, 0.01s.
+
+**Shipped:** `--threads 4` on the gunicorn CMD (gunicorn switches to the gthread worker class).
+Still **one worker** — the import-time migrations must not run concurrently, and threads don't
+re-import, which is exactly why threads and not workers; the durable unlock for >1 worker (a
+guarded migration step) stays on the rebuild list. Rule 1 audit before choosing threads: no
+module-level mutable state beyond `FK_SCHEMA_PROBLEMS` (written once at boot), sessions are signed
+cookies, the SQLAlchemy session is context-scoped, `log_activity()` draws from the engine pool,
+Flask-Limiter's memory store locks per key (and is *more* correct across threads of one process
+than across workers). `resolve_onset()`/dateparser hammered from 8 threads × 1,200 calls: zero
+errors, zero mismatches. Pool headroom: a request can hold two connections (ORM session +
+`log_activity`), so 4 threads = 8 worst case against the default 15.
+
+**A consequence that had to be handled, not just noted:** under gthread, `--timeout` is a
+*worker-liveness heartbeat*, not a per-request cap — verified, a 6s request completes under
+`--timeout 3`. The sync worker had been imposing a blunt 120s bound on a hung Anthropic call by
+killing the worker (502 to the user); with threads that bound vanished, and the SDK's defaults are
+600s × 2 retries — one hung upstream could pin a thread for ~30 minutes, four of them re-create
+today's failure. So `parse_checkin()` now sets `timeout=60, max_retries=1` (≈ the old 120s, per
+call, and the user gets a reply instead of a 502) and handles the failure: unreachable / timeout /
+429 / 5xx → a "couldn't reach the AI service, send it again" assistant reply; **400/403/404/422 →
+a distinct "rejected, resending won't help" reply logged at ERROR** — reviewers (QA + Code,
+independently) caught that the first cut folded a malformed-request bug into the transient
+wording, which would have hidden a shipped defect behind "try again". Nothing is written on any of
+these; the reply is persisted as the assistant turn exactly like the pre-existing auth-failure
+branch. Resend's SDK already carries an implicit 30s default (verified in `resend` 2.28.0), so
+email was never unbounded — recorded here so the bound is stated, not assumed. New suite
+**`test_checkin_failures.py`** covers all four paths against a local stub endpoint.
+
+**Found on the way — `pool_pre_ping`.** The first probe against staging 500'd on `/login`:
+`psycopg2.OperationalError: SSL SYSCALL error: EOF detected` — Railway's Postgres had dropped an
+idle pooled connection and SQLAlchemy handed it to the next request. Pre-existing (an idle
+single-threaded pool hits it too), but threads enlarge the idle pool, and it is precisely the
+invisible production 500 the exit gate's F3 describes. `SQLALCHEMY_ENGINE_OPTIONS =
+{'pool_pre_ping': True}` on the Postgres branch: test-on-checkout, transparent replace,
+engine-level so it also covers `log_activity`'s standalone connections and the migration
+connections. **Decision: no speculative `pool_recycle`** (QA suggested it; Code Review advised
+against guessing a number) — if the same error recurs after pre_ping ships, size a recycle off
+Railway's observed limit then.
+
+**Reviews:** QA 0 blockers / 2 warnings; Code 0 blockers / 4 warnings; UX not triggered. Fixed: the
+except-branch split (both), a committed regression test (Code), comment precision on pool sizing
+and on pre_ping's causality (Code). Raised as decisions: explicit Resend timeout (A1) and
+`pool_recycle` (A2) — see the deploy-gate record in the session.
+
+**Staging verification plan (artifact, not badge):** `railway logs -d` right after boot must show
+`Using worker: gthread`; then re-run the same probe — the concurrent `GET /login` should return in
+well under a second while a check-in is in flight, against the 3.4s baseline recorded above.
 
 ### Episode diary — Layer A (data structures only, pre-rebuild schema)
 **August 13, 2026.** Built the schema the React rebuild's diary feature will need, and *only* the
@@ -280,7 +337,7 @@ rather than being an instruction to be diligent.
 
 **Deliberately conservative choices.** Gunicorn defaults to **one worker**, matching today's single-process behaviour — adding workers would make the startup migrations run concurrently, which is a separate risk not worth bundling into a security fix. `--timeout 120` because the in-request Anthropic check-in call can exceed gunicorn's 30s default, which would have turned working check-ins into 502s. Python pinned to **3.10** via `.python-version` to match the tested dev version; the builder had drifted to 3.13.14.
 
-> **Superseded 8/13/26 on two points.** (a) `.python-version` and the `Procfile` were both **deleted** — once the build moved to the Dockerfile, Railway stopped reading either one, and the real pin is the `python:3.10-slim` base image. (b) The `CMD` was changed to `sh -c "exec gunicorn …"` — **hardening, not a bug fix.** The obvious "shell form makes gunicorn a child of `sh`, which swallows SIGTERM" story was tested and did **not** reproduce (`sh -c '<single command>'` implicit-execs), so redeploys were almost certainly already draining; `exec` just makes that explicit and fails safe. See the "Deploy-truth cleanup" entry **above** for the full account. *(This blockquote first read the disproven story as settled fact — corrected 8/13/26 after QA flagged it, itself a fresh instance of the exact write-it-thrice-verify-it-never pattern this session exists to kill.)*
+> **Superseded 8/13/26 on two points** (and on 9/4/26 a third: `--threads 4` was added to the `CMD` — exit-gate F1, see its Decision Log entry; still one *worker*, for the migration reason given here). (a) `.python-version` and the `Procfile` were both **deleted** — once the build moved to the Dockerfile, Railway stopped reading either one, and the real pin is the `python:3.10-slim` base image. (b) The `CMD` was changed to `sh -c "exec gunicorn …"` — **hardening, not a bug fix.** The obvious "shell form makes gunicorn a child of `sh`, which swallows SIGTERM" story was tested and did **not** reproduce (`sh -c '<single command>'` implicit-execs), so redeploys were almost certainly already draining; `exec` just makes that explicit and fails safe. See the "Deploy-truth cleanup" entry **above** for the full account. *(This blockquote first read the disproven story as settled fact — corrected 8/13/26 after QA flagged it, itself a fresh instance of the exact write-it-thrice-verify-it-never pattern this session exists to kill.)*
 
 **Process failure worth recording:** the deploy that surfaced this was pushed to `staging` and `main` in the same command, without waiting for or verifying the staging build. Staging was a waypoint, not a gate. Had it been a gate, the failed build would have stopped at staging and production would never have been touched. `STAGING_SETUP.md` documents the correct flow; it was not followed.
 

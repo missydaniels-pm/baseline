@@ -133,7 +133,7 @@ Two distinct failure modes — keep them separate. **Rule 1 is about *where stat
 
 **Interaction with Rule 1 (important):** the mechanism you defer work *to* must itself be stateless — use a shared queue/worker (e.g. Redis + RQ/Celery), not an in-process thread or a scheduler pinned to one instance. An in-process deferral would satisfy Rule 2 but *violate Rule 1*.
 
-**Known deviations** (latent at single-instance/low load): (1) transactional email (verification/welcome) runs in-request — P2 "provision Redis + move email to a background job" is the fix; (2) AI check-in runs the Anthropic call in-request — durable fix is the async-job pattern, a natural fit for the React rebuild. Both are throughput items, not per-server state.
+**Known deviations** (latent at single-instance/low load): (1) transactional email (verification/welcome) runs in-request — P2 "provision Redis + move email to a background job" is the fix; (2) AI check-in runs the Anthropic call in-request — durable fix is the async-job pattern, a natural fit for the React rebuild. Both are throughput items, not per-server state. **Until 9/4/26 they were sharper than "latent":** gunicorn ran one *sync* worker, so the app served exactly one request at a time and either call stalled every other user (exit-gate F1). `--threads 4` in the Dockerfile `CMD` is the mitigation, not the fix — with 4 threads the deviations are back to latent, and they stand until Redis/async lands. Under the resulting gthread worker `--timeout` no longer caps a request, so the check-in's Anthropic client carries its own `timeout`/`max_retries` — keep that bound when touching `parse_checkin()`. (Resend's SDK has an implicit 30s default, verified 9/4/26 — stated here so it isn't assumed.) `test_checkin_failures.py` covers the failure replies.
 
 ### Rule 3 — Converge, Don't Diverge
 
@@ -147,7 +147,7 @@ Two distinct failure modes — keep them separate. **Rule 1 is about *where stat
 
 **Monolith-first:** Flask serves HTML via Jinja2 templates. This was the right call for MVP speed. A React frontend rebuild is planned post-vacation (April/May 2026) once the product stabilizes at 20-30 users. The React rebuild is a deliberate learning project, not just a refactor.
 
-**Database:** SQLite locally (no setup required), PostgreSQL in production. The DATABASE_URL environment variable controls which is used. The postgres:// → postgresql:// rewrite is handled in app.py.
+**Database:** SQLite locally (no setup required), PostgreSQL in production. The DATABASE_URL environment variable controls which is used. The postgres:// → postgresql:// rewrite is handled in app.py, and the PostgreSQL engine sets `pool_pre_ping=True` (9/4/26 — Railway drops idle connections; without it the first request after an idle spell could 500 on a dead pooled connection).
 
 **Auth:** Self-serve registration with email verification. Flow: `/register` creates inactive user + sends signed itsdangerous token (24h TTL) → user clicks `/verify/<token>` → `verified_at` set, `is_active=True`, welcome email sent, logged in. Used tokens hashed into `used_verify_tokens` to block replay. Unverified accounts deleted after 48h by `cleanup_stale_unverified_users()` at startup. Flask-Limiter: 5/hour register + resend, 20/hour login. Disposable-email blocklist. Privacy policy acknowledgment required (server-enforced). `InviteCode` + `/dev/create-invite` retained for admin manual onboarding.
 

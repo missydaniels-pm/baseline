@@ -32,7 +32,16 @@ if database_url:
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {}
+    # pool_pre_ping (9/4/26): Railway's Postgres drops idle connections, and a
+    # pooled connection that died while idle was handed straight to the next
+    # request — seen on staging as a 500 on /login with
+    # `psycopg2.OperationalError: SSL SYSCALL error: EOF detected`. pre_ping
+    # issues a trivial SELECT on checkout and transparently replaces a dead
+    # connection. Found while probing staging for the --threads 4 change, not
+    # caused by it — an idle single-threaded pool hits the same drop — but more
+    # request threads means a bigger idle pool, so it shipped in the same pass.
+    # Engine-level, so it also covers log_activity()'s standalone connections.
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'pool_pre_ping': True}
 else:
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///migraine_tracker.db'
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
@@ -2214,13 +2223,29 @@ Always populate suggested_response. Keep it to 1-2 short sentences: what you log
 plus a factual observation only if it's genuinely useful. No sympathy opener."""
 
 
+# Assistant-reply text for a check-in the AI call couldn't complete. Both are
+# persisted as the assistant turn (like the auth-failure text) and nothing else
+# is written; the user's message is not lost — it's on screen to resend.
+CHECKIN_TRANSIENT_MSG = ("I couldn't reach the AI service just now, so nothing was logged. "
+                         "Please send that again in a moment.")
+CHECKIN_REJECTED_MSG = ("The AI service rejected that request, so nothing was logged. "
+                        "Resending won't fix this one — if it keeps happening, please report it.")
+
+
 def parse_checkin(user, message_text, client_time=None):
     api_key = os.environ.get('ANTHROPIC_API_KEY')
     if not api_key:
         return None, 'ANTHROPIC_API_KEY is not set.'
 
-    from anthropic import Anthropic, AuthenticationError
-    client = Anthropic(api_key=api_key)
+    from anthropic import Anthropic, AuthenticationError, APIConnectionError, APIStatusError
+    # Explicit per-call bound (9/4/26, exit-gate F1). Since the Dockerfile CMD
+    # runs gunicorn with --threads 4 (gthread), gunicorn's --timeout no longer
+    # caps a request — it's a worker heartbeat — and the SDK's defaults are a
+    # 600s timeout with 2 retries, so a hung upstream would hold one of the four
+    # request threads for up to ~30 minutes. 60s × (1 + 1 retry) ≈ the 120s
+    # bound the old sync worker imposed by killing the worker, but per call,
+    # and the user gets a reply instead of a 502. Keep in step with the CMD.
+    client = Anthropic(api_key=api_key, timeout=60.0, max_retries=1)
 
     cutoff = datetime.utcnow() - timedelta(days=7)
     history = CheckIn.query.filter(
@@ -2240,6 +2265,22 @@ def parse_checkin(user, message_text, client_time=None):
         )
     except AuthenticationError:
         return None, 'API authentication failed. Check your ANTHROPIC_API_KEY in .env and restart the server.'
+    except APIConnectionError as e:
+        # Timeout (APITimeoutError ⊂ APIConnectionError) or network failure.
+        # Same shape as the auth failure above: the message becomes the
+        # assistant reply and nothing is written — the user resends.
+        app.logger.warning('checkin: Anthropic unreachable: %s: %s', type(e).__name__, e)
+        return None, CHECKIN_TRANSIENT_MSG
+    except APIStatusError as e:
+        if e.status_code == 429 or e.status_code >= 500:
+            # Rate-limited / upstream outage — genuinely transient, resend helps.
+            app.logger.warning('checkin: Anthropic transient failure: %s: %s', type(e).__name__, e)
+            return None, CHECKIN_TRANSIENT_MSG
+        # 400/403/404/422…: a request WE built wrong, or a model/param that no
+        # longer exists. Resending won't help, so say so, and log at ERROR so it
+        # doesn't blend into network flakiness (review finding 9/4/26).
+        app.logger.error('checkin: Anthropic rejected the request: %s: %s', type(e).__name__, e)
+        return None, CHECKIN_REJECTED_MSG
 
     raw = response.content[0].text
 

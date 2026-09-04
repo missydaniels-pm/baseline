@@ -17,9 +17,9 @@ Live at: **https://mybaselineapp.com** (custom domain; Railway default: baseline
 - **Backend:** Python 3.10, Flask
 - **Database:** SQLAlchemy ORM — PostgreSQL (production), SQLite (local dev). Local SQLite enforces foreign keys (`PRAGMA foreign_keys=ON` on every connection, set in `database.py`) so FK-unsafe deletes fail in dev the same way they would on production PostgreSQL (added 7/12/26 after the protocol-delete incident).
 - **Frontend:** Jinja2 templates, vanilla JavaScript, Chart.js
-- **AI:** Anthropic API (claude-sonnet-4-6) for check-in parsing. Onset is **classify-and-resolve** (7/17/26): the model returns a time phrase + type (never a computed date); `resolve_onset()` resolves it deterministically against the message anchor using **`dateparser`** + a colloquial-normalization layer, never logging a future onset.
+- **AI:** Anthropic API (claude-sonnet-4-6) for check-in parsing. Onset is **classify-and-resolve** (7/17/26): the model returns a time phrase + type (never a computed date); `resolve_onset()` resolves it deterministically against the message anchor using **`dateparser`** + a colloquial-normalization layer, never logging a future onset. The client call is bounded (`timeout=60`, `max_retries=1` — gunicorn's `--timeout` no longer caps a request under gthread, 9/4/26) and a failed call never 500s: unreachable/timeout/429/5xx → a "couldn't reach the AI service, send it again" assistant reply; 400-class rejections → a distinct "resending won't help" reply logged at ERROR. Nothing is written either way; `test_checkin_failures.py` covers all four.
 - **Auth:** Flask sessions, bcrypt password hashing, self-serve registration with email verification (itsdangerous signed tokens, 24h TTL), Flask-Limiter rate limiting, CSRF protection (Flask-WTF)
-- **Hosting:** Railway. Built from the repo's **`Dockerfile`** (`python:3.10-slim`), not Railway's railpack/`mise` builder — the base image is what pins the runtime. The Dockerfile's `CMD` (gunicorn, 1 worker, `--timeout 120`) is the **only in-repo definition of how the app starts**; there is deliberately no Procfile. **Caveat:** Railway's dashboard **Custom Start Command** field overrides the image `CMD` at the deploy layer and does not appear in `railway logs --build`, so "the Dockerfile decides" only holds while that field is blank — confirm it (STAGING_SETUP.md verification list). Two environments: `staging` branch → staging, `main` branch → production.
+- **Hosting:** Railway. Built from the repo's **`Dockerfile`** (`python:3.10-slim`), not Railway's railpack/`mise` builder — the base image is what pins the runtime. The Dockerfile's `CMD` (gunicorn, 1 worker × `--threads 4`, `--timeout 120`) is the **only in-repo definition of how the app starts**; there is deliberately no Procfile. **Caveat:** Railway's dashboard **Custom Start Command** field overrides the image `CMD` at the deploy layer and does not appear in `railway logs --build`, so "the Dockerfile decides" only holds while that field is blank — confirm it (STAGING_SETUP.md verification list). Two environments: `staging` branch → staging, `main` branch → production.
 - **PWA:** manifest.json, service worker, home screen icons (Pillow-generated)
 
 ---
@@ -273,10 +273,19 @@ public-domain **target port** still pointed at the previous deployment's port, s
 
 ### Railway Services
 - **baseline** — Flask app on **Python 3.10** (from the `python:3.10-slim` base image), served by
-  **gunicorn** via the Dockerfile `CMD`: one worker, `--timeout 120`, bound to `$PORT` (8080).
+  **gunicorn** via the Dockerfile `CMD`: one worker, **`--threads 4`** (gthread worker class),
+  `--timeout 120`, bound to `$PORT` (8080).
   One worker matches the historical single-process behaviour — more workers would run the startup
-  migrations concurrently. `--timeout 120` because the AI check-in's Anthropic call is in-request
-  and would exceed gunicorn's 30s default. `CMD` uses `sh -c "exec gunicorn …"`; the explicit `exec`
+  migrations concurrently (a guarded migration step is the prerequisite for that, rebuild-era).
+  **`--threads 4` (9/4/26, exit-gate F1)** is what lets the app serve more than one request at a
+  time: before it a single *sync* worker served exactly one request at a time, so any one user's
+  in-request Anthropic or Resend call stalled every other user's every request for up to 120s
+  (measured locally: a `/login` behind one 6s request took 5.5s; 0.01s with threads). Threads
+  are Rule 1 clean (signed-cookie sessions, thread-local DB session, pooled `log_activity`
+  connections) and don't re-run the import-time migrations. **Under gthread, `--timeout` is a
+  worker-liveness heartbeat, not a per-request cap** (verified: a 6s request completes under
+  `--timeout 3`); the per-call bound on the check-in is the Anthropic client's own
+  `timeout`/`max_retries` in `parse_checkin()`. `CMD` uses `sh -c "exec gunicorn …"`; the explicit `exec`
   is **hardening, not a fix** — the familiar "shell form leaves `sh` as PID 1 and swallows SIGTERM"
   story was tested 8/13/26 and did not reproduce (`sh -c '<single command>'` implicit-execs), so it
   just makes the guarantee explicit and fails safe if a second command is ever appended. PID 1 in the
@@ -286,7 +295,7 @@ public-domain **target port** still pointed at the previous deployment's port, s
 - **Postgres** — PostgreSQL database with persistent volume
 
 ### Database Handling
-- Production: `DATABASE_URL` environment variable (Railway reference)
+- Production: `DATABASE_URL` environment variable (Railway reference). Engine options set `pool_pre_ping=True` (9/4/26): Railway's Postgres drops idle connections and a dead pooled connection was being handed to the next request — seen on staging as a `/login` 500 with `SSL SYSCALL error: EOF detected`. pre_ping checks the connection on checkout and replaces it transparently; added with `--threads 4` because more request threads means more idle pooled connections.
 - Local: SQLite at default path
 - `postgres://` URLs are rewritten to `postgresql://` for SQLAlchemy compatibility
 - `db.create_all()` runs outside `__name__ == '__main__'` block so gunicorn triggers table creation on first deploy

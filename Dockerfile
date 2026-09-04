@@ -76,8 +76,31 @@ EXPOSE 8080
 # NOT verified: PID 1 inside the actual Railway container. `railway ssh` +
 # `cat /proc/1/comm` would settle it and needs an SSH key generated first.
 #
-# --timeout 120: see above — gunicorn's 30s default would turn working check-ins
-# into 502s. One worker, matching the previous single-process behaviour: adding
-# workers would make the startup migrations run concurrently, which is a
-# separate change and not one to bundle in here.
-CMD ["sh", "-c", "exec gunicorn app:app --bind 0.0.0.0:${PORT:-8080} --timeout 120"]
+# One worker, matching the previous single-process behaviour: adding workers
+# would make the startup migrations run concurrently, which is a separate change
+# (a guarded migration step — advisory lock or release phase — is the
+# prerequisite; see the exit-gate review's rebuild list).
+#
+# --threads 4 (added 9/4/26, exit-gate F1). Without it gunicorn runs ONE sync
+# worker, i.e. the whole app serves exactly one request at a time, and the two
+# documented in-request blocking calls (AI check-in, transactional email) sat in
+# that single slot: one user's slow check-in stalled every other user's every
+# request for up to --timeout seconds. Measured locally before/after: a /login
+# issued while one 6s request was in flight took 5.5s under the sync worker and
+# 0.01s under --threads 4 with three such requests in flight. Threads share no
+# cross-request state (sessions are signed cookies, the SQLAlchemy session is
+# thread-local, log_activity's connections come from the engine pool), so this
+# is Rule 1 clean, and threads don't re-run the import-time migrations — which
+# is why threads and not workers. Sized 4 against SQLAlchemy's default pool
+# (5 + 10 overflow): a request can hold TWO connections at once (the ORM
+# session plus log_activity's standalone one), so 4 threads = 8 worst case;
+# raising threads past ~7 needs a pool_size decision too.
+#
+# --timeout 120: with threads > 1 gunicorn switches to the gthread worker, and
+# there --timeout is a WORKER-LIVENESS heartbeat, NOT a per-request cap — a
+# request may run past it untouched (verified: a 6s request returned 200 under
+# --timeout 3). The 120s bound the sync worker used to impose on a hung
+# Anthropic call — by killing the worker, 502 to the user — is now enforced per
+# call instead, by the explicit timeout/max_retries on the Anthropic client in
+# parse_checkin(). Keep the two in step.
+CMD ["sh", "-c", "exec gunicorn app:app --bind 0.0.0.0:${PORT:-8080} --timeout 120 --threads 4"]
