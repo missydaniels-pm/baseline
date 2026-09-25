@@ -167,7 +167,7 @@ curl -s -w " %{http_code}\n" "$URL/dev/bootstrap"                               
 
 ## The `backups` service on staging
 
-Staging also runs a copy of the **`backups`** service in **restore-drill** mode (no cron): each redeploy restores the newest *production* backup into a throwaway database on staging's Postgres, checks row counts and drops it. It never leaves production data in staging's own database. Setup and variables: `BACKUPS.md`.
+Staging also runs **`backup-drill`**, the `backups` code in **restore-drill** mode (no cron): each redeploy restores the newest *production* backup into a throwaway database on staging's Postgres, checks row counts and drops it. It never leaves production data in staging's own database. Setup and variables: `BACKUPS.md`.
 
 ## Division of labor
 

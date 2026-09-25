@@ -9,8 +9,14 @@ to get data back. If you are here because something went wrong, jump to **Emerge
 
 ## What happens every night
 
-A small Railway service called **`backups`** (code in `backups/` at the repo root) runs once a night
-in the **production** environment:
+Two Railway services are built from the same code (`backups/` at the repo root). Railway service
+names are unique across the whole project, so each is named after its job:
+
+- **`backups`** (production) runs once a night and makes the backup.
+- **`backup-drill`** (staging) restores the newest production backup whenever it's redeployed, to
+  prove it works. See **Restore drill**.
+
+Each night, `backups`:
 
 1. **Dump:** `pg_dump` copies the whole production database into one file.
 2. **Check:** the dump is only kept if `pg_restore --list` can read it back in full. A cut-off dump
@@ -24,12 +30,12 @@ in the **production** environment:
 | Setting | Value | Where it lives |
 |---|---|---|
 | Schedule | `0 10 * * *` UTC = 3am Pacific in summer (PDT), 2am in winter (PST) | Railway dashboard → production `backups` → Settings → **Cron Schedule** |
-| Environment | production only; staging runs the **restore drill** instead | Staging's `backups` has **no** Cron Schedule, so it runs only when redeployed |
+| Environment | production only; staging runs the **restore drill** instead | Staging's `backup-drill` has **no** Cron Schedule, so it runs only when redeployed |
 | Retention | 30 days, via the bucket's **Object Lifecycle Rule** `expire-after-30-days` | Cloudflare dashboard → R2 → `baseline-backups` → Settings |
 | Encryption | gpg symmetric, AES-256, passphrase in `BACKUP_PASSPHRASE` | Railway variable **and** the owner's Google Password Manager (entry `baseline-backups.local`) |
 | File names | `production/baseline-<UTC time>.dump.gpg` and `.counts.gpg` | R2 |
 
-**Who can read the backups:** anyone with the passphrase *and* R2 access, and the staging `backups`
+**Who can read the backups:** anyone with the passphrase *and* R2 access, and the staging `backup-drill`
 service holds both, because the drill has to decrypt production backups. So access to the **staging**
 environment's variables is as sensitive as access to production data. Keep the Railway project
 single-owner, and never paste staging variables anywhere.
@@ -46,10 +52,10 @@ manager, so the backups can still be opened if Railway is gone.
 
 ## Railway variables
 
-| Variable | Production `backups` | Staging `backups` | Notes |
+| Variable | Production `backups` | Staging `backup-drill` | Notes |
 |---|---|---|---|
 | `BACKUP_MODE` | `backup` | `restore-drill` | Chooses which job runs |
-| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` | (only for a staging test backup) | Reference variable, private network |
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` | — (deliberately absent, so it can't back up by mistake) | Reference variable, private network |
 | `DRILL_DATABASE_URL` | — | `${{Postgres.DATABASE_URL}}` | Staging's Postgres; the drill restores into a *new throwaway database* on that server |
 | `DRILL_SOURCE_PREFIX` | — | `production` | Which environment's backups to test |
 | `DRILL_OBJECT` | — | optional | A specific `….dump.gpg` name instead of the newest |
@@ -65,6 +71,8 @@ manager, so the backups can still be opened if Railway is gone.
   **empty**. Every `${{…}}` value here must be exactly `${{Postgres.DATABASE_URL}}`. A correct
   reference shows a link icon. If a run fails with `missing Railway variable(s): X`, this is the
   first thing to check.
+- **Service names are project-wide.** A staging service called `backups` blocks the name in
+  production, hence `backup-drill`.
 - **Renaming a service** isn't in its Settings tab. Right-click the service card → **Config** →
   **Name**.
 
@@ -77,7 +85,7 @@ of out-of-repo setting as the app's Custom Start Command, so **this table is the
 checks below confirm it. (Railway's replacement, "Infrastructure as Code", is a project-wide
 TypeScript file; evaluating it is a BACKLOG item.)
 
-| Setting (Settings tab) | Production `backups` | Staging `backups` | Why |
+| Setting (Settings tab) | Production `backups` | Staging `backup-drill` | Why |
 |---|---|---|---|
 | Source → **Root Directory** | `/backups` | `/backups` | Builds `backups/Dockerfile`, not the app |
 | Source → **Branch** | `main` | `staging` | Same branch gate as the app |
@@ -111,8 +119,8 @@ A failed run ends its log with a `FAILED: …` line that says why. **Railway ema
 Run it after setup, after any change to `backups/`, after a Postgres major-version upgrade, and every
 few months otherwise. **A backup is only trusted once a drill has passed.**
 
-1. Railway → **staging** → `backups` service → **Deployments** → latest → **⋮ → Redeploy**. The
-   staging copy has no cron schedule, so each deploy runs the drill once and exits.
+1. Railway → **staging** → `backup-drill` → **Deployments** → latest → **⋮ → Redeploy**. It has no
+   cron schedule, so each deploy runs the drill once and exits.
 2. Read its log. It:
    - downloads the newest `production/` backup and decrypts it,
    - creates a throwaway database `restore_drill_<time>` on **staging's** Postgres server,
@@ -133,6 +141,7 @@ If a drill log ever shows `could not drop restore_drill_…`, remove it by hand 
 |---|---|---|---|
 | 2026-09-25 | local test (seeded schema, fake bucket) | passed, plus failure cases | Claude |
 | 2026-09-25 | `staging/baseline-2026-09-25T205712Z` (staging's seeded data, real R2) | **passed**, 15 tables | Claude + owner |
+| 2026-09-25 | **`production/baseline-2026-09-25T212913Z`** — first production backup (real user data: 22 users, 127 episodes, 402 symptom scores, 178 check-ins) | **PASSED**, all 15 tables match; drill database dropped, none left over | Claude + owner |
 
 ---
 
@@ -174,7 +183,7 @@ reason.
 - **Changing the passphrase:** old backups still need the **old** passphrase. Keep it in the password
   manager, labelled with the date it was retired, for 30 days (until those files expire). The drill
   uses the current one, so run a drill after the next nightly backup.
-- **Rotating the R2 token:** update both `backups` services' `R2_ACCESS_KEY_ID` /
+- **Rotating the R2 token:** update both services' (`backups`, `backup-drill`) `R2_ACCESS_KEY_ID` /
   `R2_SECRET_ACCESS_KEY`, then redeploy staging to confirm with a drill.
 - **Deleting the lifecycle rule:** backups would pile up without limit. The free tier is 10 GB. The
   database was 9 MB on 9/25/26, so this would take years, but it is not intended.
@@ -189,9 +198,10 @@ reason.
 - [x] Staging test backup in the real container + real R2 (9/25). The first run exposed Debian's rclone 1.60 getting 501s from R2; now pinned to 1.75.1, and the rerun was clean
 - [x] A `backups/`-only push rebuilt the service (9/25)
 - [x] Staging drill against staging's own backup: **passed**, 15 tables, temporary database dropped, none left over (9/25)
-- [ ] Merge to `main`; production `backups` service created with the variables above
-- [ ] First production backup run by hand → file visible in R2
-- [ ] **Drill against the production backup passes** ← the deliverable
-- [ ] Both `backups` services' Settings match the dashboard-settings table above (Restart Policy **Never**, Watch Paths `/backups/**`, production cron `0 10 * * *`, no cron on staging)
+- [x] Merged to `main` (9/25); production `backups` service created with the variables above (app unchanged, standard production checks passed after the restart)
+- [x] First production backup run by hand (9/25, 21:29 UTC): 15 tables, verified in R2
+- [x] **Drill against the production backup PASSED** (9/25) ← the deliverable
+- [ ] Production `backups` Cron Schedule set to `0 10 * * *`, then the first *scheduled* run confirmed the next morning
+- [ ] Both services' Settings match the dashboard-settings table above (Restart Policy **Never**, Watch Paths `/backups/**`, production cron `0 10 * * *`, no cron on staging)
 - [ ] Watch paths: an app-only push does **not** rebuild `backups`
 - [x] Forced-failure test (9/25): one failed run with Restart Policy **Never**, and Railway **emailed the owner**
