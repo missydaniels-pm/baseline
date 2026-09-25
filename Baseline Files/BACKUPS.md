@@ -102,9 +102,7 @@ until real alerting exists (exit-gate F3):
 3. Optional: Railway → production → `backups` → **Deployments / Cron runs**. The last run's log should
    end with `Backup complete: … verified in R2`.
 
-A failed run ends its log with a `FAILED: …` line that says why. Whether Railway **emails** you about
-a failed cron run is checked by the forced-failure test in the setup checklist below. Record the
-result here: **_not yet tested_**.
+A failed run ends its log with a `FAILED: …` line that says why. **Railway emails the owner when a run fails.** Tested 9/25/26 by forcing a staging drill to fail (`DRILL_SOURCE_PREFIX=nothing-here`): one failed run (Restart Policy Never held), and the email arrived. That is the failure alert. The weekly check above covers the case it can't: a job that never runs.
 
 ---
 
@@ -196,4 +194,4 @@ reason.
 - [ ] **Drill against the production backup passes** ← the deliverable
 - [ ] Both `backups` services' Settings match the dashboard-settings table above (Restart Policy **Never**, Watch Paths `/backups/**`, production cron `0 10 * * *`, no cron on staging)
 - [ ] Watch paths: an app-only push does **not** rebuild `backups`
-- [ ] Forced-failure test: does Railway email the owner? Record the answer above
+- [x] Forced-failure test (9/25): one failed run with Restart Policy **Never**, and Railway **emailed the owner**

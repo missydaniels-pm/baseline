@@ -45,8 +45,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Names sort by their UTC timestamp, so the last one is the newest.
-OBJECT="${DRILL_OBJECT:-$(rclone lsf --files-only "r2:${R2_BUCKET}/${SOURCE}/" | grep '\.dump\.gpg$' | sort | tail -n 1)}"
+# Names sort by their UTC timestamp, so the last one is the newest. List first
+# (an R2 error fails loudly here); an empty listing is not an rclone error on R2,
+# so "nothing found" is reported by the die below rather than by grep failing.
+if [ -z "${DRILL_OBJECT:-}" ]; then
+  listing="$(rclone lsf --files-only "r2:${R2_BUCKET}/${SOURCE}/")"
+  OBJECT="$(printf '%s\n' "$listing" | grep '\.dump\.gpg$' | sort | tail -n 1 || true)"
+else
+  OBJECT="$DRILL_OBJECT"
+fi
 [ -n "$OBJECT" ] || die "no backups found under ${SOURCE}/ in ${R2_BUCKET}"
 NAME="${OBJECT%.dump.gpg}"
 log "Drill starting: ${SOURCE}/${OBJECT} -> ${DRILL_DB}"

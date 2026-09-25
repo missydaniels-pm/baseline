@@ -12,7 +12,9 @@ die() { log "FAILED: $*" >&2; exit 1; }
 # Any other failing command (set -e) still ends with a clear FAILED line in the log.
 # set -E makes the trap fire inside functions too (table_counts, encrypt_file...).
 set -E
-trap 'log "FAILED: $(basename "$0") stopped on an error — see the message above" >&2' ERR
+# Only the main shell logs it: with set -E the trap also fires inside $(...)
+# subshells, which printed the line twice (seen on staging 9/25/26).
+trap '[ "${BASHPID:-$$}" = "$$" ] && log "FAILED: $(basename "$0") stopped on an error — see the message above" >&2' ERR
 
 require_env() {
   local missing=()
