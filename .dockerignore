@@ -13,3 +13,5 @@ instance/
 .env
 .DS_Store
 Baseline Files/
+# The backup service (its own Railway service and image) — not part of the app.
+backups/

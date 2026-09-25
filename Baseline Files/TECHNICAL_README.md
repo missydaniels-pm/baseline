@@ -1,6 +1,6 @@
 # Baseline — Technical README
 
-Last updated: July 18, 2026
+Last updated: September 25, 2026
 
 ---
 
@@ -45,7 +45,9 @@ app.py                        — all routes and business logic
 database.py                   — SQLAlchemy models
 requirements.txt              — Python dependencies
 Dockerfile                    — THE production build + start command (gunicorn); Railway builds from this
-.dockerignore                 — keeps .env, instance/*.db and Baseline Files/ out of the image
+.dockerignore                 — keeps .env, instance/*.db, Baseline Files/ and backups/ out of the app image
+backups/                      — separate Railway `backups` service (own Dockerfile + railway.json): nightly encrypted
+                                pg_dump → R2, and the restore drill. Runbook: Baseline Files/BACKUPS.md
 run.sh                        — local startup script (exports DEBUG=true, runs the Flask dev server)
 seed_staging.py               — seed the staging DB (railway run; reuses app.seed_test_data)
 CLAUDE.md                     — Claude Code persistent context document
@@ -295,7 +297,8 @@ public-domain **target port** still pointed at the previous deployment's port, s
   the Dockerfile; a comment-only change there rebuilds the image, so it wasn't bundled into a docs commit.)*
   *(Corrected 8/13/26: this line read "gunicorn, Python 3.13" — gunicorn was not actually running
   at all before 8/12/26, and the version became 3.10 when the build moved to the Dockerfile.)*
-- **Postgres** — PostgreSQL database with persistent volume. **No backups we own (9/4/26):** free tier, no schedule; Railway's own pre-patch snapshots are not under our control. Plan decided: nightly encrypted `pg_dump` → Cloudflare R2 with a tested restore into staging — BACKLOG *DL* "Backups — plan", not yet built.
+- **Postgres** — PostgreSQL **17.11** (production, checked 9/25/26) with persistent volume. Free tier: Railway itself takes no scheduled backups we control — ours come from the `backups` service below.
+- **backups** (9/25/26, exit-gate F2) — a separate service built from `backups/` (Root Directory `/backups`, config file `/backups/railway.json`, image `postgres:17` + gpg + rclone). **Production:** cron `0 10 * * *` UTC (3am PDT / 2am PST) runs `pg_dump` → integrity check → gpg AES-256 with `BACKUP_PASSPHRASE` → upload to Cloudflare R2 bucket `baseline-backups` under `production/` → size check in R2. Retention is the bucket's 30-day lifecycle rule; the script never deletes. **Staging:** same image, no cron (`environments.staging` nulls it), `BACKUP_MODE=restore-drill` — each redeploy restores the newest production backup into a throwaway database on staging's Postgres, compares every table's row count with the counts recorded at backup time, and drops the database pass or fail. Restart policy `NEVER` so a failed run stays failed. Variables, weekly check, drill and emergency-restore steps: **`Baseline Files/BACKUPS.md`**. *Setup in progress 9/25/26 — see its checklist.*
 
 ### Database Handling
 - Production: `DATABASE_URL` environment variable (Railway reference). Engine options set `pool_pre_ping=True` (9/4/26): Railway's Postgres drops idle connections and a dead pooled connection was being handed to the next request — seen on staging as a `/login` 500 with `SSL SYSCALL error: EOF detected`. pre_ping checks the connection on checkout and replaces it transparently; added with `--threads 4` because more request threads means more idle pooled connections.

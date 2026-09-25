@@ -29,7 +29,7 @@ Live at: https://mybaselineapp.com (custom domain; Railway default: baseline-hea
 - **Database:** SQLAlchemy ORM — PostgreSQL in production, SQLite locally
 - **Frontend:** Jinja2 templates, vanilla JavaScript, Chart.js
 - **AI:** Anthropic API (claude-sonnet-4-6) for check-in parsing
-- **Hosting:** Railway, custom domain via Cloudflare DNS. Built from the repo's **`Dockerfile`** (`python:3.10-slim`), the **only in-repo definition of how the app starts** — `CMD` runs gunicorn. Railway's own builder (railpack/`mise`) is not used. One caveat that isn't in the repo: Railway's dashboard has a per-service **Custom Start Command** that would override the image `CMD` and does *not* show in `railway logs --build` — it must be confirmed **blank** to trust the Dockerfile (STAGING_SETUP.md verification list). Two environments: `staging` branch → staging, `main` branch → production.
+- **Hosting:** Railway, custom domain via Cloudflare DNS. Built from the repo's **`Dockerfile`** (`python:3.10-slim`), the **only in-repo definition of how the app starts** — `CMD` runs gunicorn. Railway's own builder (railpack/`mise`) is not used. One caveat that isn't in the repo: Railway's dashboard has a per-service **Custom Start Command** that would override the image `CMD` and does *not* show in `railway logs --build` — it must be confirmed **blank** to trust the Dockerfile (STAGING_SETUP.md verification list). Two environments: `staging` branch → staging, `main` branch → production. A second service, **`backups`**, builds from `backups/` (its own Dockerfile + `backups/railway.json`, which holds its cron schedule) — see `Baseline Files/BACKUPS.md`.
 - **Auth:** Flask sessions, bcrypt password hashing, self-serve registration with email verification (itsdangerous signed tokens, 24h TTL, SHA-256 replay protection), Flask-Limiter rate limiting, CSRF protection (Flask-WTF `CSRFProtect`, all forms + JSON fetch endpoints)
 - **PWA:** manifest.json, service worker, home screen icons
 
@@ -42,7 +42,8 @@ app.py                  — all routes and business logic
 database.py             — SQLAlchemy models
 requirements.txt        — Python dependencies
 Dockerfile              — THE production build + start command (gunicorn). Railway builds from this.
-.dockerignore           — keeps .env, the local SQLite DB and Baseline Files/ out of the image
+.dockerignore           — keeps .env, the local SQLite DB, Baseline Files/ and backups/ out of the image
+backups/                — separate Railway `backups` service: nightly encrypted pg_dump → Cloudflare R2 (production cron) + restore drill (staging). Runbook: Baseline Files/BACKUPS.md
 run.sh                  — local startup script (exports DEBUG=true, runs the Flask dev server)
 .env                    — environment variables (not committed)
 generate_icons.py       — PWA icon generation script
@@ -99,6 +100,7 @@ Required in .env locally and in Railway variables in production:
 - `RESEND_API_KEY` — Resend API key for transactional email (verification + welcome). From address is `Baseline <hello@mybaselineapp.com>`. Unset locally → email sends fail silently.
 - `RESEND_AUDIENCE_ID` — Resend audience UUID for contact-list sync. Verify/unsubscribe/email-change/account-delete events upsert or remove the user's contact carrying their current `email_updates_enabled` state. Unset locally → all sync calls are no-ops.
 - `BACKFILL_RESEND_CONTACTS` — set to `1` for a single deploy to upsert every active verified user into the Resend audience at startup, then unset. Idempotent.
+- **Backup service variables** (`BACKUP_MODE`, `R2_*`, `BACKUP_PASSPHRASE`, `DRILL_*`) live on the separate `backups` Railway service, not the app — see `Baseline Files/BACKUPS.md`.
 - `ADMIN_EMAIL` — email address to grant admin access on startup (defaults to `daniels.missy@gmail.com`)
 
 ---

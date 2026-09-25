@@ -47,7 +47,7 @@ The experience shaped how I think about AI-assisted development — not as autoc
 - **Frontend:** Jinja2 templates, vanilla JavaScript, Chart.js
 - **AI:** Anthropic API (Claude) for natural language check-in parsing
 - **Auth:** Flask sessions, bcrypt password hashing, self-serve registration with email verification, CSRF protection, and rate limiting
-- **Hosting:** Railway, deployed from a Docker image (`staging` branch → staging, `main` → production)
+- **Hosting:** Railway, deployed from a Docker image (`staging` branch → staging, `main` → production); nightly encrypted database backups to Cloudflare R2, proven by a restore drill
 - **PWA:** Installable as a home screen app on iOS and Android
 
 ---
