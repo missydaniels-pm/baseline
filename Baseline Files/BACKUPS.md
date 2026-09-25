@@ -95,7 +95,9 @@ TypeScript file; evaluating it is a BACKLOG item.)
 | Networking → public domain | none | none | It serves nothing |
 
 **Check after any Railway change** (and at each drill): open both services' Settings and compare
-them with this table.
+them with this table. The same values can be read without the dashboard: `railway status -e <env> --json`
+shows each service's `cronSchedule`, and its latest deployment's `serviceManifest` (restart policy,
+watch patterns) and `rootDirectory`. That's how they were verified on 9/25.
 
 ---
 
@@ -201,7 +203,8 @@ reason.
 - [x] Merged to `main` (9/25); production `backups` service created with the variables above (app unchanged, standard production checks passed after the restart)
 - [x] First production backup run by hand (9/25, 21:29 UTC): 15 tables, verified in R2
 - [x] **Drill against the production backup PASSED** (9/25) ← the deliverable
-- [ ] Production `backups` Cron Schedule set to `0 10 * * *`, then the first *scheduled* run confirmed the next morning
-- [ ] Both services' Settings match the dashboard-settings table above (Restart Policy **Never**, Watch Paths `/backups/**`, production cron `0 10 * * *`, no cron on staging)
-- [ ] Watch paths: an app-only push does **not** rebuild `backups`
+- [x] Production `backups` Cron Schedule set to `0 10 * * *` (9/25)
+- [ ] First *scheduled* run confirmed (expected 9/26 10:00 UTC)
+- [x] Both services' Settings match the dashboard-settings table above (Restart Policy **Never**, Watch Paths `/backups/**`, production cron `0 10 * * *`, no cron on staging)
+- [x] Watch paths: a docs-only push (`00ff0e6`) did **not** rebuild `backup-drill`, which stayed on `9d02209` (9/25)
 - [x] Forced-failure test (9/25): one failed run with Restart Policy **Never**, and Railway **emailed the owner**
