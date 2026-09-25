@@ -23,8 +23,8 @@ in the **production** environment:
 
 | Setting | Value | Where it lives |
 |---|---|---|
-| Schedule | `0 10 * * *` UTC = 3am Pacific in summer (PDT), 2am in winter (PST) | `backups/railway.json` |
-| Environment | production only; staging runs the **restore drill** instead | `backups/railway.json` (`environments.staging` nulls the cron) |
+| Schedule | `0 10 * * *` UTC = 3am Pacific in summer (PDT), 2am in winter (PST) | Railway dashboard → production `backups` → Settings → **Cron Schedule** |
+| Environment | production only; staging runs the **restore drill** instead | Staging's `backups` has **no** Cron Schedule, so it runs only when redeployed |
 | Retention | 30 days, via the bucket's **Object Lifecycle Rule** `expire-after-30-days` | Cloudflare dashboard → R2 → `baseline-backups` → Settings |
 | Encryption | gpg symmetric, AES-256, passphrase in `BACKUP_PASSPHRASE` | Railway variable **and** the owner's Google Password Manager (entry `baseline-backups.local`) |
 | File names | `production/baseline-<UTC time>.dump.gpg` and `.counts.gpg` | R2 |
@@ -59,11 +59,35 @@ manager, so the backups can still be opened if Railway is gone.
 | `R2_BUCKET` | `baseline-backups` | `baseline-backups` | |
 | `BACKUP_PASSPHRASE` | ✔ | ✔ | Same value in both. The drill must be able to decrypt production's files |
 
-Service settings (dashboard, both environments): **Root Directory** `/backups` and **Railway Config
-File** `/backups/railway.json`. Railway's config-file path does not follow the Root Directory, so it
-must be the full path. The config file sets the Dockerfile builder, the watch path `/backups/**` (app
-pushes don't rebuild this service), the cron schedule and restart policy `NEVER` (a failed run stays
-visibly failed instead of looping).
+**Two Railway dashboard gotchas (both hit on 9/25/26):**
+- **Railway autofills variables from the code, and gets references wrong.** It filled
+  `DRILL_DATABASE_URL` as `${{Postgres.DRILL_DATABASE_URL}}`, which doesn't exist, so the value came out
+  **empty**. Every `${{…}}` value here must be exactly `${{Postgres.DATABASE_URL}}`. A correct
+  reference shows a link icon. If a run fails with `missing Railway variable(s): X`, this is the
+  first thing to check.
+- **Renaming a service** isn't in its Settings tab. Right-click the service card → **Config** →
+  **Name**.
+
+### Service settings live in the Railway dashboard, not the repo
+
+Railway retired `railway.json` ("Config as Code"). Services that never used it can't opt in after
+2026-08-28, and it stops being read everywhere on 2026-12-01. So these settings exist **only in the
+dashboard**. They don't appear in build logs and nothing in git records them. That is the same kind
+of out-of-repo setting as the app's Custom Start Command, so **this table is the record**, and the
+checks below confirm it. (Railway's replacement, "Infrastructure as Code", is a project-wide
+TypeScript file; evaluating it is a BACKLOG item.)
+
+| Setting (Settings tab) | Production `backups` | Staging `backups` | Why |
+|---|---|---|---|
+| Source → **Root Directory** | `/backups` | `/backups` | Builds `backups/Dockerfile`, not the app |
+| Source → **Branch** | `main` | `staging` | Same branch gate as the app |
+| Build → **Watch Paths** | `/backups/**` | `/backups/**` | App pushes don't rebuild this service |
+| Deploy → **Cron Schedule** | `0 10 * * *` | *(none)* | Nightly in production; staging runs only on redeploy |
+| Deploy → **Restart Policy** | **Never** | **Never** | Railway's default "On Failure × 10" re-ran a failed drill 6 times in 3 seconds (9/25) — a failure must stay visibly failed |
+| Networking → public domain | none | none | It serves nothing |
+
+**Check after any Railway change** (and at each drill): open both services' Settings and compare
+them with this table.
 
 ---
 
@@ -110,6 +134,7 @@ If a drill log ever shows `could not drop restore_drill_…`, remove it by hand 
 | Date | Backup tested | Result | Run by |
 |---|---|---|---|
 | 2026-09-25 | local test (seeded schema, fake bucket) | passed, plus failure cases | Claude |
+| 2026-09-25 | `staging/baseline-2026-09-25T205712Z` (staging's seeded data, real R2) | **passed**, 15 tables | Claude + owner |
 
 ---
 
@@ -162,12 +187,13 @@ reason.
 
 - [x] R2 bucket `baseline-backups`, lifecycle rule 30 days, token `baseline-backup-writer` (owner)
 - [x] Scripts built and tested locally, including failure cases (Claude)
-- [ ] Passphrase created and saved in the password manager (owner)
-- [ ] Staging `backups` service: test backup of staging's seeded data → drill against it
+- [x] Passphrase created and saved in the password manager (owner)
+- [x] Staging test backup in the real container + real R2 (9/25). The first run exposed Debian's rclone 1.60 getting 501s from R2; now pinned to 1.75.1, and the rerun was clean
+- [x] A `backups/`-only push rebuilt the service (9/25)
+- [x] Staging drill against staging's own backup: **passed**, 15 tables, temporary database dropped, none left over (9/25)
 - [ ] Merge to `main`; production `backups` service created with the variables above
 - [ ] First production backup run by hand → file visible in R2
 - [ ] **Drill against the production backup passes** ← the deliverable
-- [ ] Both `backups` services show Root Directory `/backups` and Config File `/backups/railway.json`, and production's settings show the cron `0 10 * * *` (proves the config file is actually being read — like the app's Custom Start Command, these settings don't appear in build logs)
-- [ ] Staging `backups` service shows **no cron schedule** in its settings (proves the `null` override in `railway.json` worked)
-- [ ] Watch paths: an app-only push does **not** rebuild `backups`, and a `backups/`-only push does (patterns in `railway.json` are written from the repo root)
+- [ ] Both `backups` services' Settings match the dashboard-settings table above (Restart Policy **Never**, Watch Paths `/backups/**`, production cron `0 10 * * *`, no cron on staging)
+- [ ] Watch paths: an app-only push does **not** rebuild `backups`
 - [ ] Forced-failure test: does Railway email the owner? Record the answer above
