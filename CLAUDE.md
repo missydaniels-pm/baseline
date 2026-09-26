@@ -294,9 +294,10 @@ After every code change, Claude Code must follow this 4-phase workflow automatic
 ### Phase 1 — Implementation
 
 1. Build the requested feature or fix
-2. Verify the app loads locally without errors (`python app.py` or check for import/syntax issues)
-3. Confirm the change works as intended (happy path)
-4. **Adversarial verification** — users rarely follow happy paths. Drive the real UI in the browser and actively try to break the change: do steps out of order (edit after confirm, open B while A is mid-edit), interrupt mid-flow (navigate away, back button, reload with unsaved state), repeat actions (double-tap, re-open after close), revisit completed states, and interleave every entry point that writes the same data (form vs. AI check-in vs. dashboard). For anything that writes new rows referencing existing tables, exercise the *delete paths of the parent records* — local SQLite now enforces FKs (`PRAGMA foreign_keys=ON` in database.py) so these failures reproduce in dev.
+2. **Tests ship with the change (rule added 9/26/26):** any change that adds or alters backend behavior — a route, model, helper, or validation — must include test coverage **in the same commit**: extend the nearest existing `test_*.py` suite, or add a new one at the repo root (CI picks up any `test_*.py` automatically; suites are standalone scripts, Flask test client, `WTF_CSRF_ENABLED=false` — match the sibling pattern per Rule 3). "Coverage" means route-level: a real request through Flask into a real database, asserting the rows/behavior the change produces. Skipping tests is allowed only as an explicit decision stated in the Deploy Gate summary with a reason — never silently. Template-only/CSS-only changes and doc edits are exempt. This rule is forward-looking; the pre-existing gap is tracked in BACKLOG ("Test-coverage gaps found by the 9/26 CI audit").
+3. Verify the app loads locally without errors (`python app.py` or check for import/syntax issues)
+4. Confirm the change works as intended (happy path)
+5. **Adversarial verification** — users rarely follow happy paths. Drive the real UI in the browser and actively try to break the change: do steps out of order (edit after confirm, open B while A is mid-edit), interrupt mid-flow (navigate away, back button, reload with unsaved state), repeat actions (double-tap, re-open after close), revisit completed states, and interleave every entry point that writes the same data (form vs. AI check-in vs. dashboard). For anything that writes new rows referencing existing tables, exercise the *delete paths of the parent records* — local SQLite now enforces FKs (`PRAGMA foreign_keys=ON` in database.py) so these failures reproduce in dev.
 
 ### Phase 2 — Parallel Review
 
@@ -338,6 +339,10 @@ Present a deployment summary and **ask Missy for approval** before committing an
 
 ### Changes
 - [list of what was implemented]
+
+### Tests
+- [which suites cover this change: extended `test_X.py` / new `test_Y.py` / deliberately none because <reason>]
+- CI status on the branch: [green/red]
 
 ### Review Results
 - QA: X blockers, X warnings (all blockers resolved)

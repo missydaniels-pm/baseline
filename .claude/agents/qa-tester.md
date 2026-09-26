@@ -102,6 +102,14 @@ The shared seeder `seed_test_data()` in `app.py` (behind `/dev/seed` locally and
 
 **Flag as a WARNING** (not a blocker — it's a coverage gap, not a prod bug) naming the model/column/feature the seeder is missing and what representative rows it should add. Call it out explicitly in the deploy-gate summary so it's a decision, not a footnote. If the change adds no data-carrying surface, record this check as passed.
 
+### 10. Test Coverage — would CI go red if this change were broken? (rule added 9/26/26)
+CI (`.github/workflows/test.yml`) runs every `test_*.py` on every push, and branch protection on `main` blocks merging on red — but it can only catch what a suite asserts. CLAUDE.md Phase 1 now requires tests to ship in the same commit as any backend-behavior change.
+- [ ] Does the diff add or alter backend behavior (route, model, helper, validation)?
+- [ ] If so, does the same commit extend an existing suite or add a new `test_*.py` that would **fail if the changed behavior broke**? Read the test — does it assert the actual new behavior, or just adjacent things?
+- [ ] If tests are absent, is that an explicit stated decision with a reason?
+
+**Flag as a BLOCKER** if backend behavior changed and no suite would go red on its breakage, and no explicit skip-decision is stated. Name the behavior and what the missing test should assert. (Template-only/CSS-only and doc changes: record as passed/N-A.)
+
 ## Output Format
 
 Return your findings in this format:

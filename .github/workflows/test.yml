@@ -1,0 +1,55 @@
+# Basic regression net (exit-gate punch-list item 5): run every test suite on
+# every push and PR. The suites are standalone scripts run against SQLite,
+# exactly as they run locally — no Railway, Postgres, or Anthropic access, so
+# no secrets are needed here. Python is pinned to match the Dockerfile.
+name: tests
+
+# Push covers the two deploy branches; pull_request covers feature branches —
+# together every commit is tested once, not twice (a PR head push would
+# otherwise fire both events for the same commit).
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+
+# A rapid follow-up push cancels the now-stale run for the same branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# The GITHUB_TOKEN needs read-only access; state it here so the guarantee
+# travels with the workflow rather than relying on the repo default.
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Test harnesses POST via the Flask test client without CSRF tokens.
+      # Never set this anywhere but test contexts (see CLAUDE.md).
+      WTF_CSRF_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run all test suites
+        run: |
+          failed=""
+          for t in test_*.py; do
+            echo "=== $t ==="
+            if timeout 120 python3 "$t"; then
+              echo "PASS $t"
+            else
+              echo "FAIL $t"
+              failed="$failed $t"
+            fi
+          done
+          if [ -n "$failed" ]; then
+            echo "Failed suites:$failed"
+            exit 1
+          fi
