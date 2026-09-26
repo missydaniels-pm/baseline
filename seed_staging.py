@@ -19,6 +19,7 @@ this script writes rows and must never touch production):
     second run is a no-op rather than a duplicate.
 """
 import os
+import secrets
 import sys
 
 # Domains that mean "this is production, do not seed."
@@ -46,7 +47,10 @@ def main():
     from database import User, Episode
 
     email = os.environ.get('STAGING_SEED_EMAIL', 'staging@baseline.test')
-    password = os.environ.get('STAGING_SEED_PASSWORD', 'Staging2026!')
+    # No fixed default: this repo is public, so a committed password is a
+    # known password to the staging login (exit-gate F4). Unset → random,
+    # printed once when the user is created.
+    password = os.environ.get('STAGING_SEED_PASSWORD') or secrets.token_urlsafe(12)
 
     with app.app_context():
         user = User.query.filter_by(email=email).first()
@@ -61,9 +65,10 @@ def main():
             )
             db.session.add(user)
             db.session.commit()
-            print(f'Created staging user: {email}')
+            print(f'Created staging user: {email}  /  password: {password}')
+            print('Save this password now; it is not stored anywhere else.')
         else:
-            print(f'Using existing staging user: {email}')
+            print(f'Using existing staging user: {email} (password unchanged)')
 
         existing = Episode.query.filter_by(user_id=user.id).count()
         if existing >= 20:
@@ -76,7 +81,7 @@ def main():
         seed_test_data(user)
         total = Episode.query.filter_by(user_id=user.id).count()
         print(f'Seeded 12 weeks of data. User now has {total} episodes.')
-        print(f'Log in at your staging URL with:  {email}  /  {password}')
+        print(f'Log in at your staging URL as {email}.')
 
 
 if __name__ == '__main__':
