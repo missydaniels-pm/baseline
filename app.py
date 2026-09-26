@@ -936,82 +936,6 @@ def check_fk_ondelete():
         )
 
 
-def run_data_migrations():
-    """Migrate existing episode peak_severity values to SymptomScore records."""
-    for user in User.query.all():
-        episodes_needing_migration = [
-            ep for ep in Episode.query.filter_by(user_id=user.id).all()
-            if ep.peak_severity is not None and not ep.symptom_scores
-        ]
-
-        if not episodes_needing_migration:
-            continue
-
-        print(f"Migrating {len(episodes_needing_migration)} episode(s) to symptom scores for user {user.id}...")
-
-        primary = Symptom.query.filter_by(user_id=user.id, name='Primary Symptom').first()
-        if not primary:
-            primary = Symptom(user_id=user.id, name='Primary Symptom', is_active=True)
-            db.session.add(primary)
-            db.session.flush()
-
-        for ep in episodes_needing_migration:
-            db.session.add(SymptomScore(episode_id=ep.id, symptom_id=primary.id, score=ep.peak_severity))
-
-        # Existing users with episodes skip the onboarding wizard
-        user.onboarding_complete = True
-        db.session.commit()
-        print("Migration complete.")
-
-
-def migrate_episode_interventions():
-    """Migrate flat rescue_protocol columns to EpisodeIntervention records."""
-    episodes_needing_migration = (
-        Episode.query
-        .filter(Episode.rescue_protocol.isnot(None), Episode.rescue_protocol != '')
-        .all()
-    )
-    # Only process episodes that don't already have EpisodeIntervention records
-    episodes_needing_migration = [
-        ep for ep in episodes_needing_migration if not ep.interventions
-    ]
-    if not episodes_needing_migration:
-        return
-
-    print(f"Migrating {len(episodes_needing_migration)} episode(s) to EpisodeIntervention records...")
-
-    for ep in episodes_needing_migration:
-        names = [n.strip() for n in ep.rescue_protocol.split(',') if n.strip()]
-        for idx, name in enumerate(names):
-            # Match to existing Protocol (type='rescue') for same user, case-insensitive
-            protocol = Protocol.query.filter(
-                Protocol.user_id == ep.user_id,
-                Protocol.type == 'rescue',
-                db.func.lower(Protocol.name) == name.lower(),
-            ).first()
-            if not protocol:
-                protocol = Protocol(
-                    user_id=ep.user_id,
-                    name=name,
-                    type='rescue',
-                    available=True,
-                )
-                db.session.add(protocol)
-                db.session.flush()
-
-            ei = EpisodeIntervention(
-                episode_id=ep.id,
-                protocol_id=protocol.id,
-                # Apply effectiveness/relief to first intervention only
-                effectiveness=ep.rescue_effectiveness if idx == 0 else None,
-                time_to_relief_hours=ep.time_to_relief_hours if idx == 0 else None,
-            )
-            db.session.add(ei)
-
-    db.session.commit()
-    print("EpisodeIntervention migration complete.")
-
-
 def _safe_float(val, default=None, min_val=None):
     """Safely convert a form value to float, returning default on failure."""
     if not val:
@@ -4691,10 +4615,14 @@ def dev_bootstrap():
             '<a href="/login">← Go to login</a></body></html>'
         )
 
+    # Random per-bootstrap password, shown once below. Never a fixed literal:
+    # this repo is public, so a committed password is a known password
+    # (exit-gate F4).
+    password = secrets.token_urlsafe(12)
     admin = User(
         name='Admin',
         email='admin@baseline.app',
-        password_hash=bcrypt.generate_password_hash('Baseline2026!').decode('utf-8'),
+        password_hash=bcrypt.generate_password_hash(password).decode('utf-8'),
         onboarding_complete=True,
         is_active=True,
     )
@@ -4708,7 +4636,8 @@ def dev_bootstrap():
     return (
         '<!doctype html><html><body style="font-family:sans-serif;max-width:500px;margin:60px auto;padding:20px;">'
         '<h2>Bootstrap Complete</h2>'
-        '<p>Admin account created: <strong>admin@baseline.app</strong> / <strong>Baseline2026!</strong></p>'
+        f'<p>Admin account created: <strong>admin@baseline.app</strong> / <strong>{password}</strong></p>'
+        '<p style="color:#888;">This password is shown only once. Save it now.</p>'
         '<p style="margin-top:16px;">Invite code for next user:</p>'
         f'<p style="font-size:20px;font-weight:bold;background:#222;color:#7c5cbf;padding:16px;border-radius:8px;'
         f'text-align:center;letter-spacing:1px;font-family:monospace;">{code}</p>'
@@ -4735,29 +4664,11 @@ def dev_create_invite():
     )
 
 
-def migrate_existing_user():
-    """Give the existing legacy user an email/password so they can log in."""
-    user = User.query.first()
-    if user and not user.email:
-        user.email = 'admin@baseline.app'
-        user.password_hash = bcrypt.generate_password_hash('Baseline2026!').decode('utf-8')
-        db.session.commit()
-        print('=' * 60)
-        print('  EXISTING USER MIGRATED')
-        print(f'  Email:    admin@baseline.app')
-        print(f'  Password: Baseline2026!')
-        print('  ** Change this password immediately! **')
-        print('=' * 60)
-
-
 with app.app_context():
     db.create_all()
     run_migrations()
-    migrate_existing_user()
     backfill_verified_existing_users()
     cleanup_stale_unverified_users()
-    run_data_migrations()
-    migrate_episode_interventions()
     ensure_admin_user()
     backfill_resend_contacts()
     check_fk_ondelete()

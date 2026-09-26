@@ -1,6 +1,6 @@
 # Baseline — Database Backups Runbook
 
-Last updated: September 25, 2026 · Decision record: BACKLOG Decision Log "Backups — plan" (exit-gate F2)
+Last updated: September 26, 2026 · Decision record: BACKLOG Decision Log "Backups — plan" (exit-gate F2)
 
 This page explains how production data is backed up, how to tell that backups are working, and how
 to get data back. If you are here because something went wrong, jump to **Emergency restore**.
@@ -204,7 +204,7 @@ reason.
 - [x] First production backup run by hand (9/25, 21:29 UTC): 15 tables, verified in R2
 - [x] **Drill against the production backup PASSED** (9/25) ← the deliverable
 - [x] Production `backups` Cron Schedule set to `0 10 * * *` (9/25)
-- [ ] First *scheduled* run confirmed (expected 9/26 10:00 UTC)
+- [x] First *scheduled* run confirmed: file in R2 `production/` created 26 Sep 2026 03:01:15 PDT (owner checked in the Cloudflare dashboard, 9/26)
 - [x] Both services' Settings match the dashboard-settings table above (Restart Policy **Never**, Watch Paths `/backups/**`, production cron `0 10 * * *`, no cron on staging)
 - [x] Watch paths: a docs-only push (`00ff0e6`) did **not** rebuild `backup-drill`, which stayed on `9d02209` (9/25)
 - [x] Forced-failure test (9/25): one failed run with Restart Policy **Never**, and Railway **emailed the owner**
