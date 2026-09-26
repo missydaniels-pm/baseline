@@ -49,7 +49,7 @@ Set these **on the staging environment only**. Leave production untouched.
 | Variable | Value | Why |
 |---|---|---|
 | `SECRET_KEY` | a **new** random secret — `python -c "import secrets; print(secrets.token_hex(32))"` | Don't share prod's session/CSRF secret with staging. |
-| `APP_URL` | the staging URL (e.g. `https://baseline-staging.up.railway.app`) | Email/link building. Grab it from the service's public domain after the first deploy. |
+| `APP_URL` | the staging URL (e.g. `https://baseline-staging-1ba4.up.railway.app`) | Email/link building. Grab it from the service's public domain after the first deploy. |
 | `ADMIN_EMAIL` | `staging@baseline.test` | Makes the seeded staging user an admin (so `/admin/*` is reachable on staging). |
 | `ANTHROPIC_API_KEY` | reuse prod's key, or a separate key | AI check-in won't work without it. Separate key = cleaner cost attribution; reuse is fine. |
 | `RESEND_API_KEY` | **leave UNSET** | Email off on staging — verification/welcome sends fail silently (the code's built-in behavior when unset). Zero risk of emailing a real person. |
