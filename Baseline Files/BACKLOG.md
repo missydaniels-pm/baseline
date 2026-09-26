@@ -154,7 +154,7 @@ Condensed record of completed work; full detail in the Decision Log where marked
 ## Decision Log
 
 ### Dead startup paths removed (exit-gate F4)
-**September 26, 2026.** Deleted three functions that ran on every app start: `migrate_existing_user()` (if the first user ever had no email, it gave them `admin@baseline.app` and a password committed to this public repo), `run_data_migrations()` and `migrate_episode_interventions()` (one-time conversions from the single-user era, finished long ago, that still scanned every user and episode on each boot). `/dev/bootstrap` now makes a random password and shows it once.
+**September 26, 2026.** Deleted three functions that ran on every app start: `migrate_existing_user()` (if the first user ever had no email, it gave them `admin@baseline.app` and a password committed to this public repo), `run_data_migrations()` and `migrate_episode_interventions()` (one-time conversions from the single-user era, finished long ago, that still scanned every user and episode on each boot). `/dev/bootstrap` now makes a random password and shows it once. Code review found the same problem in `seed_staging.py` (a fixed default password for the staging login), fixed the same way. **Owner action:** the existing staging account still has the old password, since the seed never changes an existing user's password. Change it in staging → Settings.
 
 - **Short-term:** no change users can see; startup does less; a known password can no longer be set by a data accident.
 - **Long-term:** fewer import-time writes, which is the direction the rebuild needs (the migration runner moves out of import time). The legacy columns stay; dropping them is a separate schema change for the rebuild.

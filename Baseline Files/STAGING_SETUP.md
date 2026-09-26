@@ -115,15 +115,16 @@ The script:
 - refuses to run without `CONFIRM_SEED=yes`,
 - **hard-refuses if `APP_URL` looks like production** (belt-and-suspenders against a mis-linked env —
   so keep passing the real `APP_URL`, don't hardcode a fake staging one),
-- creates user `staging@baseline.test` / `Staging2026!` (override via `STAGING_SEED_EMAIL` /
-  `STAGING_SEED_PASSWORD`),
+- creates user `staging@baseline.test` with a **random password printed once** — save it (override via
+  `STAGING_SEED_EMAIL` / `STAGING_SEED_PASSWORD`; there is no fixed default, because the repo is public
+  and a committed password is a known password — exit-gate F4, 9/26/26),
 - writes 12 weeks of data, and is **idempotent** (skips if the user already has ≥20 episodes).
 
 > Alternative (no public URL): run the seed *inside* the container via `railway ssh` (or the service
 > **Console** tab), where `postgres.railway.internal` resolves — requires the container to be on the
 > `staging` branch so `seed_staging.py` is present.
 
-- [ ] Log in to staging as `staging@baseline.test` / `Staging2026!` and confirm the dashboard shows
+- [ ] Log in to staging as `staging@baseline.test` (password printed by the seed) and confirm the dashboard shows
       episodes, charts, protocols, and trigger data.
 
 ## Part E — Ongoing workflow
