@@ -239,6 +239,10 @@ All dev routes are grouped in a clearly marked section at the bottom of `app.py`
 
 ---
 
+## Continuous Integration
+
+`.github/workflows/test.yml` runs every `test_*.py` suite on every push and every pull request (exit-gate punch-list item 5, 9/26/26). Ubuntu runner, Python 3.10 (pinned to match the Dockerfile), SQLite, `WTF_CSRF_ENABLED=false` — exactly how the suites run locally. No repository secrets: the tests never touch Railway, Postgres, or the Anthropic API. All suites run even after one fails, so a red run lists every broken suite, not just the first. Adding a new `test_*.py` file at the repo root is automatically picked up.
+
 ## Deployment
 
 ### Workflow — staging is a **gate**, not a waypoint

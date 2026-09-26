@@ -1,0 +1,39 @@
+# Basic regression net (exit-gate punch-list item 5): run every test suite on
+# every push and PR. The suites are standalone scripts run against SQLite,
+# exactly as they run locally — no Railway, Postgres, or Anthropic access, so
+# no secrets are needed here. Python is pinned to match the Dockerfile.
+name: tests
+
+on: [push, pull_request]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Test harnesses POST via the Flask test client without CSRF tokens.
+      # Never set this anywhere but test contexts (see CLAUDE.md).
+      WTF_CSRF_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run all test suites
+        run: |
+          failed=""
+          for t in test_*.py; do
+            echo "=== $t ==="
+            if python3 "$t"; then
+              echo "PASS $t"
+            else
+              echo "FAIL $t"
+              failed="$failed $t"
+            fi
+          done
+          if [ -n "$failed" ]; then
+            echo "Failed suites:$failed"
+            exit 1
+          fi
