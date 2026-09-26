@@ -235,7 +235,7 @@ All dev routes are grouped in a clearly marked section at the bottom of `app.py`
 | `/dev/reset` | Clear all user data, reset onboarding for testing |
 | `/dev/seed` | Populate 12 weeks of realistic test data (only if <20 episodes) |
 | `/dev/create-invite` | Generate a new invite code |
-| `/dev/bootstrap` | Create admin account on fresh empty database |
+| `/dev/bootstrap` | Create admin account on fresh empty database (random password, shown once — no fixed credential in the repo) |
 
 ---
 
@@ -328,6 +328,7 @@ python generate_icons.py
 - Sessions encrypted with SECRET_KEY
 - All production traffic over HTTPS (Railway provides SSL)
 - Dev routes grouped in a dedicated section with explicit `if not app.debug` guards — blocked in production (DEBUG=false)
+- **No fixed credentials in the code (exit-gate F4, 9/26/26):** the repo is public, so any password written in it is a known password. `/dev/bootstrap` generates a random one per run. The old startup step `migrate_existing_user()` (which could give the first user a committed password) was deleted, along with two finished single-user-era data migrations (`run_data_migrations`, `migrate_episode_interventions`). The legacy columns they read (`episodes.peak_severity`, `rescue_protocol`, `rescue_effectiveness`) stay in the schema, unwritten.
 - Account deletion is a single `db.session.delete(user)`; the database cascades every owned child (FK cleanup Increment 2, 8/8/26). Invite codes are detached (`SET NULL`) and their `used_at` cleared explicitly, since SET NULL only clears the FK column. `cleanup_stale_unverified_users()` deliberately still anonymises `UserActivity` by hand — it needs the opposite of the declared CASCADE.
 - Data deletion satisfies Washington State My Health MY Data Act (MHMD) requirements
 - **Email verification (self-serve registration):** New accounts created with `is_active=False` and `verified_at=None`. Signed itsdangerous token (HMAC over SECRET_KEY, salt `baseline-email-verify-v1`, 24h max_age) emailed as a verification link. On verify, token SHA-256 hash stored in `used_verify_tokens` to prevent replay; user flipped to `is_active=True` with `verified_at=now()`. Welcome email sent post-verification.
