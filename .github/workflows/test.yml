@@ -4,7 +4,23 @@
 # no secrets are needed here. Python is pinned to match the Dockerfile.
 name: tests
 
-on: [push, pull_request]
+# Push covers the two deploy branches; pull_request covers feature branches —
+# together every commit is tested once, not twice (a PR head push would
+# otherwise fire both events for the same commit).
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+
+# A rapid follow-up push cancels the now-stale run for the same branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# The GITHUB_TOKEN needs read-only access; state it here so the guarantee
+# travels with the workflow rather than relying on the repo default.
+permissions:
+  contents: read
 
 jobs:
   tests:
@@ -26,7 +42,7 @@ jobs:
           failed=""
           for t in test_*.py; do
             echo "=== $t ==="
-            if python3 "$t"; then
+            if timeout 120 python3 "$t"; then
               echo "PASS $t"
             else
               echo "FAIL $t"
