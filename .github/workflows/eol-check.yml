@@ -1,0 +1,34 @@
+# Weekly end-of-life check (10/4/26). Python 3.10 reached end-of-life while
+# production ran it and nothing warned — Dependabot tracks library releases,
+# not runtime support windows. scripts/eol_check.py asks endoflife.date (a free
+# public API; it receives only product names/versions) and fails within 180
+# days of any component's end-of-life. A failed run emails whoever last edited
+# this file's schedule (GitHub notifications → Actions). The register, and the
+# things no API can check, live in Baseline Files/EOL.md.
+name: eol-check
+
+on:
+  schedule:
+    - cron: '17 14 * * 1'   # Mondays 14:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      # Detect, don't declare: the runner's Ubuntu, and the Debian inside the
+      # same floating base-image tag production builds from (the tag is read
+      # from the Dockerfile). Stdlib-only script, so the runner's python3 is fine.
+      - name: Detect runner Ubuntu and base-image Debian
+        run: |
+          . /etc/os-release && echo "DETECTED_UBUNTU=$VERSION_ID" >> "$GITHUB_ENV"
+          image=$(grep -m1 -iE '^FROM' Dockerfile | awk '{print $NF}')
+          debian=$(docker run --rm "$image" sh -c '. /etc/os-release && echo $VERSION_ID')
+          echo "DETECTED_DEBIAN=$debian" >> "$GITHUB_ENV"
+          echo "runner Ubuntu $VERSION_ID; $image is Debian $debian"
+      - run: python3 scripts/eol_check.py
