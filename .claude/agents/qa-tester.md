@@ -110,6 +110,15 @@ CI (`.github/workflows/test.yml`) runs every `test_*.py` on every push, and bran
 
 **Flag as a BLOCKER** if backend behavior changed and no suite would go red on its breakage, and no explicit skip-decision is stated. Name the behavior and what the missing test should assert. (Template-only/CSS-only and doc changes: record as passed/N-A.)
 
+### 11. AI Check-in Scope — does the prompt still tell the truth about what check-in can do? (rule added 10/3/26)
+`build_system_prompt()` in `app.py` has a **"WHAT THIS CHECK-IN CAN DO"** section: the two things check-in writes, a CANNOT list, and a page pointer for each thing it can't do. The model's reply is free text, so if that section goes stale the AI promises actions nothing performs (the 9/25/26 bug: it "created" an experiment no code path creates).
+- [ ] Does the diff **add a form, or add/remove/rename a field or action on an existing form** (or rename a page/nav label/button the prompt points to)?
+- [ ] If so, is the prompt section updated in the same commit — the new action added to **CAN** (only if `checkin()` actually writes it) or to **CANNOT** with a pointer to the page that does it — and do the page names still match `templates/base.html` and the button labels?
+- [ ] Does the diff change what `checkin()` writes? Then CAN/CANNOT must move with it.
+- [ ] Does `test_checkin_scope.py`'s `REQUIRED` list still cover the changed lines?
+
+**Flag as a BLOCKER** if a form or check-in write path changed and the prompt section wasn't updated, naming the action and which list it belongs in. If no form, page label or check-in write changed, record this check as passed.
+
 ## Output Format
 
 Return your findings in this format:

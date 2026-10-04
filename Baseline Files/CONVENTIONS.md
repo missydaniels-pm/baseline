@@ -345,6 +345,17 @@ here in the same commit.
     is decided — a later `ADD CONSTRAINT` is the same cheap additive step. (`med_class` vs
     `stop_reason`, 8/13/26.)
 
+## AI check-in scope (keep the prompt's CAN/CANNOT lists true)
+The check-in prompt (`build_system_prompt()`) tells the model the **only** two things
+check-in writes (a new episode; today's preventative compliance), lists what it
+**cannot** do, and names the page for each. The reply is free text, so a stale list
+means the AI promises an action nothing performs (9/25/26: a promised experiment).
+**Any new form, or a field/action added to an existing form, updates that section in
+the same commit** — into CAN only if `checkin()` actually writes it, otherwise into
+CANNOT with its page pointer. Renaming a page, nav label or button the prompt names
+counts too. QA checklist §11 enforces it; `test_checkin_scope.py` asserts it reaches
+the API.
+
 ## Architecture rules (full text in CLAUDE.md)
 - **Rule 1** — backend stays stateless. **Rule 2** — slow work off the request path.
   **Rule 3** — converge, don't diverge (this doc).
@@ -357,4 +368,6 @@ here in the same commit.
    user-scoping, error handling, and JSON/response shape.
 3. **If you must diverge, say why** — in the commit and raised to the owner. An
    accidental new pattern is a bug in waiting.
-4. **Update this doc** when a new canonical pattern is genuinely established.
+4. **New form or form field/action?** Update the AI check-in prompt's CAN/CANNOT
+   section (see "AI check-in scope").
+5. **Update this doc** when a new canonical pattern is genuinely established.

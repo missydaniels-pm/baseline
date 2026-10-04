@@ -54,7 +54,7 @@
   <h2 class="help-heading">The Daily Check-in</h2>
 
   <h3 class="help-subheading">How it works</h3>
-  <p>If you've enabled AI logging, the <a href="{{ url_for('checkin') }}">Daily Check-in</a> is your main way to log how you're doing. Instead of filling out forms, you type naturally — describe your day the way you'd tell a friend. Baseline's AI reads your message, extracts the relevant health data, and creates the right records automatically. It then confirms exactly what it logged so you can verify or correct anything.</p>
+  <p>If you've enabled AI logging, the <a href="{{ url_for('checkin') }}">Daily Check-in</a> is your main way to log how you're doing. Instead of filling out forms, you type naturally — describe your day the way you'd tell a friend. Baseline's AI reads your message, extracts the relevant health data, and creates the right records automatically. It then confirms exactly what it logged so you can check it — and edit it from Episodes if anything's off.</p>
 
   <h3 class="help-subheading">Getting to your check-in</h3>
   <p>Tap <strong>Check-in</strong> in the sidebar to open the check-in page. If you've chatted before, you'll see your recent conversation history. If it's your first time, you'll see an empty chat ready for your first message.</p>
@@ -78,7 +78,6 @@
     <li>"Good day, did all my protocols, no symptoms worth noting"</li>
     <li>"Forgot my magnesium this morning, slight headache in the afternoon around a 3, managed to work through it"</li>
     <li>"Woke up at a 6, been building all morning, now at an 8. Can't work. Haven't taken anything yet"</li>
-    <li>"Actually yesterday's headache was more like a 5, not a 7 — I think I overestimated"</li>
     <li>"Took my riboflavin and CoQ10 today. No episodes. Energy was decent, maybe a 4"</li>
     <li>"Bad flare since 2am, nausea at 8, completely out of commission. Used Zofran and ice pack, slightly better after 2 hours"</li>
     <li>"Same as yesterday basically — low-grade headache around a 3, functioning fine"</li>
@@ -87,7 +86,7 @@
   <h3 class="help-subheading">What gets logged automatically</h3>
   <p>Based on your message, Baseline will create the appropriate records:</p>
   <ul class="help-list">
-    <li><strong>Episodes</strong> — if you describe a significant health event, an episode is created with onset time, duration, and functional impairment</li>
+    <li><strong>Episodes</strong> — if you describe a significant health event, an episode is created with onset time and functional impairment (add duration by editing the episode)</li>
     <li><strong>Severity scores</strong> — ratings are attached to the episode for each thing you're tracking</li>
     <li><strong>Protocol compliance</strong> — if you mention taking or missing a medication/supplement, a compliance record is logged for that protocol. Misses count too — "I missed my magnesium because I ran out" records the miss with your reason. If you already confirmed today on the dashboard, telling the check-in something different updates it (your most recent word wins).</li>
     <li><strong>Intervention use</strong> — if you used one or more interventions, each is recorded separately on the episode with its own effectiveness rating and time to relief</li>
@@ -96,12 +95,11 @@
   <p>After processing, the AI confirms exactly what it logged. Review the confirmation — if everything looks right, you're done.</p>
 
   <h3 class="help-subheading">Correcting mistakes</h3>
-  <p>If the AI gets something wrong, just say so in your next message. It will update the record:</p>
-  <ul class="help-list">
-    <li>"Actually that headache was a 5, not a 7"</li>
-    <li>"I did take my magnesium today, I just forgot to mention it"</li>
-    <li>"That episode started yesterday evening, not today"</li>
-  </ul>
+  <p>The check-in can log a new episode and today's protocols — it can't change an episode that's already logged. To fix one (a score, the start time, how well an intervention worked), open it from <a href="{{ url_for('episodes') }}">Episodes</a> and edit it there. Telling the check-in "actually that was a 5" would log a second episode instead.</p>
+  <p>Today's protocols are the exception: just say so in your next message and the check-in updates the day — "I did take my magnesium today, I just forgot to mention it."</p>
+
+  <h3 class="help-subheading">What the check-in can't do</h3>
+  <p>The check-in only logs. It can't start or change an experiment, add or stop a protocol, change what you track, rename a trigger, or change a setting. If you ask, it'll tell you where in the app to do it — for example, <a href="{{ url_for('experiments') }}">Experiments</a> → <strong>+ Start Experiment</strong>.</p>
 
   <h3 class="help-subheading">Check-in vs. manual logging</h3>
   <p>The check-in and the manual episode form both create the same data — episodes, symptom scores, and compliance records. Use whichever feels easier in the moment:</p>
