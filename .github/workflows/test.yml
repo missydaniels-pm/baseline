@@ -31,7 +31,7 @@ jobs:
       # Never set this anywhere but test contexts (see CLAUDE.md).
       WTF_CSRF_ENABLED: "false"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
