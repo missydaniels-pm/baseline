@@ -67,13 +67,20 @@ templates/
   base.html             — base template with nav, PWA meta tags
   index.html            — dashboard with charts
   login.html            — login page
-  register.html         — registration with invite code
+  register.html         — self-serve registration (email + password + privacy acknowledgment)
   offline.html          — PWA offline fallback
   [other templates]     — episodes, protocols, experiments, symptoms, settings, help
 Baseline Files/
-  baseline-technical-readme.docx
-  baseline-vision-roadmap.docx
-  baseline-backlog.docx
+  BACKLOG.md            — priorities, follow-ups, dated checks, Decision Log
+  TECHNICAL_README.md   — internal engineering reference
+  CONVENTIONS.md        — canonical patterns (Rule 3)
+  STAGING_SETUP.md      — staging environment + verification
+  BACKUPS.md            — backup service runbook
+  EOL.md                — end-of-life register
+  SPEC-episode-diary.md — episode-diary spec (React rebuild)
+  FABLE-EXIT-GATE-PROMPT.md — reusable pre-rebuild review prompt
+  baseline-vision-roadmap.docx — owner's roadmap (Missy edits; not Claude)
+  EXIT-GATE-REVIEW-*.md — review reports, LOCAL ONLY (git-ignored; public repo)
 ```
 
 ---
