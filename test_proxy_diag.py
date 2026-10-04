@@ -1,5 +1,6 @@
-"""TEMPORARY — goes with _log_proxy_shape() (exit-gate F5, 10/3/26); delete both
-in the ProxyFix commit.
+"""Proxy-header diagnostic — _log_proxy_shape() (exit-gate F5, 10/3/26). Kept on
+purpose (owner): it re-verifies, on the dated checks, that Railway's X-Real-IP —
+which the rate limiter trusts — is still the real client.
 
 The diagnostic must never write an IP address or raw header text to the logs,
 even when every header is attacker-controlled (QA 10/3/26 found X-Forwarded-Proto
@@ -62,6 +63,11 @@ def main():
     check('host=other' in line, 'attacker-controlled Host reduced to a fixed word')
     check('xf_proto=other,http' in line, 'X-Forwarded-Proto reduced to a fixed vocabulary')
     check('-4:public4=cf' in line and '-1:public4=real' in line, 'positions labelled from the right with tags')
+    check('limiter_key=real_ip' in line, 'reports that the limiter keyed on X-Real-IP (public)')
+
+    cap.lines.clear()
+    c.get('/login?proxy_diag=1', headers={'X-Real-IP': '10.1.2.3'})
+    check('limiter_key=fallback' in ' '.join(cap.lines), 'reports the fallback for a private X-Real-IP')
 
     if FAILS:
         print(f'\n{len(FAILS)} FAILED')

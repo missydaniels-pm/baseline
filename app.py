@@ -50,6 +50,13 @@ else:
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'dev-only-' + secrets.token_hex(16)
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
+# Session cookie hardening (exit-gate F10, 10/3/26). Secure = sent over HTTPS
+# only; staging and production are HTTPS end to end at the browser. Local dev
+# runs plain http://localhost, so DEBUG=true (run.sh) turns Secure off — the
+# same variable that gates app.debug. SameSite=Lax is the browsers' default,
+# stated so it can't drift; HttpOnly is Flask's default.
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('DEBUG', '').strip().lower() != 'true'
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 # CSRF (Flask-WTF): on by default everywhere, including local dev, so the token
 # flow is exercised in the browser before it ships. The test suites opt out with
 # WTF_CSRF_ENABLED=false (set before importing app). CSRF secret rides SECRET_KEY.
@@ -81,8 +88,56 @@ def handle_csrf_error(e):
         return redirect(ref)
     return redirect(url_for('index'))
 
+def _client_ip_key():
+    """Rate-limit key: the real client, not Railway's proxy (exit-gate F5, 10/3/26).
+
+    request.remote_addr is Railway's internal proxy for every request, so keying
+    on it made /register's 5/hour and /login's 20/hour limits one bucket for the
+    whole world. X-Forwarded-For can't be used either: Railway rewrites it to
+    [peer it saw, its own edge], and behind Cloudflare that peer is a Cloudflare
+    server (≈ everyone in the same metro). X-Real-IP is set by Railway's edge —
+    from CF-Connecting-IP for Cloudflare traffic — and overwrote forged values on
+    both the custom domain and the Railway domain (verified 10/3/26; Railway
+    staff, Station 6/12/26: "single source of truth"). Not in Railway's official
+    docs, so it's re-verified on the dated checks with _log_proxy_shape().
+
+    A missing or non-public X-Real-IP (local dev, tests, or a Railway routing
+    change like the 3/2026 CDN bug that put an edge address there) falls back to
+    remote_addr — the old shared bucket. A forged *public* value would be
+    trusted, so this is unspoofable only while Railway overwrites X-Real-IP on
+    every path — which is exactly what the dated re-checks verify.
+    IPv6 is grouped by /64 (one user can rotate through a /64 at will); an
+    IPv4-mapped IPv6 address (::ffff:a.b.c.d) is treated as the IPv4 it is.
+    """
+    import ipaddress
+
+    def fallback(reason):
+        # Should never fire on Railway — if it does, its edge changed and every
+        # limited route is back to one shared bucket. Logged (reason only, never
+        # an address) so the session-start error sweep surfaces it within a
+        # session, not at the next dated check. Silent in local dev.
+        if os.environ.get('DEBUG', '').strip().lower() != 'true':
+            app.logger.warning('rate-limit key fallback: X-Real-IP %s — limits are shared', reason)
+        return get_remote_address()
+
+    raw = request.headers.get('X-Real-IP', '').strip()
+    if not raw:
+        return fallback('missing')
+    try:
+        addr = ipaddress.ip_address(raw)
+    except ValueError:
+        return fallback('unparseable')
+    if addr.version == 6 and addr.ipv4_mapped:
+        addr = addr.ipv4_mapped
+    if not addr.is_global:
+        return fallback('not a public address')
+    if addr.version == 6:
+        return str(ipaddress.ip_network(f'{addr}/64', strict=False))
+    return str(addr)
+
+
 limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=_client_ip_key,
     app=app,
     default_limits=[],
     storage_uri='memory://',
@@ -1396,11 +1451,14 @@ def offline():
 # ---------------------------------------------------------------------------
 
 def _log_proxy_shape():
-    """TEMPORARY diagnostic (exit-gate F5, 10/3/26) — remove with the ProxyFix change.
+    """Proxy-header diagnostic (exit-gate F5, 10/3/26) — KEPT on purpose (owner).
 
-    Logs the SHAPE of the proxy headers on this request so the right ProxyFix
-    hop count can be chosen per environment (production: client → Cloudflare →
-    Railway edge → app; staging: client → Railway edge → app). Never logs an IP
+    _client_ip_key() trusts Railway's X-Real-IP, which isn't in Railway's
+    official docs and briefly broke during a 3/2026 CDN rollout. This logs the
+    SHAPE of the proxy headers so that trust can be re-verified on the dated
+    checks (BACKLOG): per environment, one plain request and one with forged
+    X-Forwarded-For / X-Real-IP / CF-Connecting-IP; the limiter key must stay
+    the real client and ignore every forgery. Never logs an IP
     address or any raw header text: addresses become private/public, positions
     are compared with each other, and every other field is a fixed vocabulary.
     X-Forwarded-For positions are labelled from the right (-1 = last hop), the
@@ -1436,12 +1494,15 @@ def _log_proxy_shape():
         for i, h in enumerate(xff)
     ]
     present = [n for n in ('Forwarded', 'X-Forwarded-Host', 'X-Forwarded-Port') if request.headers.get(n)]
+    key = _client_ip_key()
+    key_kind = ('real_ip' if key != get_remote_address() else 'fallback') + (
+        '/64' if key.endswith('/64') else '')
     app.logger.warning(
         'proxy-diag host=%s remote=%s xff_hops=%d xff=[%s] real_ip=%s cf_ip=%s envoy_ip=%s '
-        'real_eq_cf=%s xf_proto=%s scheme=%s also=[%s]',
+        'real_eq_cf=%s xf_proto=%s scheme=%s also=[%s] limiter_key=%s',
         host_kind, kind(request.remote_addr), len(xff), ' '.join(positions),
         kind(real), kind(cf), kind(envoy), bool(real) and real == cf,
-        proto_kind, request.scheme, ','.join(present))
+        proto_kind, request.scheme, ','.join(present), key_kind)
 
 
 @app.route('/login', methods=['GET', 'POST'])

@@ -102,7 +102,7 @@ Baseline Files/
 Required in .env locally and in Railway variables in production:
 - `ANTHROPIC_API_KEY` — Anthropic API key for AI check-in
 - `SECRET_KEY` — Flask session secret key (also backs CSRF tokens)
-- `DEBUG` — set to `true` locally only; **unset/false in production**. This is now the *only* thing that turns on `app.debug` and therefore the only thing that ungates the `/dev/*` routes. `run.sh` exports it for local dev. Until 8/12/26 `app.py`'s `__main__` block hardcoded `debug=True`, and because there was no Procfile and no Railway start command the builder ran `python app.py` — so **production served the Werkzeug debugger and ungated dev routes**. See Decision Log.
+- `DEBUG` — set to `true` locally only; **unset/false in production**. Also turns the session cookie's `Secure` flag off (local dev is plain http) — run the app locally without it and login silently fails. This is now the *only* thing that turns on `app.debug` and therefore the only thing that ungates the `/dev/*` routes. `run.sh` exports it for local dev. Until 8/12/26 `app.py`'s `__main__` block hardcoded `debug=True`, and because there was no Procfile and no Railway start command the builder ran `python app.py` — so **production served the Werkzeug debugger and ungated dev routes**. See Decision Log.
 - `WTF_CSRF_ENABLED` — CSRF on by default (unset = on, incl. local dev + prod). Set to `false` **only** in test harnesses that POST via the Flask test client without tokens. Never set in production.
 - `DATABASE_URL` — set automatically by Railway from PostgreSQL service reference
 - `APP_URL` — base URL for email links (production: `https://mybaselineapp.com`)
@@ -129,7 +129,7 @@ Two distinct failure modes — keep them separate. **Rule 1 is about *where stat
 
 **The test for any new code:** If this change would make one server remember something another server doesn't know about, it violates the rule. Stop and flag it instead of writing it. These examples are not exhaustive — when in doubt, treat new per-server state as a violation and surface it for review.
 
-**Known deviation** (latent at single-instance today): Flask-Limiter uses an in-memory backend (per-worker, resets on deploy) — the P2 "switch Flask-Limiter to Redis" item is the fix. Sessions are already compliant (Flask signed client-side cookies, no server memory).
+**Known deviation** (latent at single-instance today): Flask-Limiter uses an in-memory backend (per-worker, resets on deploy) — the P2 "switch Flask-Limiter to Redis" item is the fix. (Its *key* is the real client via Railway's `X-Real-IP` — `_client_ip_key()`, 10/3/26 — not Railway's proxy address, which made every limit global until then.) Sessions are already compliant (Flask signed client-side cookies, no server memory).
 
 ### Rule 2 — Slow Work Belongs Off the Request Path
 

@@ -371,6 +371,15 @@ the pass count in the Deploy Gate. A change to the help.html example messages up
 the matching eval cases — the eval holds the model to what the guide promises. A new
 JSON field goes in `CHECKIN_SCHEMA` *and* the prompt's template, together.
 
+## Client IP (rate limiting, anything that reads "who is this")
+- The only way to get a client's address is **`_client_ip_key()`** — Railway's
+  `X-Real-IP`, IPv6 grouped by /64, falling back to `remote_addr`. Never read
+  `request.remote_addr`, `X-Forwarded-For` or `CF-Connecting-IP` directly: behind
+  Railway + Cloudflare each is wrong or spoofable (measured 10/3/26 — BACKLOG
+  Decision Log "Rate-limit key"). Nothing stores IPs today; if something ever
+  does (abuse audit, admin view), it goes through this helper and is a privacy
+  decision for Missy first.
+
 ## Architecture rules (full text in CLAUDE.md)
 - **Rule 1** — backend stays stateless. **Rule 2** — slow work off the request path.
   **Rule 3** — converge, don't diverge (this doc).
