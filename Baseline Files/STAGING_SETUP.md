@@ -150,7 +150,7 @@ curl -s -w " %{http_code}\n" "$URL/dev/bootstrap"                               
 ```
 
 - If the build config changed, confirm the *build* too: `railway logs --build` should show
-  `load build definition from Dockerfile` and `python:3.10-slim` — never `mise` or railpack.
+  `load build definition from Dockerfile` and `python:3.14-slim` — never `mise` or railpack.
 - **Confirm the dashboard isn't overriding the image.** Railway's service **Settings → Deploy →
   Custom Start Command** overrides the Dockerfile `CMD` at the deploy layer and does **not** appear
   in `railway logs --build`. It must be **blank** for the Dockerfile to be what actually runs — the

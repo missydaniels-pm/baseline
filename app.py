@@ -15,7 +15,7 @@ from flask_wtf.csrf import CSRFProtect, CSRFError, generate_csrf
 from flask_limiter.util import get_remote_address
 from sqlalchemy import text, or_
 from sqlalchemy.exc import IntegrityError
-from database import db, User, Episode, Protocol, Symptom, SymptomScore, EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode, UsedVerifyToken, UserActivity, Trigger, EpisodeTrigger, EXPECTED_FK_ONDELETE, verify_fk_ondelete, STOP_REASON_CHECK_SQL
+from database import db, User, Episode, Protocol, Symptom, SymptomScore, EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode, UsedVerifyToken, UserActivity, Trigger, EpisodeTrigger, EXPECTED_FK_ONDELETE, verify_fk_ondelete, STOP_REASON_CHECK_SQL, normalize_database_url
 from collections import defaultdict
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
@@ -28,10 +28,9 @@ app = Flask(__name__)
 
 database_url = os.environ.get('DATABASE_URL')
 if database_url:
-    # Railway provides postgres:// but SQLAlchemy requires postgresql://
-    if database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql://', 1)
-    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+    # Railway provides postgres:// or postgresql://; pin the driver explicitly
+    # (SQLAlchemy 2.1 would otherwise pick psycopg 3) — see normalize_database_url.
+    app.config['SQLALCHEMY_DATABASE_URI'] = normalize_database_url(database_url)
     # pool_pre_ping (9/4/26): Railway's Postgres drops idle connections, and a
     # pooled connection that died while idle was handed straight to the next
     # request — seen on staging as a 500 on /login with
@@ -68,6 +67,19 @@ app.config['WTF_CSRF_TIME_LIMIT'] = None
 
 db.init_app(app)
 bcrypt = Bcrypt(app)
+
+
+def _pw(password):
+    """A password as bcrypt input: UTF-8, at most 72 bytes (10/4/26).
+
+    bcrypt only ever uses the first 72 bytes. bcrypt < 5 truncated longer input
+    silently; bcrypt 5.0 raises ValueError instead — a 500 on register/login,
+    and a permanent lockout for anyone whose stored hash was made from a long
+    password under the old version. Truncating here reproduces the old
+    behaviour exactly, so every existing hash still verifies. Every bcrypt call
+    goes through this (Rule 3).
+    """
+    return (password or '').encode('utf-8')[:72]
 csrf = CSRFProtect(app)
 
 
@@ -1525,7 +1537,7 @@ def login():
         if user and user.verified_at is None and not user.is_active:
             return render_template('login.html', email=email, unverified=True)
 
-        if user and user.password_hash and bcrypt.check_password_hash(user.password_hash, password):
+        if user and user.password_hash and bcrypt.check_password_hash(user.password_hash, _pw(password)):
             if not user.is_active:
                 flash('Your account has been deactivated.', 'error')
                 return render_template('login.html')
@@ -1581,7 +1593,7 @@ def register():
                 flash(e, 'error')
             return render_template('register.html', email=email, privacy_ack=privacy_ack)
 
-        pw_hash = bcrypt.generate_password_hash(password).decode('utf-8')
+        pw_hash = bcrypt.generate_password_hash(_pw(password)).decode('utf-8')
         user = User(
             name='Friend',
             email=email,
@@ -1876,7 +1888,7 @@ def change_email():
 
     if not new_email or '@' not in new_email:
         flash('Please enter a valid email address.', 'error')
-    elif not bcrypt.check_password_hash(user.password_hash, password):
+    elif not bcrypt.check_password_hash(user.password_hash, _pw(password)):
         flash('Current password is incorrect.', 'error')
     elif User.query.filter(User.email == new_email, User.id != user.id).first():
         flash('That email is already in use.', 'error')
@@ -1901,7 +1913,7 @@ def change_password():
     new_pw = request.form.get('new_password', '')
     confirm = request.form.get('confirm_new_password', '')
 
-    if not bcrypt.check_password_hash(user.password_hash, current):
+    if not bcrypt.check_password_hash(user.password_hash, _pw(current)):
         flash('Current password is incorrect.', 'error')
     elif len(new_pw) < 8:
         flash('New password must be at least 8 characters.', 'error')
@@ -1912,7 +1924,7 @@ def change_password():
     elif new_pw != confirm:
         flash('New passwords do not match.', 'error')
     else:
-        new_hash = bcrypt.generate_password_hash(new_pw).decode('utf-8')
+        new_hash = bcrypt.generate_password_hash(_pw(new_pw)).decode('utf-8')
         User.query.filter_by(id=user.id).update({'password_hash': new_hash})
         db.session.commit()
         flash('Password updated.', 'success')
@@ -4954,7 +4966,7 @@ def dev_bootstrap():
     admin = User(
         name='Admin',
         email='admin@baseline.app',
-        password_hash=bcrypt.generate_password_hash(password).decode('utf-8'),
+        password_hash=bcrypt.generate_password_hash(_pw(password)).decode('utf-8'),
         onboarding_complete=True,
         is_active=True,
     )

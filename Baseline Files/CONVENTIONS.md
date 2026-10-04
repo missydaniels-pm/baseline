@@ -371,6 +371,12 @@ the pass count in the Deploy Gate. A change to the help.html example messages up
 the matching eval cases — the eval holds the model to what the guide promises. A new
 JSON field goes in `CHECKIN_SCHEMA` *and* the prompt's template, together.
 
+## Passwords and the database URL
+- Every bcrypt call takes **`_pw(password)`** (UTF-8, first 72 bytes) — never the raw
+  string: bcrypt 5 raises on longer input, and truncation keeps old hashes valid.
+- Every SQLAlchemy URL built from `DATABASE_URL` goes through
+  **`normalize_database_url()`** (explicit `+psycopg2` driver) — app, scripts, tools.
+
 ## Client IP (rate limiting, anything that reads "who is this")
 - The only way to get a client's address is **`_client_ip_key()`** — Railway's
   `X-Real-IP`, IPv6 grouped by /64, falling back to `remote_addr`. Never read
@@ -379,6 +385,14 @@ JSON field goes in `CHECKIN_SCHEMA` *and* the prompt's template, together.
   Decision Log "Rate-limit key"). Nothing stores IPs today; if something ever
   does (abuse audit, admin view), it goes through this helper and is a privacy
   decision for Missy first.
+
+## Dependencies (pinned — 10/4/26)
+- Edit **`requirements.in`** only; regenerate `requirements.txt` with pip-tools on
+  Python 3.14 and commit both. Never hand-edit the lockfile or add a `>=` line to it.
+- Python version lives in two places that must agree: the Dockerfile `FROM` and
+  `.github/workflows/test.yml`'s `python-version`. Change both in one commit.
+- Run tests locally with `.venv/bin/python` (3.14, built by `run.sh`) — a pass on
+  any other interpreter says nothing about production.
 
 ## Architecture rules (full text in CLAUDE.md)
 - **Rule 1** — backend stays stateless. **Rule 2** — slow work off the request path.

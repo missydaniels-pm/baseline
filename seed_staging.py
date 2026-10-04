@@ -43,7 +43,7 @@ def main():
     # Import only after the guards pass — importing app runs migrations against
     # whatever DATABASE_URL is set, so we confirm the target first.
     from datetime import datetime
-    from app import app, db, bcrypt, seed_test_data
+    from app import app, db, bcrypt, seed_test_data, _pw
     from database import User, Episode
 
     email = os.environ.get('STAGING_SEED_EMAIL', 'staging@baseline.test')
@@ -58,7 +58,7 @@ def main():
             user = User(
                 name='Staging Tester',
                 email=email,
-                password_hash=bcrypt.generate_password_hash(password).decode('utf-8'),
+                password_hash=bcrypt.generate_password_hash(_pw(password)).decode('utf-8'),
                 is_active=True,
                 onboarding_complete=True,
                 verified_at=datetime.utcnow(),

@@ -68,7 +68,7 @@ def main():
     limiter.reset()
     for v in (None, '10.0.0.7', '100.64.1.2', 'not-an-ip'):  # + mapped CGNAT below
         register(c, v)
-    register(c, '::ffff:100.64.9.9')  # CGNAT in mapped form: is_global is wrongly True on 3.10
+    register(c, '::ffff:100.64.9.9')  # CGNAT in mapped form — falls back via the ipv4_mapped unwrap (3.10's is_global said True here; 3.14's says False — the unwrap makes us version-independent)
     check(register(c, None) == 429,
           'missing/private/CGNAT/garbage X-Real-IP all fall back to remote_addr (shared, unspoofable)')
     check(register(c, '9.9.9.9') == 200, 'a public X-Real-IP is unaffected by the fallback bucket')

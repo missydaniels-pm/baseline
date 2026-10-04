@@ -14,12 +14,12 @@ Live at: **https://mybaselineapp.com** (custom domain; Railway default: baseline
 
 ## Tech Stack
 
-- **Backend:** Python 3.10, Flask
+- **Backend:** Python 3.14, Flask
 - **Database:** SQLAlchemy ORM — PostgreSQL (production), SQLite (local dev). Local SQLite enforces foreign keys (`PRAGMA foreign_keys=ON` on every connection, set in `database.py`) so FK-unsafe deletes fail in dev the same way they would on production PostgreSQL (added 7/12/26 after the protocol-delete incident).
 - **Frontend:** Jinja2 templates, vanilla JavaScript, Chart.js
 - **AI:** Anthropic API (claude-sonnet-4-6) for check-in parsing. Onset is **classify-and-resolve** (7/17/26): the model returns a time phrase + type (never a computed date); `resolve_onset()` resolves it deterministically against the message anchor using **`dateparser`** + a colloquial-normalization layer, never logging a future onset. The client call is bounded (`timeout=60`, `max_retries=1` — gunicorn's `--timeout` no longer caps a request under gthread, 9/4/26) and a failed call never 500s: unreachable/timeout/429/5xx → a "couldn't reach the AI service, send it again" assistant reply; 400-class rejections → a distinct "resending won't help" reply logged at ERROR. Nothing is written either way; `test_checkin_failures.py` covers all four. **Scope boundary (10/3/26):** the system prompt states the check-in's only two writes (log a *new* episode; mark today's preventative compliance), lists what it cannot do (experiments, protocols, tracked items, triggers, settings, editing an already-logged episode, reminders), and tells the model never to claim those and to point to the right page instead — the model had promised to create an experiment that no code path creates. `test_checkin_scope.py` asserts the boundary reaches the API and that such a request writes nothing. **Structured outputs (10/3/26):** the request carries `output_config.format` = `CHECKIN_SCHEMA`, so the reply is exactly one schema-valid object (`symptom_scores` is a `{symptom_id, value}` list in the schema, folded back to the `{id: value}` map `checkin()` reads); a cut-off, refused or unparseable reply gets the fixed `CHECKIN_UNREADABLE_MSG` and nothing is written — raw model text is never shown or logged (`test_checkin_structured.py`). **Live eval:** `eval_checkin.py` runs 17 cases (incl. every help.html example message) against the real model — not CI; run on any prompt/schema change and before changing the model ID.
 - **Auth:** Flask sessions, bcrypt password hashing, self-serve registration with email verification (itsdangerous signed tokens, 24h TTL), Flask-Limiter rate limiting, CSRF protection (Flask-WTF)
-- **Hosting:** Railway. Built from the repo's **`Dockerfile`** (`python:3.10-slim`), not Railway's railpack/`mise` builder — the base image is what pins the runtime. The Dockerfile's `CMD` (gunicorn, 1 worker × `--threads 4`, `--timeout 120`) is the **only in-repo definition of how the app starts**; there is deliberately no Procfile. **Caveat:** Railway's dashboard **Custom Start Command** field overrides the image `CMD` at the deploy layer and does not appear in `railway logs --build`, so "the Dockerfile decides" only holds while that field is blank — confirm it (STAGING_SETUP.md verification list). Two environments: `staging` branch → staging, `main` branch → production.
+- **Hosting:** Railway. Built from the repo's **`Dockerfile`** (`python:3.14-slim`), not Railway's railpack/`mise` builder — the base image is what pins the runtime. The Dockerfile's `CMD` (gunicorn, 1 worker × `--threads 4`, `--timeout 120`) is the **only in-repo definition of how the app starts**; there is deliberately no Procfile. **Caveat:** Railway's dashboard **Custom Start Command** field overrides the image `CMD` at the deploy layer and does not appear in `railway logs --build`, so "the Dockerfile decides" only holds while that field is blank — confirm it (STAGING_SETUP.md verification list). Two environments: `staging` branch → staging, `main` branch → production.
 - **PWA:** manifest.json, service worker, home screen icons (Pillow-generated)
 
 ---
@@ -43,7 +43,8 @@ Slow/blocking work must not run synchronously in-request when the caller doesn't
 ```
 app.py                        — all routes and business logic
 database.py                   — SQLAlchemy models
-requirements.txt              — Python dependencies
+requirements.in               — top-level dependencies (edit this)
+requirements.txt              — generated lockfile, every package pinned (pip-tools)
 Dockerfile                    — THE production build + start command (gunicorn); Railway builds from this
 .dockerignore                 — keeps .env, instance/*.db, Baseline Files/ and backups/ out of the app image
 backups/                      — separate Railway `backups` service (own Dockerfile; schedule/restart/watch settings in the Railway dashboard): nightly encrypted
@@ -148,7 +149,7 @@ DATABASE_URL='postgresql://...' python3 check_fk_orphans.py   # use the PUBLIC R
 ## Local Development
 
 ### Prerequisites
-- Python 3.10+
+- Python 3.14 (match the Dockerfile; `brew install python@3.14` on macOS)
 - Node.js v24+ (for Claude Code)
 - An Anthropic API key
 
@@ -157,7 +158,7 @@ DATABASE_URL='postgresql://...' python3 check_fk_orphans.py   # use the PUBLIC R
 git clone https://github.com/missydaniels-pm/baseline.git migraine-tracker
 cd migraine-tracker
 # Create .env file with ANTHROPIC_API_KEY and SECRET_KEY
-./run.sh
+./run.sh   # builds .venv on Python 3.14 (rebuilds a venv made with another version), sets DEBUG=true
 ```
 
 Open http://localhost:5001
@@ -241,7 +242,7 @@ All dev routes are grouped in a clearly marked section at the bottom of `app.py`
 
 ## Continuous Integration
 
-`.github/workflows/test.yml` runs every `test_*.py` suite on every push and every pull request (exit-gate punch-list item 5, 9/26/26). Ubuntu runner, Python 3.10 (pinned to match the Dockerfile), SQLite, `WTF_CSRF_ENABLED=false` — exactly how the suites run locally. No repository secrets: the tests never touch Railway, Postgres, or the Anthropic API. All suites run even after one fails, so a red run lists every broken suite, not just the first. Adding a new `test_*.py` file at the repo root is automatically picked up.
+`.github/workflows/test.yml` runs every `test_*.py` suite on every push and every pull request (exit-gate punch-list item 5, 9/26/26). Ubuntu runner, Python 3.14 (pinned to match the Dockerfile; was 3.10 until 10/4/26), SQLite, `WTF_CSRF_ENABLED=false` — exactly how the suites run locally. No repository secrets: the tests never touch Railway, Postgres, or the Anthropic API. All suites run even after one fails, so a red run lists every broken suite, not just the first. Adding a new `test_*.py` file at the repo root is automatically picked up.
 
 **Uptime check (10/3/26).** `.github/workflows/uptime.yml` loads `https://mybaselineapp.com/login` every 30 minutes and requires HTTP 200 **and** the page title "Log In — Baseline" (a platform error page can return 200), with three tries 30s apart. A failed run emails whoever last edited the workflow's schedule, per GitHub's notification settings → Actions. Limits: scheduled runs fire only from `main`, can start late, and pause after 60 days without repo activity; it checks that pages are served, not that the database is reachable. **Error tracking is deliberately not set up** — deferred to the React rebuild plan, which must cover web, native mobile and background workers (owner decision 10/3/26; BACKLOG punch-list #3). Railway emails the owner on failed deploys and crashes, but does not alert on log content or HTTP 500s. **Interim error sweep:** `scripts/error_sweep.py` (run at the start of each Claude session — CLAUDE.md "Session Start") lists production error-level log lines and HTTP 5xx since the last sweep, max 7 days, grouped and counted. It reads production via explicit `railway -e production -s baseline` flags (never switching the CLI's linked environment), filters server-side, drops gunicorn's stderr INFO lines, and keeps its "last swept" marker in the git-ignored `.claude/error_sweep_last`. It cannot alert anyone between sessions.
 
@@ -268,7 +269,7 @@ curl -s -w " %{http_code}\n" "$URL/dev/bootstrap"
 ```
 
 Confirm the *build* too when the build config changed — `railway logs --build` should show
-`load build definition from Dockerfile` and `python:3.10-slim`, never `mise` or railpack.
+`load build definition from Dockerfile` and `python:3.14-slim`, never `mise` or railpack.
 
 **Important:** Every push to main deploys to production immediately. Real users are on the app.
 Both times this bit us (8/12/26) the deploy looked healthy: once because staging was pushed
@@ -282,7 +283,7 @@ public-domain **target port** still pointed at the previous deployment's port, s
 - Workflow: feature work → push `staging` → verify on staging URL → merge `staging → main` → prod deploys.
 
 ### Railway Services
-- **baseline** — Flask app on **Python 3.10** (from the `python:3.10-slim` base image), served by
+- **baseline** — Flask app on **Python 3.14** (from the `python:3.14-slim` base image), served by
   **gunicorn** via the Dockerfile `CMD`: one worker, **`--threads 4`** (gthread worker class),
   `--timeout 120`, bound to `$PORT` (8080).
   One worker matches the historical single-process behaviour — more workers would run the startup
@@ -304,7 +305,7 @@ public-domain **target port** still pointed at the previous deployment's port, s
   *(The Dockerfile's own comment still says "NOT verified" — retire it in the next commit that touches
   the Dockerfile; a comment-only change there rebuilds the image, so it wasn't bundled into a docs commit.)*
   *(Corrected 8/13/26: this line read "gunicorn, Python 3.13" — gunicorn was not actually running
-  at all before 8/12/26, and the version became 3.10 when the build moved to the Dockerfile.)*
+  at all before 8/12/26, and the version became 3.10 when the build moved to the Dockerfile; 3.14 since 10/4/26.)*
 - **Postgres** — PostgreSQL **17.11** (production, checked 9/25/26) with persistent volume. Free tier: Railway itself takes no scheduled backups we control — ours come from the `backups` service below.
 - **backups** (9/25/26, exit-gate F2) — a separate service built from `backups/` (Root Directory `/backups`, image `postgres:17` + gpg + rclone). **Production:** cron `0 10 * * *` UTC (3am PDT / 2am PST) runs `pg_dump` → integrity check → gpg AES-256 with `BACKUP_PASSPHRASE` → upload to Cloudflare R2 bucket `baseline-backups` under `production/` → size check in R2. Retention is the bucket's 30-day lifecycle rule; the script never deletes. **Staging (`backup-drill` — service names are project-wide):** same image, no cron (no Cron Schedule set), `BACKUP_MODE=restore-drill` — each redeploy restores the newest production backup into a throwaway database on staging's Postgres, compares every table's row count with the counts recorded at backup time, and drops the database pass or fail. Restart policy **Never** so a failed run stays failed. **These service settings live only in the Railway dashboard** — Railway retired `railway.json` (Config as Code) — and BACKUPS.md's settings table is the record. Variables, weekly check, drill and emergency-restore steps: **`Baseline Files/BACKUPS.md`**. **Live 9/25/26:** first production backup made by hand, and the **restore drill against it passed** (all 15 tables).
 
@@ -413,7 +414,12 @@ The experiments page (`experiments.html`) shows a muted preview of the full asse
 
 ## Dependencies
 
-Key packages (see requirements.txt for full list):
+**Pinned since 10/4/26.** `requirements.in` lists the top-level packages with minimum versions; `requirements.txt` is **generated** from it by pip-tools and pins all ~49 packages (incl. transitive) to the exact versions tested. The Dockerfile and CI install `requirements.txt`, so a build can only change what runs by a commit that changes the lockfile. Before this, every requirement was a `>=` floor and production silently moved to whatever was newest at build time (it reached `anthropic` 1.x unnoticed).
+- **Add or change a dependency:** edit `requirements.in`, then `.venv/bin/python -m piptools compile --strip-extras -o requirements.txt requirements.in` (on Python 3.14, matching the Dockerfile; `pip install pip-tools` in the venv once), commit both files, run all suites.
+- **Upgrade deliberately:** add `--upgrade` (or `--upgrade-package <name>`) to that command, then run all suites — the same staging gate as any change.
+- **Dependabot** (`.github/dependabot.yml`) opens weekly update PRs against `staging` for pip, the Docker base image and GitHub Actions; vulnerability alerts are enabled in the repo settings.
+
+Key packages:
 - `flask` — web framework
 - `flask-sqlalchemy` — ORM
 - `flask-bcrypt` — password hashing

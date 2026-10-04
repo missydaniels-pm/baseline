@@ -1,0 +1,33 @@
+# Dependency update PRs (10/4/26). Each PR runs CI like any other; merge into
+# staging first and verify there, same as any change. Security updates arrive
+# regardless of this schedule once Dependabot alerts are enabled in the repo's
+# Settings → Security (owner setting).
+version: 2
+updates:
+  # Python: Dependabot understands pip-tools — it edits requirements.in and
+  # regenerates the pinned requirements.txt.
+  - package-ecosystem: pip
+    directory: /
+    schedule: { interval: weekly }
+    target-branch: staging
+    open-pull-requests-limit: 5
+    # One PR for all minor/patch bumps instead of one per package; majors
+    # (API breaks) still arrive one at a time so each gets its own review.
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+  # The Dockerfile base image. A Python minor/major move (3.14 → 3.15) is a
+  # deliberate decision across the Dockerfile, CI and run.sh — never an
+  # automated PR. (Patch releases arrive on rebuild via the floating 3.14 tag.)
+  - package-ecosystem: docker
+    directory: /
+    schedule: { interval: weekly }
+    target-branch: staging
+    ignore:
+      - dependency-name: python
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+  # actions/checkout, actions/setup-python in the workflows.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }
+    target-branch: staging

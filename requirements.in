@@ -1,0 +1,20 @@
+# Top-level dependencies — the ONLY file to edit by hand. requirements.txt is
+# generated from this with pip-tools and pins every package (incl. transitive)
+# to the exact version tested, so a build can't silently pick up a new release.
+# Regenerate after editing (on Python 3.14, matching the Dockerfile):
+#   python3.14 -m piptools compile --strip-extras -o requirements.txt requirements.in
+# Upgrade everything deliberately:  ... compile --upgrade ...  then run all suites.
+
+flask>=3.0
+gunicorn>=21.2
+flask-sqlalchemy>=3.1
+flask-bcrypt>=1.0.1
+anthropic>=0.94.0,<2
+python-dotenv>=1.0.0
+psycopg2-binary>=2.9
+Pillow>=10.0
+Flask-Limiter>=3.5
+Flask-WTF>=1.2
+itsdangerous>=2.1
+resend>=2.0
+dateparser>=1.2

@@ -34,7 +34,7 @@ if not os.environ.get('DATABASE_URL'):
 
 from sqlalchemy import create_engine, text
 
-from database import EXPECTED_FK_ONDELETE
+from database import EXPECTED_FK_ONDELETE, normalize_database_url
 
 # Which parent table each FK column points at. Kept explicit rather than
 # introspected so this script still works on a database whose constraints are
@@ -50,9 +50,7 @@ PARENT_OF = {
 
 
 def main():
-    url = os.environ['DATABASE_URL']
-    if url.startswith('postgres://'):           # Railway legacy scheme
-        url = url.replace('postgres://', 'postgresql://', 1)
+    url = normalize_database_url(os.environ['DATABASE_URL'])  # explicit psycopg2 driver
 
     safe = url.split('@')[-1] if '@' in url else url
     print(f'Checking {len(EXPECTED_FK_ONDELETE)} foreign keys on {safe}\n')

@@ -3,6 +3,22 @@ from datetime import datetime, timedelta, date
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 
+
+def normalize_database_url(url):
+    """Railway's DATABASE_URL → an explicit SQLAlchemy URL for the installed driver.
+
+    Railway hands out `postgres://` (legacy) or `postgresql://`. SQLAlchemy 2.1
+    changed what a bare `postgresql://` means: it now loads psycopg **3**, which
+    isn't installed — the app would crash at boot (found 10/4/26 testing the
+    Python 3.14 upgrade against a real Postgres; CI runs SQLite and can't see
+    it). Naming the driver (`+psycopg2`) makes the URL mean the same thing on
+    every SQLAlchemy version. A URL that already names a driver is left alone.
+    """
+    for prefix in ('postgres://', 'postgresql://'):
+        if url[:len(prefix)].lower() == prefix:
+            return 'postgresql+psycopg2://' + url[len(prefix):]
+    return url
+
 db = SQLAlchemy()
 
 

@@ -13,7 +13,13 @@
 # download path completely, and pins the runtime for real: no more silent drift
 # between what dev tests on and what production runs (the builder had drifted to
 # 3.13 while development is on 3.10.7).
-FROM python:3.10-slim
+#
+# 3.10 → 3.14 on 10/4/26: Python 3.10 reached end-of-life 2026-10-01 (no more
+# security fixes). 3.14 is the current bug-fix line, supported to 2030-10. The
+# tag tracks the 3.14 *minor*, so every rebuild picks up its patch releases;
+# exact library versions are pinned in requirements.txt (pip-tools, from
+# requirements.in). CI's setup-python must name the same minor.
+FROM python:3.14-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1

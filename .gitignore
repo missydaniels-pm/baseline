@@ -19,3 +19,7 @@ instance/
 .claude/error_sweep_last
 __pycache__/
 ~$*
+
+# Exit-gate review reports list current weaknesses and the repo is public —
+# kept local only (owner decision 10/4/26). Commit a redacted copy once fixed.
+Baseline Files/EXIT-GATE-REVIEW-*.md

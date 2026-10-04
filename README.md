@@ -42,7 +42,7 @@ The experience shaped how I think about AI-assisted development — not as autoc
 
 ## Tech stack
 
-- **Backend:** Python 3.10, Flask
+- **Backend:** Python 3.14, Flask
 - **Database:** PostgreSQL (production), SQLite (local dev) via SQLAlchemy
 - **Frontend:** Jinja2 templates, vanilla JavaScript, Chart.js
 - **AI:** Anthropic API (Claude) for natural language check-in parsing
