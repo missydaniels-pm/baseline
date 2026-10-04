@@ -1,0 +1,56 @@
+# Uptime check (owner decision 10/3/26): is production serving pages? Railway
+# already emails the owner when a deploy fails or the app crashes, but nothing
+# notices "the site is unreachable" or "it's up but serving an error page".
+# Error *tracking* (Sentry or similar) is deferred to the React rebuild plan —
+# this check is service-free and doesn't constrain that choice.
+#
+# A failed run emails whoever last edited this file's schedule (GitHub's rule
+# for scheduled workflows), via GitHub notification settings → Actions.
+# Scheduled runs only fire from the default branch (main), can start late
+# under GitHub load, and are paused after 60 days with no repo activity —
+# re-enable from the Actions tab after a quiet stretch. Free because the repo
+# is public; if it ever goes private, ~48 runs/day would eat the free Actions
+# minutes the required `tests` check also needs.
+#
+# Checks that pages are served, NOT that the database is reachable (/login
+# runs no query) — a DB-touching /healthz is a deliberate follow-up (BACKLOG).
+name: uptime
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Production serves the login page
+        env:
+          URL: https://mybaselineapp.com/login
+          # Only the real app renders this title; a Railway/Cloudflare error
+          # page can return 200 too, so the status code alone isn't enough.
+          MARKER: 'Log In — Baseline'
+        run: |
+          # Three tries, 30s apart, so one slow response or a deploy restart
+          # doesn't page anyone. Fails only if every try fails.
+          for attempt in 1 2 3; do
+            rm -f page.html
+            # curl prints 000 itself when it can't connect; || true keeps the
+            # step alive so the retry runs.
+            status=$(curl -s -o page.html -w '%{http_code}' --max-time 20 "$URL" || true)
+            if [ "$status" = 200 ] && grep -qF "$MARKER" page.html; then
+              echo "OK on attempt $attempt (HTTP $status)"
+              exit 0
+            fi
+            echo "Attempt $attempt failed: HTTP ${status:-none}, marker $(grep -qF "$MARKER" page.html 2>/dev/null && echo found || echo missing)"
+            [ "$attempt" -lt 3 ] && sleep 30
+          done
+          # Show what came back instead — e.g. a Cloudflare challenge page.
+          [ -s page.html ] && head -c 300 page.html && echo
+          echo "::error::$URL is down or not serving Baseline"
+          exit 1

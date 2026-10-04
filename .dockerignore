@@ -15,3 +15,5 @@ instance/
 Baseline Files/
 # The backup service (its own Railway service and image) — not part of the app.
 backups/
+# Operator tooling run from a dev machine (the error sweep) — not part of the app.
+scripts/

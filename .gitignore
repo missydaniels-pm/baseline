@@ -15,5 +15,7 @@ instance/
 **/.claude/settings.local.json
 **/.claude/launch.json
 .claude/worktrees/
+# scripts/error_sweep.py's "last swept at" marker — local state, per machine.
+.claude/error_sweep_last
 __pycache__/
 ~$*

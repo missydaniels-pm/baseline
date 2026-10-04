@@ -6,6 +6,14 @@ This file gives Claude Code persistent context about the Baseline project. Read 
 
 ---
 
+## Session Start (do these first, every session — added 10/3/26)
+
+1. **Branches:** `git fetch`, then compare local `staging`/`main` with `origin` (`git log HEAD..origin/staging`). Pull before editing and tell Missy if anything was waiting. The startup git snapshot is local-only.
+2. **Production error sweep:** `python3 scripts/error_sweep.py` — production error-level log lines and HTTP 5xx since the last sweep (max 7 days). Report the result in a line or two; if anything turned up, raise it before starting the planned work. This is the interim stand-in for error tracking, which is deferred to the React rebuild plan (BACKLOG Decision Log). The script redacts before printing (SQL values and DB detail withheld, exception messages reduced to their type, emails masked) because its output enters the conversation — don't work around that by pulling raw log text unless Missy asks.
+3. **Dated checks:** compare today's date with the dated items in `Baseline Files/BACKLOG.md` (e.g. the model-retirement checks) and raise any that are due or overdue. Recurring checks are always written as calendar dates, never "quarterly".
+
+---
+
 ## What is Baseline?
 
 Baseline is a personal health tracking web application for people managing chronic conditions. The core differentiator is structured experiment tracking — users establish a baseline, introduce one protocol change at a time, and assess outcomes with real data. The philosophy: give chronic illness sufferers the tools to be scientists of their own health.
@@ -29,7 +37,7 @@ Live at: https://mybaselineapp.com (custom domain; Railway default: baseline-hea
 - **Database:** SQLAlchemy ORM — PostgreSQL in production, SQLite locally
 - **Frontend:** Jinja2 templates, vanilla JavaScript, Chart.js
 - **AI:** Anthropic API (claude-sonnet-4-6) for check-in parsing
-- **Hosting:** Railway, custom domain via Cloudflare DNS. Built from the repo's **`Dockerfile`** (`python:3.10-slim`), the **only in-repo definition of how the app starts** — `CMD` runs gunicorn. Railway's own builder (railpack/`mise`) is not used. One caveat that isn't in the repo: Railway's dashboard has a per-service **Custom Start Command** that would override the image `CMD` and does *not* show in `railway logs --build` — it must be confirmed **blank** to trust the Dockerfile (STAGING_SETUP.md verification list). Two environments: `staging` branch → staging, `main` branch → production. Two more services build from `backups/` — **`backups`** (production, nightly backup) and **`backup-drill`** (staging, restore drill; service names are project-wide) (its own Dockerfile; its cron schedule, restart policy and watch paths are **dashboard-only** settings — Railway retired `railway.json` — recorded in BACKUPS.md's settings table) — see `Baseline Files/BACKUPS.md`.
+- **Hosting:** Railway, custom domain via Cloudflare DNS. Built from the repo's **`Dockerfile`** (`python:3.10-slim`), the **only in-repo definition of how the app starts** — `CMD` runs gunicorn. Railway's own builder (railpack/`mise`) is not used. One caveat that isn't in the repo: Railway's dashboard has a per-service **Custom Start Command** that would override the image `CMD` and does *not* show in `railway logs --build` — it must be confirmed **blank** to trust the Dockerfile (STAGING_SETUP.md verification list). Two environments: `staging` branch → staging, `main` branch → production. Two more services build from `backups/` — **`backups`** (production, nightly backup) and **`backup-drill`** (staging, restore drill; service names are project-wide) (its own Dockerfile; its cron schedule, restart policy and watch paths are **dashboard-only** settings — Railway retired `railway.json` — recorded in BACKUPS.md's settings table) — see `Baseline Files/BACKUPS.md`. **Monitoring:** `.github/workflows/uptime.yml` checks production every 30 min (emails on failure; page-serving only, not the DB); Railway emails on failed deploys/crashes; **no error tracking yet** — deferred to the React rebuild plan (owner, 10/3/26).
 - **Auth:** Flask sessions, bcrypt password hashing, self-serve registration with email verification (itsdangerous signed tokens, 24h TTL, SHA-256 replay protection), Flask-Limiter rate limiting, CSRF protection (Flask-WTF `CSRFProtect`, all forms + JSON fetch endpoints)
 - **PWA:** manifest.json, service worker, home screen icons
 
@@ -43,6 +51,7 @@ database.py             — SQLAlchemy models
 requirements.txt        — Python dependencies
 Dockerfile              — THE production build + start command (gunicorn). Railway builds from this.
 .dockerignore           — keeps .env, the local SQLite DB, Baseline Files/ and backups/ out of the image
+scripts/error_sweep.py  — session-start production error sweep (Railway logs; operator tool, not in the image)
 backups/                — separate Railway `backups` service: nightly encrypted pg_dump → Cloudflare R2 (production cron) + restore drill (staging). Runbook: Baseline Files/BACKUPS.md
 run.sh                  — local startup script (exports DEBUG=true, runs the Flask dev server)
 .env                    — environment variables (not committed)

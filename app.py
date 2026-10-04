@@ -1395,9 +1395,60 @@ def offline():
 # Authentication routes
 # ---------------------------------------------------------------------------
 
+def _log_proxy_shape():
+    """TEMPORARY diagnostic (exit-gate F5, 10/3/26) — remove with the ProxyFix change.
+
+    Logs the SHAPE of the proxy headers on this request so the right ProxyFix
+    hop count can be chosen per environment (production: client → Cloudflare →
+    Railway edge → app; staging: client → Railway edge → app). Never logs an IP
+    address or any raw header text: addresses become private/public, positions
+    are compared with each other, and every other field is a fixed vocabulary.
+    X-Forwarded-For positions are labelled from the right (-1 = last hop), the
+    way ProxyFix's x_for counts. Fires only on GET /login?proxy_diag=1.
+    """
+    import ipaddress
+
+    def kind(ip):
+        try:
+            a = ipaddress.ip_address((ip or '').strip().split('%')[0])
+        except ValueError:
+            return 'invalid' if ip else 'none'
+        v = '6' if a.version == 6 else '4'
+        private = (a.is_private or a.is_loopback or a.is_link_local
+                   or (a.version == 4 and a in ipaddress.ip_network('100.64.0.0/10')))
+        return ('private' if private else 'public') + v
+
+    host = request.host.split(':')[0].lower()
+    host_kind = ('prod-domain' if host in ('mybaselineapp.com', 'www.mybaselineapp.com')
+                 else 'railway-domain' if host.endswith('.up.railway.app')
+                 else 'localhost' if host in ('localhost', '127.0.0.1')
+                 else 'other')
+    protos = [p.strip().lower() for p in request.headers.get('X-Forwarded-Proto', '').split(',') if p.strip()]
+    proto_kind = ','.join(p if p in ('http', 'https') else 'other' for p in protos) or 'none'
+
+    xff = [h.strip() for h in request.headers.get('X-Forwarded-For', '').split(',') if h.strip()]
+    real = request.headers.get('X-Real-IP', '').strip()
+    cf = request.headers.get('CF-Connecting-IP', '').strip()
+    envoy = request.headers.get('X-Envoy-External-Address', '').strip()
+    positions = [
+        f"{i - len(xff)}:{kind(h)}{'=real' if h == real else ''}{'=cf' if h == cf else ''}"
+        f"{'=envoy' if h == envoy else ''}{'=remote' if h == request.remote_addr else ''}"
+        for i, h in enumerate(xff)
+    ]
+    present = [n for n in ('Forwarded', 'X-Forwarded-Host', 'X-Forwarded-Port') if request.headers.get(n)]
+    app.logger.warning(
+        'proxy-diag host=%s remote=%s xff_hops=%d xff=[%s] real_ip=%s cf_ip=%s envoy_ip=%s '
+        'real_eq_cf=%s xf_proto=%s scheme=%s also=[%s]',
+        host_kind, kind(request.remote_addr), len(xff), ' '.join(positions),
+        kind(real), kind(cf), kind(envoy), bool(real) and real == cf,
+        proto_kind, request.scheme, ','.join(present))
+
+
 @app.route('/login', methods=['GET', 'POST'])
 @limiter.limit('20 per hour', methods=['POST'])
 def login():
+    if request.method == 'GET' and request.args.get('proxy_diag') == '1':
+        _log_proxy_shape()
     if get_user():
         return redirect(url_for('index'))
 
