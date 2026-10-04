@@ -72,7 +72,7 @@ A few places where I made deliberate product calls rather than just technical on
 
 The current app is a Flask monolith — server-rendered HTML via Jinja2. This was the right call for getting to a live, tested product quickly.
 
-The planned next chapter is a React frontend rebuild with an API-first Flask backend. That creates the foundation for React Native mobile apps and Apple HealthKit integration, which users are already asking for. The backend is production-ready and won't change; only the frontend layer moves.
+The planned next chapter is a React frontend rebuild with an API-first Flask backend. That creates the foundation for React Native mobile apps and Apple HealthKit integration, which users are already asking for. The backend's data model and business rules carry over, but the rebuild is backend work too: an API layer, token-based auth, and a background job queue so AI check-ins and emails stop running inside the web request.
 
 ---
 

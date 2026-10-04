@@ -301,6 +301,16 @@ here in the same commit.
 - Text caps: name ≤ 200, description/notes ≤ 500 (with a UI counter). Enforce on
   **every** write path for the same field — form, AI check-in, and dashboard/JSON —
   not just one.
+- **Enum-ish fields validate against one shared tuple** (`FUNCTIONAL_IMPAIRMENT_VALUES`,
+  `PROTOCOL_STATUSES`, `EXPERIMENT_DECISIONS`) on **every** write path — form, AI
+  check-in, `CHECKIN_SCHEMA`. A `<select>` is a convenience, like `required`. Adding an
+  option means adding it to the tuple (and the template). Exit-gate F7, 10/3/26.
+- **Reject, don't substitute.** A malformed or out-of-range value flashes; it is never
+  silently replaced with a default ("today", 3 weeks) or silently ignored. Blank may
+  mean "use the default" when that's the field's documented meaning. Parse helpers
+  return `(value, error)` — `_parse_date` (the one form-date parser), `_parse_onset`,
+  `_parse_impairment`, `_parse_stabilization_weeks`, and `_resolve_effective_date`
+  (which builds on `_parse_date`). Exit-gate F8.
 - Validate everything before the DB write. JSON endpoints reject invalid input with
   `{ok: false, error}` + a 4xx **before** any partial write.
 

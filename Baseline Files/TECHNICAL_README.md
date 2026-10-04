@@ -211,10 +211,10 @@ Killing the dev server: `pkill -f "python3 app.py"` does **not** match it — th
 | `/symptoms` | GET, POST | Symptom management |
 | `/protocols` | GET, POST | Protocol management |
 | `/experiments` | GET, POST | Experiment tracking (supports inline protocol creation) |
-| `/assess_experiment/<id>` | GET, POST | Experiment assessment |
+| `/experiments/<id>/assess` | GET, POST | Experiment assessment |
 | `/settings` | GET, POST | User settings |
-| `/settings/change-password` | POST | Change password |
-| `/settings/change-email` | POST | Change email. Also updates Resend contact (delete old, upsert new with current `email_updates_enabled`). |
+| `/settings/password` | POST | Change password |
+| `/settings/email` | POST | Change email. Also updates Resend contact (delete old, upsert new with current `email_updates_enabled`). |
 | `/settings/email-preferences` | POST | Toggle `email_updates_enabled`. Mirrors the new state to Resend audience. |
 | `/settings/delete-account` | POST | Delete account and all data (MHMD compliance). Removes Resend contact before DB delete. |
 | `/help` | GET | Help and documentation |

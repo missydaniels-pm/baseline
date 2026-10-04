@@ -411,6 +411,67 @@ Unsubscribe from app updates: {unsubscribe_url}
     _send_email(user_email, 'Welcome to Baseline', html, plain)
 
 
+# Allowed values for enum-ish fields, shared by every write path (forms, AI
+# check-in, CHECKIN_SCHEMA). A <select> in the template is a convenience, not a
+# guard — a raw POST walks past it (exit-gate F7, 10/3/26).
+FUNCTIONAL_IMPAIRMENT_VALUES = ('working_normally', 'working_reduced',
+                                'cannot_work', 'completely_incapacitated')
+PROTOCOL_STATUSES = ('active', 'paused', 'stopped')
+EXPERIMENT_DECISIONS = ('continue', 'pause', 'stop')
+
+
+def _parse_impairment(raw):
+    """Episode-form functional impairment -> (value, error). Blank means "not
+    set" (None, never an empty string); anything off the list is rejected."""
+    raw = (raw or '').strip()
+    if not raw:
+        return None, None
+    if raw not in FUNCTIONAL_IMPAIRMENT_VALUES:
+        return None, "That functional-impairment choice isn't one of the options."
+    return raw, None
+
+
+def _parse_date(raw, default=None, label='date'):
+    """Form date (YYYY-MM-DD) -> (date, error). Blank returns `default`; a
+    malformed value is rejected with a message, never substituted. The one
+    date parser for form fields (Rule 3 — it was hand-rolled four times)."""
+    raw = (raw or '').strip()
+    if not raw:
+        return default, None
+    try:
+        return datetime.strptime(raw, '%Y-%m-%d').date(), None
+    except ValueError:
+        return None, f"That {label} didn't look right — use the date picker."
+
+
+def _parse_onset(raw, default):
+    """Episode-form onset (datetime-local) -> (datetime, error). Blank falls back
+    to `default`; a malformed value is rejected instead of 500ing. Accepts the
+    with-seconds form some browsers send (seconds are dropped)."""
+    if not raw:
+        return default, None
+    for fmt in ('%Y-%m-%dT%H:%M', '%Y-%m-%dT%H:%M:%S'):
+        try:
+            return datetime.strptime(raw, fmt).replace(second=0), None
+        except ValueError:
+            pass
+    return None, "That onset date didn't look right — use the date picker."
+
+
+def _parse_stabilization_weeks(raw):
+    """Experiment stabilization weeks -> (int, error). Blank means the default
+    3; out-of-range or non-numeric is rejected, not silently replaced (F8)."""
+    if raw is None or not str(raw).strip():
+        return 3, None
+    try:
+        weeks = int(raw)
+    except (ValueError, TypeError):
+        return None, 'Stabilization period must be a whole number of weeks.'
+    if not 1 <= weeks <= 52:
+        return None, 'Stabilization period must be between 1 and 52 weeks.'
+    return weeks, None
+
+
 # Curated global trigger seed list (cap: 12; condition-agnostic). Rows are
 # inserted with user_id NULL (global) idempotently in run_migrations(). Editing
 # this list adds new globals on next deploy; it never renames/removes existing
@@ -1042,7 +1103,8 @@ def user_today(server_today=None):
     Every day-boundary write and read (compliance, protocol events, the
     dashboard card) must resolve "today" through here so they can't diverge:
     that divergence is exactly what put evening entries a day off. Resolves the
-    zone via `user_tz_name()` (stored User.timezone → cookie → server UTC).
+    zone via `user_tz_name()` (cookie → stored User.timezone → server UTC;
+    cookie-first per the owner's 7/17/26 decision).
     Falls back to the server date only when no zone resolves. Must be called
     within a request context.
     """
@@ -1432,7 +1494,7 @@ def register():
             print(f'[DEV] Verification URL for {email}: {verify_url}')
 
         session['pending_verify_email'] = email
-        if not sent and os.environ.get('MAIL_USERNAME'):
+        if not sent:
             flash('We had trouble sending your verification email. Try the resend link, or contact baselinehealthapp@gmail.com.', 'warning')
         return redirect(url_for('verify_sent'))
 
@@ -2220,8 +2282,7 @@ CHECKIN_SCHEMA = {
                     'additionalProperties': False,
                 }},
                 'functional_impairment': {'anyOf': [
-                    {'type': 'string', 'enum': ['working_normally', 'working_reduced',
-                                                'cannot_work', 'completely_incapacitated']},
+                    {'type': 'string', 'enum': list(FUNCTIONAL_IMPAIRMENT_VALUES)},
                     {'type': 'null'}]},
                 'interventions': {'type': 'array', 'items': {
                     'type': 'object',
@@ -2386,7 +2447,7 @@ def checkin():
                     user_id=user.id,
                     onset=onset,
                     peak_severity=None,
-                    functional_impairment=ep_data.get('functional_impairment') if ep_data.get('functional_impairment') in ('working_normally', 'working_reduced', 'cannot_work', 'completely_incapacitated') else None,
+                    functional_impairment=ep_data.get('functional_impairment') if ep_data.get('functional_impairment') in FUNCTIONAL_IMPAIRMENT_VALUES else None,
                     notes=ep_data.get('notes') or None,
                 )
                 db.session.add(episode)
@@ -2831,15 +2892,21 @@ def new_experiment():
             return render_template('new_experiment.html', preventatives=preventatives,
                                    prefill_protocol_id=prefill_protocol_id, today=user_today(),
                                    active_experiment=active_experiment)
-        start_str = request.form.get('start_date', '').strip()
-        try:
-            start = datetime.strptime(start_str, '%Y-%m-%d').date() if start_str else user_today()
-        except ValueError:
-            start = user_today()
-        try:
-            weeks = max(1, int(request.form.get('stabilization_weeks') or 3))
-        except (ValueError, TypeError):
-            weeks = 3
+        # Reject, don't substitute (exit-gate F8): a malformed start date used to
+        # become "today" silently, shifting the before/during windows the
+        # assessment compares.
+        start, start_err = _parse_date(request.form.get('start_date'), user_today(), 'start date')
+        if start_err:
+            flash(start_err, 'error')
+            return render_template('new_experiment.html', preventatives=preventatives,
+                                   prefill_protocol_id=prefill_protocol_id, today=user_today(),
+                                   active_experiment=active_experiment)
+        weeks, weeks_err = _parse_stabilization_weeks(request.form.get('stabilization_weeks'))
+        if weeks_err:
+            flash(weeks_err, 'error')
+            return render_template('new_experiment.html', preventatives=preventatives,
+                                   prefill_protocol_id=prefill_protocol_id, today=user_today(),
+                                   active_experiment=active_experiment)
 
         # Handle inline protocol creation
         raw_protocol_id = request.form.get('protocol_id', '')
@@ -2932,12 +2999,22 @@ def assess_experiment(exp_id):
             flash('That experiment has already been assessed.', 'error')
             return redirect(url_for('experiments'))
 
+        # Before any assignment. The radios always send a listed value, so this
+        # only catches a forged/garbled POST — redirect back to the page rather
+        # than re-render (its GET branch computes the whole comparison context).
+        # Unchecked, an off-list value was stored, and on PostgreSQL one longer
+        # than the column 500'd (exit-gate F7).
+        decision = request.form.get('decision')
+        if decision not in EXPERIMENT_DECISIONS:
+            flash('Choose whether to continue, pause or stop.', 'error')
+            return redirect(url_for('assess_experiment', exp_id=experiment.id))
+
         try:
             experiment.outcome_rating = max(1, min(10, int(request.form.get('outcome_rating', 5))))
         except (ValueError, TypeError):
             experiment.outcome_rating = 5
         experiment.outcome_notes = request.form.get('outcome_notes', '').strip() or None
-        experiment.decision = request.form.get('decision')
+        experiment.decision = decision
         experiment.status = 'completed'
 
         if experiment.protocol and experiment.decision in ('pause', 'stop'):
@@ -3106,18 +3183,20 @@ def edit_experiment(exp_id):
         if hypothesis_val and len(hypothesis_val) > 500:
             flash('Hypothesis must be 500 characters or fewer.', 'error')
             return render_template('edit_experiment.html', experiment=experiment, preventatives=preventatives)
+        # Reject, don't silently ignore/replace (exit-gate F8). Blank start
+        # keeps the stored date; blank weeks means the default 3.
+        new_start, start_err = _parse_date(request.form.get('start_date'), experiment.start_date, 'start date')
+        if start_err:
+            flash(start_err, 'error')
+            return render_template('edit_experiment.html', experiment=experiment, preventatives=preventatives)
+        weeks, weeks_err = _parse_stabilization_weeks(request.form.get('stabilization_weeks'))
+        if weeks_err:
+            flash(weeks_err, 'error')
+            return render_template('edit_experiment.html', experiment=experiment, preventatives=preventatives)
         experiment.name = exp_name
         experiment.hypothesis = hypothesis_val
-        try:
-            experiment.stabilization_weeks = max(1, int(request.form.get('stabilization_weeks') or 3))
-        except (ValueError, TypeError):
-            experiment.stabilization_weeks = 3
-        start_str = request.form.get('start_date', '').strip()
-        if start_str:
-            try:
-                experiment.start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
-            except ValueError:
-                pass
+        experiment.stabilization_weeks = weeks
+        experiment.start_date = new_start
         protocol_id = request.form.get('protocol_id')
         if protocol_id:
             try:
@@ -3685,8 +3764,11 @@ def new_episode():
     triggers = _pickable_triggers(user.id)
 
     if request.method == 'POST':
-        onset_str = request.form.get('onset')
-        onset = datetime.strptime(onset_str, '%Y-%m-%dT%H:%M') if onset_str else user_now()
+        onset, onset_err = _parse_onset(request.form.get('onset'), user_now())
+        impairment, impairment_err = _parse_impairment(request.form.get('functional_impairment'))
+        if onset_err or impairment_err:
+            flash(onset_err or impairment_err, 'error')
+            return render_template('new_episode.html', rescue_options=rescue_options, symptoms=symptoms, triggers=triggers, selected_trigger_ids=[])
 
         # Future-date guard — now EXACT. Both sides are in the user's local naive
         # wall-clock: `onset` is browser-local-naive and `user_now()` is the user's
@@ -3706,7 +3788,7 @@ def new_episode():
             onset=onset,
             peak_severity=None,
             duration_hours=_safe_float(request.form.get('duration_hours'), min_val=0),
-            functional_impairment=request.form.get('functional_impairment'),
+            functional_impairment=impairment,
             notes=request.form.get('notes') or None,
         )
         db.session.add(episode)
@@ -3801,8 +3883,15 @@ def edit_episode(episode_id):
                 suggested_trigger_names.append(s)
 
     if request.method == 'POST':
-        onset_str = request.form.get('onset')
-        new_onset = datetime.strptime(onset_str, '%Y-%m-%dT%H:%M') if onset_str else episode.onset
+        new_onset, onset_err = _parse_onset(request.form.get('onset'), episode.onset)
+        impairment, impairment_err = _parse_impairment(request.form.get('functional_impairment'))
+        if onset_err or impairment_err:
+            flash(onset_err or impairment_err, 'error')
+            existing_entries = {ss.symptom_id: ss for ss in episode.symptom_scores}
+            return render_template('edit_episode.html', episode=episode, rescue_options=rescue_options,
+                                   symptoms=symptoms, existing_entries=existing_entries,
+                                   triggers=triggers, selected_trigger_ids=selected_trigger_ids,
+                                   suggested_trigger_names=suggested_trigger_names)
 
         # Exact future-date guard (see new_episode) — user-local now, naive. Only
         # enforced when the onset actually CHANGED: a pre-existing episode whose
@@ -3828,7 +3917,7 @@ def edit_episode(episode_id):
 
         episode.onset = new_onset
         episode.duration_hours = _safe_float(request.form.get('duration_hours'), min_val=0)
-        episode.functional_impairment = request.form.get('functional_impairment')
+        episode.functional_impairment = impairment
         episode.notes = notes_val or None
 
         # Replace symptom scores
@@ -3979,21 +4068,21 @@ def new_protocol():
         if why_val and len(why_val) > 500:
             flash('"Why I\'m doing this" must be 500 characters or fewer.', 'error')
             return render_template('new_protocol.html', active_experiment=active_experiment)
-        start_date_str = request.form.get('start_date')
-        start_date_val = None
-        if start_date_str:
-            try:
-                start_date_val = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-            except ValueError:
-                flash("That start date didn't look right — use the date picker.", 'error')
-                return render_template('new_protocol.html', active_experiment=active_experiment)
+        start_date_val, start_err = _parse_date(request.form.get('start_date'), None, 'start date')
+        if start_err:
+            flash(start_err, 'error')
+            return render_template('new_protocol.html', active_experiment=active_experiment)
+        status_val = request.form.get('status', 'active')
+        if status_val not in PROTOCOL_STATUSES:
+            flash("That status isn't one of the options.", 'error')
+            return render_template('new_protocol.html', active_experiment=active_experiment)
         protocol = Protocol(
             user_id=user.id,
             name=name_val,
             type='preventative',
             start_date=start_date_val,
             dose_frequency=request.form.get('dose_frequency') or None,
-            status=request.form.get('status', 'active'),
+            status=status_val,
             why=why_val or None,
             notes=notes_val or None,
         )
@@ -4043,12 +4132,9 @@ def _resolve_effective_date(raw, today, not_before=None, not_before_label='this 
     status from this log is meaningless. Dose changes carry no such constraint
     — they don't participate in a status replay.
     """
-    if not raw:
-        return today, None
-    try:
-        parsed = datetime.strptime(raw.strip(), '%Y-%m-%d').date()
-    except (ValueError, AttributeError):
-        return None, "That date didn't look right — use the date picker."
+    parsed, err = _parse_date(raw, today)
+    if err:
+        return None, err
     if parsed > today:
         return None, "That date is in the future. Record changes after they happen."
     if not_before and parsed < not_before:
@@ -4102,21 +4188,25 @@ def edit_protocol(protocol_id):
         # used to re-parse this same string with a bare strptime, so a
         # non-empty malformed date 500'd the request instead of flashing like
         # every other field on this form.
-        submitted_start_str = request.form.get('start_date')
-        submitted_start = None
-        if submitted_start_str:
-            try:
-                submitted_start = datetime.strptime(submitted_start_str, '%Y-%m-%d').date()
-            except ValueError:
-                flash("That start date didn't look right — use the date picker.", 'error')
-                return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment,
+        submitted_start, start_err = _parse_date(request.form.get('start_date'), None, 'start date')
+        if start_err:
+            flash(start_err, 'error')
+            return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment,
                                        today=user_today(), last_status_date=last_status_date)
+
+        # An off-list status would also become a ProtocolEvent.event_type via
+        # the .get(status, status) fallback below and corrupt the status replay.
+        status_val = request.form.get('status', protocol.status)
+        if status_val not in PROTOCOL_STATUSES:
+            flash("That status isn't one of the options.", 'error')
+            return render_template('edit_protocol.html', protocol=protocol, active_experiment=active_experiment,
+                                   today=user_today(), last_status_date=last_status_date)
 
         # A status change can't be dated before the last status change already
         # on record, or the history contradicts itself (see the helper's
         # docstring). Dose changes only have to clear the start date.
         floor, floor_label = submitted_start, 'this protocol started'
-        if request.form.get('status', protocol.status) != protocol.status:
+        if status_val != protocol.status:
             last_status = (ProtocolEvent.query
                            .filter(ProtocolEvent.protocol_id == protocol.id,
                                    ProtocolEvent.event_type.in_(STATUS_EVENT_TYPES))
@@ -4137,7 +4227,7 @@ def edit_protocol(protocol_id):
         protocol.name = name_val
         protocol.start_date = submitted_start  # already parsed and validated above
         protocol.dose_frequency = request.form.get('dose_frequency') or None
-        protocol.status = request.form.get('status', protocol.status)
+        protocol.status = status_val
         protocol.why = why_val or None
         protocol.notes = notes_val or None
 

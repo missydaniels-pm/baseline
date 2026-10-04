@@ -12,7 +12,7 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-group">
       <label for="name">Experiment name</label>
-      <input type="text" id="name" name="name" required autofocus value="{{ experiment.name }}"
+      <input type="text" id="name" name="name" required autofocus value="{{ request.form.get('name', experiment.name) }}"
              data-charlimit="200">
       <div class="char-counter"><span id="name_count">0</span>/200</div>
     </div>
@@ -22,7 +22,7 @@
       <select id="protocol_id" name="protocol_id">
         <option value="">— select a protocol —</option>
         {% for p in preventatives %}
-        <option value="{{ p.id }}" {% if experiment.protocol_id == p.id %}selected{% endif %}>{{ p.name }}{% if p.status != 'active' %} ({{ p.status }}){% endif %}</option>
+        <option value="{{ p.id }}" {% if request.form.get('protocol_id', experiment.protocol_id|string if experiment.protocol_id else '') == p.id|string %}selected{% endif %}>{{ p.name }}{% if p.status != 'active' %} ({{ p.status }}){% endif %}</option>
         {% endfor %}
       </select>
     </div>
@@ -31,7 +31,7 @@
       <label for="hypothesis">Hypothesis <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
       <div class="field-hint">What outcome do you expect?</div>
       <textarea id="hypothesis" name="hypothesis" placeholder="I expect…"
-                data-charlimit="500">{{ experiment.hypothesis or '' }}</textarea>
+                data-charlimit="500">{{ request.form.get('hypothesis', experiment.hypothesis or '') }}</textarea>
       <div class="char-counter"><span id="hypothesis_count">0</span>/500</div>
     </div>
 
@@ -40,7 +40,7 @@
         <label for="start_date">Start date</label>
         <div class="date-input-wrap">
           <input type="date" id="start_date" name="start_date"
-                 value="{{ experiment.start_date.strftime('%Y-%m-%d') if experiment.start_date else '' }}">
+                 value="{{ request.form.get('start_date', experiment.start_date.strftime('%Y-%m-%d') if experiment.start_date else '') }}">
           <button type="button" class="btn btn-today" onclick="document.getElementById('start_date').value=new Date().toLocaleDateString('en-CA'); updateAssessDate();">Today</button>
         </div>
       </div>
@@ -48,7 +48,7 @@
         <label for="stabilization_weeks">Stabilization period (weeks)</label>
         <div class="field-hint">How long before assessing?</div>
         <input type="number" id="stabilization_weeks" name="stabilization_weeks"
-               min="1" max="52" value="{{ experiment.stabilization_weeks }}">
+               min="1" max="52" value="{{ request.form.get('stabilization_weeks', experiment.stabilization_weeks) }}">
       </div>
     </div>
 

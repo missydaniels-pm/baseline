@@ -31,6 +31,7 @@
       <label for="name">Experiment name</label>
       <div class="field-hint">Give it a clear, memorable name. e.g. "Magnesium 400mg trial"</div>
       <input type="text" id="name" name="name" required autofocus
+             value="{{ request.form.get('name', '') }}"
              placeholder="e.g. Magnesium 400mg trial"
              data-charlimit="200">
       <div class="char-counter"><span id="name_count">0</span>/200</div>
@@ -41,10 +42,11 @@
       <div class="field-hint">Pick an existing protocol or create a new one to test.</div>
       <select id="protocol_id" name="protocol_id" onchange="handleProtocolChange()">
         <option value="">— select a protocol —</option>
+        {% set chosen_protocol = request.form.get('protocol_id', (prefill_protocol_id|string) if prefill_protocol_id else '') %}
         {% for p in preventatives %}
-        <option value="{{ p.id }}" {% if p.id == prefill_protocol_id %}selected{% endif %} data-name="{{ p.name }}">{{ p.name }}</option>
+        <option value="{{ p.id }}" {% if p.id|string == chosen_protocol %}selected{% endif %} data-name="{{ p.name }}">{{ p.name }}</option>
         {% endfor %}
-        <option value="__new__">+ Add new protocol</option>
+        <option value="__new__" {% if chosen_protocol == '__new__' %}selected{% endif %}>+ Add new protocol</option>
       </select>
     </div>
 
@@ -52,6 +54,7 @@
       <div class="form-group">
         <label for="new_protocol_name">Protocol name</label>
         <input type="text" id="new_protocol_name" name="new_protocol_name"
+               value="{{ request.form.get('new_protocol_name', '') }}"
                placeholder="e.g. Magnesium 400mg" data-charlimit="200"
                oninput="suggestExperimentName()">
         <div class="char-counter"><span id="new_protocol_name_count">0</span>/200</div>
@@ -59,11 +62,13 @@
       <div class="form-group">
         <label for="new_protocol_dose">Dose / frequency <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
         <input type="text" id="new_protocol_dose" name="new_protocol_dose"
+               value="{{ request.form.get('new_protocol_dose', '') }}"
                placeholder="e.g. 400mg daily">
       </div>
       <div class="form-group">
         <label for="new_protocol_why">Why I'm doing this <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
         <input type="text" id="new_protocol_why" name="new_protocol_why"
+               value="{{ request.form.get('new_protocol_why', '') }}"
                placeholder="e.g. to cut down my weekly episodes" data-charlimit="500">
         <div class="char-counter"><span id="new_protocol_why_count">0</span>/500</div>
         <div class="field-hint">Baseline uses this to keep you connected to your goal — you'll see it on days that don't go to plan.</div>
@@ -74,7 +79,7 @@
       <label for="hypothesis">Hypothesis <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
       <div class="field-hint">What outcome do you expect? e.g. "I expect to have fewer than 4 bad days per month after 8 weeks."</div>
       <textarea id="hypothesis" name="hypothesis" placeholder="I expect…"
-                data-charlimit="500"></textarea>
+                data-charlimit="500">{{ request.form.get('hypothesis', '') }}</textarea>
       <div class="char-counter"><span id="hypothesis_count">0</span>/500</div>
     </div>
 
@@ -83,7 +88,7 @@
         <label for="start_date">Start date</label>
         <div class="date-input-wrap">
           <input type="date" id="start_date" name="start_date"
-                 value="{{ today.strftime('%Y-%m-%d') }}">
+                 value="{{ request.form.get('start_date', today.strftime('%Y-%m-%d')) }}">
           <button type="button" class="btn btn-today" onclick="document.getElementById('start_date').value=new Date().toLocaleDateString('en-CA'); updateAssessDate();">Today</button>
         </div>
       </div>
@@ -91,7 +96,7 @@
         <label for="stabilization_weeks">Stabilization period (weeks)</label>
         <div class="field-hint">How long before assessing? Default is 3 weeks.</div>
         <input type="number" id="stabilization_weeks" name="stabilization_weeks"
-               min="1" max="52" value="3">
+               min="1" max="52" value="{{ request.form.get('stabilization_weeks', 3) }}">
       </div>
     </div>
 
@@ -110,6 +115,9 @@
   var nameManuallyEdited = false;
   var nameSuggesting = false;
   var nameInput = document.getElementById('name');
+  // A name already in the box (re-render after a rejected submit) is the user's —
+  // don't overwrite it with a protocol-based suggestion. Blank on a normal GET.
+  nameManuallyEdited = nameInput.value.trim() !== '';
   nameInput.addEventListener('input', function() {
     if (!nameSuggesting) nameManuallyEdited = true;
   });
@@ -169,8 +177,9 @@
   document.getElementById('stabilization_weeks').addEventListener('input', updateAssessDate);
   updateAssessDate();
 
-  // If protocol is prefilled, suggest name on load
-  {% if prefill_protocol_id %}
+  // If a protocol is prefilled (?protocol_id=) or was chosen before a rejected
+  // submit (incl. "+ Add new protocol"), sync the sub-form and name on load.
+  {% if request.form.get('protocol_id') or prefill_protocol_id %}
   handleProtocolChange();
   {% endif %}
 
