@@ -80,7 +80,7 @@ Baseline Files/
   SPEC-episode-diary.md — episode-diary spec (React rebuild)
   FABLE-EXIT-GATE-PROMPT.md — reusable pre-rebuild review prompt
   baseline-vision-roadmap.docx — owner's roadmap (Missy edits; not Claude)
-  EXIT-GATE-REVIEW-*.md — review reports, LOCAL ONLY (git-ignored; public repo)
+  EXIT-GATE-REVIEW-*.md — review reports: git-ignored SYMLINKS into the private repo (see "Security-sensitive items")
 ```
 
 ---
@@ -284,6 +284,23 @@ These describe features/workflows/terminology to users, so **any change that add
 - **Onboarding copy** — **`templates/onboarding_step1/2/3.html`** — the first-run guidance; update when the setup flow or terminology changes.
 
 **`templates/privacy.html`** — the single source of truth for the privacy policy. Update directly when registration/email/data-handling changes. Changes with legal or MHMD implications must be raised to Missy for approval before committing.
+
+### Security-sensitive items ("review Fn" rows) — added 10/4/26
+
+This repo is **public**. Pre-rebuild review findings that describe current, unfixed
+weaknesses are kept out of it: BACKLOG lists them as **neutral rows tagged "review Fn"**
+(e.g. "Auth foundations (review F1)").
+- **The specifics** are in the **private repo `missydaniels-pm/baseline-private`**, cloned at
+  `~/claude/baseline-private` — `reviews/EXIT-GATE-REVIEW-2026-10.md` (finding Fn) and the
+  August report. In this repo, `Baseline Files/EXIT-GATE-REVIEW-*.md` are git-ignored
+  symlinks to those files, so they read at the usual path.
+- **Before working a "review Fn" item, read that finding.** If the clone is missing (another
+  machine, a cloud session), say so and ask Missy — don't guess from the neutral row.
+- **Never copy the specifics into a tracked file of this repo** — commits, BACKLOG, code
+  comments, PR text — while the item is open. Describe the fix neutrally until it ships;
+  once it's fixed and deployed, record it in the Decision Log like any other change, and
+  mark the finding fixed in the private repo (commit + push there).
+- Same rule for any new security finding: details to the private repo, a neutral row here.
 
 ### Files you do NOT edit directly (.docx):
 
