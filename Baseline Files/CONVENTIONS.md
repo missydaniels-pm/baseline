@@ -355,6 +355,11 @@ the same commit** — into CAN only if `checkin()` actually writes it, otherwise
 CANNOT with its page pointer. Renaming a page, nav label or button the prompt names
 counts too. QA checklist §11 enforces it; `test_checkin_scope.py` asserts it reaches
 the API.
+**Any change to the check-in prompt, `CHECKIN_SCHEMA` or the model ID: run
+`python3 eval_checkin.py` before shipping** (live model, ~$0.25, not in CI) and report
+the pass count in the Deploy Gate. A change to the help.html example messages updates
+the matching eval cases — the eval holds the model to what the guide promises. A new
+JSON field goes in `CHECKIN_SCHEMA` *and* the prompt's template, together.
 
 ## Architecture rules (full text in CLAUDE.md)
 - **Rule 1** — backend stays stateless. **Rule 2** — slow work off the request path.

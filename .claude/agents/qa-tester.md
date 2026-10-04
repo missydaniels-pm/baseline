@@ -116,6 +116,7 @@ CI (`.github/workflows/test.yml`) runs every `test_*.py` on every push, and bran
 - [ ] If so, is the prompt section updated in the same commit — the new action added to **CAN** (only if `checkin()` actually writes it) or to **CANNOT** with a pointer to the page that does it — and do the page names still match `templates/base.html` and the button labels?
 - [ ] Does the diff change what `checkin()` writes? Then CAN/CANNOT must move with it.
 - [ ] Does `test_checkin_scope.py`'s `REQUIRED` list still cover the changed lines?
+- [ ] Did the diff change the check-in prompt, `CHECKIN_SCHEMA`, the model ID, or the help.html example messages? Then `eval_checkin.py` must have been run (live; you don't run it — confirm the pass count is reported) and its cases kept in step with help.html.
 
 **Flag as a BLOCKER** if a form or check-in write path changed and the prompt section wasn't updated, naming the action and which list it belongs in. If no form, page label or check-in write changed, record this check as passed.
 

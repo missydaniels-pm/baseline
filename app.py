@@ -2137,7 +2137,7 @@ Symptom value format (read carefully — symptoms have different types):
 
 Always match intervention names to the user's existing interventions listed above. Use your knowledge of brand/generic medication names, common misspellings, and colloquial terms to map to the correct one (e.g., "muscle relaxer" → the user's muscle relaxant if they have one, "ondansetren" → Ondansetron). If the user mentions multiple interventions, create a separate entry for each. If an intervention is genuinely new (not in the list), use the correct pharmacological or common name.
 
-Triggers: if the user mentions something that may have contributed to an episode, include it in the "triggers" array by name. Map to the user's existing triggers above whenever possible using synonyms and common phrasing (e.g. "didn't sleep" → "Poor sleep", "wine" → "Alcohol", "my period" → "Hormonal / menstrual cycle"). Use the existing trigger's exact name when you match one. Only if the user clearly names a possible trigger that isn't covered by the list, include it with a short natural name — the app will offer it to the user to confirm as a new trigger rather than creating it automatically. Never invent triggers the user didn't mention; an empty array is correct when none came up.
+Triggers: if the user mentions something that may have contributed to an episode, include it in the "triggers" array by name. Map to the user's existing triggers above whenever possible using synonyms and common phrasing (e.g. "didn't sleep" → "Poor sleep", "wine" → "Alcohol", "my period" → "Hormonal / menstrual cycle"). Use the existing trigger's exact name when you match one — but only when it is genuinely the same thing (flashing lights are not "Strong smells"; a loud concert is not "Stress" unless they said they were stressed). If the user clearly names a possible trigger that isn't covered by the list, include it with a short natural name in their own words — the app will offer it to the user to confirm as a new trigger rather than creating it automatically. Never invent triggers the user didn't mention; an empty array is correct when none came up.
 
 Use this exact schema:
 
@@ -2146,7 +2146,7 @@ Use this exact schema:
   "episode_data": {{
     "onset_time_expr": "<the user's time phrase verbatim, or null>",
     "onset_time_type": "now | past_specific | past_relative | past_vague | ongoing | future | unknown",
-    "symptom_scores": {{"<symptom_id_as_string>": <integer 1-10 for scale OR boolean for binary>}},
+    "symptom_scores": [{{"symptom_id": <symptom id>, "value": <integer 1-10 for scale OR boolean for binary>}}],
     "functional_impairment": "working_normally or working_reduced or cannot_work or completely_incapacitated or null",
     "interventions": [
       {{
@@ -2168,7 +2168,7 @@ Use this exact schema:
   "suggested_response": "<brief, matter-of-fact 1-2 sentence reply>"
 }}
 
-If no episode occurred, set had_episode to false and episode_data fields to null/empty.
+If no episode occurred, set had_episode to false, onset_time_type to "unknown", the episode_data lists to [] and its other fields to null.
 {rate_prompt_line}
 If no interventions were used, set interventions to an empty array []. If no triggers came up, set triggers to an empty array [].
 For protocol_compliance: include an entry for every preventative protocol the user explicitly or implicitly addressed — "took everything" means every listed preventative with took=true; "I missed my magnesium" means that protocol with took=false (include their reason as the note if they gave one). Only include protocols the user actually addressed; leave out ones they didn't mention. Never treat a missed protocol as a failure in your reply — misses are useful data.
@@ -2185,6 +2185,76 @@ CHECKIN_TRANSIENT_MSG = ("I couldn't reach the AI service just now, so nothing w
                          "Please send that again in a moment.")
 CHECKIN_REJECTED_MSG = ("The AI service rejected that request, so nothing was logged. "
                         "Resending won't fix this one — if it keeps happening, please report it.")
+
+
+CHECKIN_UNREADABLE_MSG = ("I couldn't read my own reply to that one, so nothing was logged. "
+                          "Please send it again.")
+
+# Structured-outputs schema for the check-in reply (10/3/26). The API constrains
+# the model to exactly one object matching this, which ends the "Wait — let me
+# correct that" double-JSON replies that used to fail to parse and show the user
+# raw text. Every object needs additionalProperties:false and all-required keys,
+# so a symptom-id-keyed dict can't be expressed: symptom_scores is a list here
+# and parse_checkin() folds it back into the {id_str: value} shape checkin()
+# reads. Keep in step with the template in build_system_prompt().
+_NULLABLE_STR = {'type': ['string', 'null']}
+_NULLABLE_INT = {'type': ['integer', 'null']}
+CHECKIN_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        'had_episode': {'type': 'boolean'},
+        'episode_data': {
+            'type': 'object',
+            'properties': {
+                'onset_time_expr': _NULLABLE_STR,
+                'onset_time_type': {'type': 'string', 'enum': [
+                    'now', 'past_specific', 'past_relative', 'past_vague',
+                    'ongoing', 'future', 'unknown']},
+                'symptom_scores': {'type': 'array', 'items': {
+                    'type': 'object',
+                    'properties': {
+                        'symptom_id': {'type': 'integer'},
+                        'value': {'anyOf': [{'type': 'integer'}, {'type': 'boolean'}]},
+                    },
+                    'required': ['symptom_id', 'value'],
+                    'additionalProperties': False,
+                }},
+                'functional_impairment': {'anyOf': [
+                    {'type': 'string', 'enum': ['working_normally', 'working_reduced',
+                                                'cannot_work', 'completely_incapacitated']},
+                    {'type': 'null'}]},
+                'interventions': {'type': 'array', 'items': {
+                    'type': 'object',
+                    'properties': {
+                        'name': {'type': 'string'},
+                        'effectiveness': _NULLABLE_INT,
+                        'time_to_relief_hours': {'type': ['number', 'null']},
+                    },
+                    'required': ['name', 'effectiveness', 'time_to_relief_hours'],
+                    'additionalProperties': False,
+                }},
+                'triggers': {'type': 'array', 'items': {'type': 'string'}},
+                'notes': _NULLABLE_STR,
+            },
+            'required': ['onset_time_expr', 'onset_time_type', 'symptom_scores',
+                         'functional_impairment', 'interventions', 'triggers', 'notes'],
+            'additionalProperties': False,
+        },
+        'protocol_compliance': {'type': 'array', 'items': {
+            'type': 'object',
+            'properties': {
+                'id': {'type': 'integer'},
+                'took': {'type': 'boolean'},
+                'note': _NULLABLE_STR,
+            },
+            'required': ['id', 'took', 'note'],
+            'additionalProperties': False,
+        }},
+        'suggested_response': {'type': 'string'},
+    },
+    'required': ['had_episode', 'episode_data', 'protocol_compliance', 'suggested_response'],
+    'additionalProperties': False,
+}
 
 
 def parse_checkin(user, message_text, client_time=None):
@@ -2214,9 +2284,12 @@ def parse_checkin(user, message_text, client_time=None):
     try:
         response = client.messages.create(
             model='claude-sonnet-4-6',
-            max_tokens=1024,
+            # Headroom for the schema's fixed keys: a cut-off reply is unusable,
+            # and resending the same long message would cut off again.
+            max_tokens=2048,
             system=build_system_prompt(user, client_time=client_time),
             messages=messages,
+            output_config={'format': {'type': 'json_schema', 'schema': CHECKIN_SCHEMA}},
         )
     except AuthenticationError:
         return None, 'API authentication failed. Check your ANTHROPIC_API_KEY in .env and restart the server.'
@@ -2237,17 +2310,39 @@ def parse_checkin(user, message_text, client_time=None):
         app.logger.error('checkin: Anthropic rejected the request: %s: %s', type(e).__name__, e)
         return None, CHECKIN_REJECTED_MSG
 
-    raw = response.content[0].text
+    raw = next((b.text for b in response.content if b.type == 'text'), '')
 
-    match = re.search(r'\{[\s\S]*\}', raw)
-    if not match:
-        return None, raw
-
+    # Structured outputs guarantee one schema-valid object on a normal finish.
+    # A cut-off (max_tokens) or a refusal may not match it, and anything that
+    # still fails to parse is model text, never a user-facing reply: answer with
+    # fixed wording (nothing is written either way). Log the shape only — the
+    # text echoes the user's health details, which don't belong in server logs.
+    if response.stop_reason == 'max_tokens':
+        # Not transient — the same message will cut off again. ERROR so it shows.
+        app.logger.error('checkin: reply cut off at max_tokens (%d chars)', len(raw))
+        return None, CHECKIN_UNREADABLE_MSG
+    if response.stop_reason != 'end_turn':
+        app.logger.warning('checkin: unusable reply (stop_reason=%s, %d chars)',
+                           response.stop_reason, len(raw))
+        return None, CHECKIN_UNREADABLE_MSG
     try:
-        parsed = json.loads(match.group(0))
-        return parsed, raw
+        parsed = json.loads(raw)
     except json.JSONDecodeError:
-        return None, raw
+        app.logger.warning('checkin: reply was not valid JSON (%d chars)', len(raw))
+        return None, CHECKIN_UNREADABLE_MSG
+    if not isinstance(parsed, dict):
+        app.logger.warning('checkin: reply was not a JSON object (%s)', type(parsed).__name__)
+        return None, CHECKIN_UNREADABLE_MSG
+
+    # Fold the schema's symptom list back into the {id_str: value} map checkin()
+    # reads; checkin() still validates each id and value against the user's symptoms.
+    ep = parsed.get('episode_data')
+    if isinstance(ep, dict) and isinstance(ep.get('symptom_scores'), list):
+        ep['symptom_scores'] = {
+            str(item.get('symptom_id')): item.get('value')
+            for item in ep['symptom_scores'] if isinstance(item, dict)
+        }
+    return parsed, raw
 
 
 @app.route('/checkin', methods=['GET', 'POST'])
@@ -2326,6 +2421,10 @@ def checkin():
                             value_bool=bv,
                         ))
                     else:
+                        # A boolean on a scale symptom isn't a score (int(True)
+                        # would save a 1) — the schema allows int|bool per item.
+                        if isinstance(value, bool):
+                            continue
                         try:
                             sc = int(value)
                         except (ValueError, TypeError):
