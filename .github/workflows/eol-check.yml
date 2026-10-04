@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Detect, don't declare: the runner's Ubuntu, and the Debian inside the
       # same floating base-image tag production builds from (the tag is read
       # from the Dockerfile). Stdlib-only script, so the runner's python3 is fine.
