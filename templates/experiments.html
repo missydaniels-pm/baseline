@@ -75,18 +75,14 @@
       <a href="{{ url_for('assess_experiment', exp_id=exp.id) }}" class="btn btn-primary btn-sm">Assess →</a>
     {% endif %}
     <a href="{{ url_for('edit_experiment', exp_id=exp.id) }}" class="btn btn-sm btn-secondary">Edit</a>
-    <form method="POST" action="{{ url_for('abandon_experiment', exp_id=exp.id) }}"
-          onsubmit="return confirm('Abandon this experiment? This cannot be undone.')">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit" class="btn btn-sm btn-muted">Abandon</button>
-    </form>
+    <a href="{{ url_for('abandon_experiment', exp_id=exp.id) }}" class="btn btn-sm btn-muted">End early</a>
   </div>
 </div>
 {% endfor %}
 {% endif %}
 
 {% if completed %}
-<hr class="divider">
+{% if active %}<hr class="divider">{% endif %}
 <div class="section-header" style="margin-bottom:12px;">
   <div class="section-title">Completed</div>
 </div>
@@ -100,7 +96,7 @@
         <div class="experiment-meta">Protocol: <strong>{{ exp.protocol.name }}</strong></div>
       {% endif %}
       <div class="experiment-meta">
-        {{ exp.start_date.strftime('%b %-d, %Y') }} → {{ exp.assessment_date.strftime('%b %-d, %Y') }}
+        {{ exp.start_date.strftime('%b %-d, %Y') }} → {{ exp.ended.strftime('%b %-d, %Y') }}
       </div>
     </div>
     <div class="experiment-status-col">
@@ -125,26 +121,53 @@
     {% endif %}
   </div>
   {% endif %}
+  <div class="experiment-actions">
+    <a href="{{ url_for('assess_experiment', exp_id=exp.id) }}" class="btn btn-sm btn-secondary">View results</a>
+  </div>
 </div>
 {% endfor %}
 {% endif %}
 
 {% if abandoned %}
-<hr class="divider">
+{% if active or completed %}<hr class="divider">{% endif %}
 <div class="section-header" style="margin-bottom:12px;">
-  <div class="section-title" style="color:var(--text-muted);">Abandoned</div>
+  <div class="section-title">Ended early</div>
 </div>
 {% for exp in abandoned %}
-<div class="card" style="opacity:0.55;">
+<div class="card">
   <div class="experiment-header">
     <div>
       <div class="experiment-name">{{ exp.name }}</div>
       {% if exp.protocol %}
-        <div class="experiment-meta">Protocol: {{ exp.protocol.name }}</div>
+        <div class="experiment-meta">Protocol: <strong>{{ exp.protocol.name }}</strong></div>
       {% endif %}
-      <div class="experiment-meta">Started {{ exp.start_date.strftime('%b %-d, %Y') }}</div>
+      <div class="experiment-meta">
+        {% if exp.end_date %}
+          {{ exp.start_date.strftime('%b %-d, %Y') }} → {{ exp.end_date.strftime('%b %-d, %Y') }}
+        {% else %}
+          Started {{ exp.start_date.strftime('%b %-d, %Y') }} · end date not recorded
+        {% endif %}
+      </div>
     </div>
-    <span class="exp-badge exp-badge-abandoned">Abandoned</span>
+    <div class="experiment-status-col">
+      <span class="exp-badge exp-badge-abandoned">Ended early</span>
+    </div>
+  </div>
+  {% if exp.stop_reason or exp.outcome_rating or exp.stop_reason_note %}
+  <div class="experiment-outcome">
+    {% if exp.outcome_rating %}
+      <span class="outcome-rating">{{ exp.outcome_rating }}/10</span>
+    {% endif %}
+    {% if exp.stop_reason %}
+      <span class="outcome-decision decision-stop">{{ stop_reason_labels[exp.stop_reason] }}</span>
+    {% endif %}
+    {% if exp.stop_reason_note %}
+      <div class="notes-text" style="margin-top:8px;">{{ exp.stop_reason_note }}</div>
+    {% endif %}
+  </div>
+  {% endif %}
+  <div class="experiment-actions">
+    <a href="{{ url_for('assess_experiment', exp_id=exp.id) }}" class="btn btn-sm btn-secondary">View results</a>
   </div>
 </div>
 {% endfor %}

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}End Experiment — Baseline{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">End Experiment Early</h1>
+  <a href="{{ url_for('experiments') }}" class="btn btn-secondary">Cancel</a>
+</div>
+
+<div class="form-card">
+  <div style="margin-bottom:20px;">
+    <div style="font-size:18px; font-weight:700; margin-bottom:4px;">{{ experiment.name }}</div>
+    {% if experiment.protocol %}
+    <div style="color:var(--text-muted); font-size:14px;">Protocol: {{ experiment.protocol.name }}</div>
+    {% endif %}
+    <div style="font-size:13px; color:var(--text-muted); margin-top:6px;">
+      Started {{ experiment.start_date.strftime('%b %-d, %Y') }}
+    </div>
+  </div>
+
+  <div class="field-hint" style="font-style:normal; margin-bottom:20px;">
+    Ending early is a result, not a deletion. This experiment and its data stay in your history,
+    and show up in your doctor summary.
+  </div>
+
+  <form method="POST" id="abandonForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="form-group">
+      <label for="stop_reason">Why are you ending it?</label>
+      <select id="stop_reason" name="stop_reason" required>
+        <option value="">— choose a reason —</option>
+        {% for value, label in stop_reason_labels.items() %}
+        <option value="{{ value }}" {% if request.form.get('stop_reason') == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="stop_reason_note">What happened? <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+      <textarea id="stop_reason_note" name="stop_reason_note"
+                placeholder="e.g. Migraines got more frequent in week 2."
+                data-charlimit="500">{{ request.form.get('stop_reason_note', '') }}</textarea>
+      <div class="char-counter"><span id="stop_reason_note_count">0</span>/500</div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="end_date">Last day of the experiment</label>
+        <input type="date" id="end_date" name="end_date"
+               min="{{ experiment.start_date.strftime('%Y-%m-%d') }}"
+               max="{{ today.strftime('%Y-%m-%d') }}"
+               value="{{ request.form.get('end_date', today.strftime('%Y-%m-%d')) }}">
+      </div>
+      <div class="form-group">
+        <label for="outcome_rating">How well did it work? <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+        <select id="outcome_rating" name="outcome_rating">
+          <option value="">— skip —</option>
+          {% for n in range(1, 11) %}
+          <option value="{{ n }}" {% if request.form.get('outcome_rating') == n|string %}selected{% endif %}>{{ n }}{% if n == 1 %} — no benefit{% elif n == 10 %} — major improvement{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+  </form>
+
+  <div class="form-actions">
+    <div></div>
+    <div class="form-actions-primary">
+      <a href="{{ url_for('experiments') }}" class="btn btn-secondary">Cancel</a>
+      <button type="submit" form="abandonForm" class="btn btn-primary">End Experiment</button>
+    </div>
+  </div>
+</div>
+{% endblock %}

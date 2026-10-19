@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Assess Experiment — Baseline{% endblock %}
+{% block title %}{% if ended_on %}Experiment Results{% else %}Assess Experiment{% endif %} — Baseline{% endblock %}
 
 {% block head_extra %}
 {% if assess_data and assess_data.has_chart_data %}
@@ -10,8 +10,8 @@
 
 {% block content %}
 <div class="page-header">
-  <h1 class="page-title">Assess Experiment</h1>
-  <a href="{{ url_for('experiments') }}" class="btn btn-secondary">Cancel</a>
+  <h1 class="page-title">{% if ended_on %}Experiment Results{% else %}Assess Experiment{% endif %}</h1>
+  <a href="{{ url_for('experiments') }}" class="btn btn-secondary">{% if ended_on %}Back{% else %}Cancel{% endif %}</a>
 </div>
 
 <div class="assess-layout">
@@ -22,7 +22,7 @@
 
       <div class="assess-stat-row">
         <span class="assess-stat-label">Duration</span>
-        <span class="assess-stat-value">{{ assess_data.weeks_during }} weeks</span>
+        <span class="assess-stat-value">{{ assess_data.weeks_during }} week{{ 's' if assess_data.weeks_during != 1 }}</span>
       </div>
 
       {# Episode frequency comparison #}
@@ -115,6 +115,41 @@
 
       <hr class="divider">
 
+      {% if ended_on %}
+      {# ── Ended trial: the recorded outcome, read-only ── #}
+      <div class="assess-stat-row">
+        <span class="assess-stat-label">Status</span>
+        <span class="assess-stat-value">{% if experiment.status == 'completed' %}Completed{% else %}Ended early{% endif %}</span>
+      </div>
+      <div class="assess-stat-row">
+        <span class="assess-stat-label">Ended</span>
+        <span class="assess-stat-value">{% if experiment.end_date %}{{ experiment.end_date.strftime('%b %-d, %Y') }}{% elif experiment.status == 'completed' %}{{ ended_on.strftime('%b %-d, %Y') }}{% else %}Not recorded{% endif %}</span>
+      </div>
+      {% if experiment.stop_reason %}
+      <div class="assess-stat-row">
+        <span class="assess-stat-label">Why</span>
+        <span class="assess-stat-value">{{ stop_reason_labels[experiment.stop_reason] }}</span>
+      </div>
+      {% endif %}
+      {% if experiment.outcome_rating %}
+      <div class="assess-stat-row">
+        <span class="assess-stat-label">Outcome</span>
+        <span class="assess-stat-value">{{ experiment.outcome_rating }}/10</span>
+      </div>
+      {% endif %}
+      {% if experiment.decision %}
+      <div class="assess-stat-row">
+        <span class="assess-stat-label">Decision</span>
+        <span class="assess-stat-value">{{ experiment.decision|capitalize }}</span>
+      </div>
+      {% endif %}
+      {% if experiment.stop_reason_note or experiment.outcome_notes %}
+      <div class="notes-text" style="margin-top:8px;">{{ experiment.stop_reason_note or experiment.outcome_notes }}</div>
+      {% endif %}
+      {% if experiment.status == 'abandoned' and not experiment.end_date %}
+      <div class="field-hint" style="margin-top:12px;">This experiment ended before end dates were recorded, so "during" runs to today.</div>
+      {% endif %}
+      {% else %}
       <form method="POST">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-group">
@@ -178,6 +213,7 @@
           <button type="submit" class="btn btn-primary">Complete Assessment</button>
         </div>
       </form>
+      {% endif %}
     </div>
   </div>
 </div>

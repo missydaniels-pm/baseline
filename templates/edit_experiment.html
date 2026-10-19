@@ -19,12 +19,20 @@
 
     <div class="form-group">
       <label for="protocol_id">Protocol being tested</label>
+      {% if experiment.status != 'active' %}
+      {# An ended trial's protocol is fixed (review F9) — the server ignores this field. #}
+      <div class="field-hint" style="font-style:normal;">
+        {% if experiment.protocol %}{{ experiment.protocol.name }}{% else %}Protocol deleted{% endif %}
+        — fixed once an experiment has ended.
+      </div>
+      {% else %}
       <select id="protocol_id" name="protocol_id">
-        <option value="">— select a protocol —</option>
+        {% if not experiment.protocol_id %}<option value="">— select a protocol —</option>{% endif %}
         {% for p in preventatives %}
         <option value="{{ p.id }}" {% if request.form.get('protocol_id', experiment.protocol_id|string if experiment.protocol_id else '') == p.id|string %}selected{% endif %}>{{ p.name }}{% if p.status != 'active' %} ({{ p.status }}){% endif %}</option>
         {% endfor %}
       </select>
+      {% endif %}
     </div>
 
     <div class="form-group">

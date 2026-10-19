@@ -15,7 +15,7 @@ from flask_wtf.csrf import CSRFProtect, CSRFError, generate_csrf
 from flask_limiter.util import get_remote_address
 from sqlalchemy import text, or_
 from sqlalchemy.exc import IntegrityError
-from database import db, User, Episode, Protocol, Symptom, SymptomScore, EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode, UsedVerifyToken, UserActivity, Trigger, EpisodeTrigger, EXPECTED_FK_ONDELETE, verify_fk_ondelete, STOP_REASON_CHECK_SQL, normalize_database_url
+from database import db, User, Episode, Protocol, Symptom, SymptomScore, EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode, UsedVerifyToken, UserActivity, Trigger, EpisodeTrigger, EXPECTED_FK_ONDELETE, verify_fk_ondelete, STOP_REASON_CHECK_SQL, EXPERIMENT_STOP_REASON_VALUES, EXPERIMENT_STOP_REASON_CHECK_SQL, normalize_database_url
 from collections import defaultdict
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
@@ -485,6 +485,16 @@ FUNCTIONAL_IMPAIRMENT_VALUES = ('working_normally', 'working_reduced',
                                 'cannot_work', 'completely_incapacitated')
 PROTOCOL_STATUSES = ('active', 'paused', 'stopped')
 EXPERIMENT_DECISIONS = ('continue', 'pause', 'stop')
+# Display labels for EXPERIMENT_STOP_REASON_VALUES (database.py owns the vocabulary).
+EXPERIMENT_STOP_REASON_LABELS = {
+    'ineffective': "It wasn't helping",
+    'made_worse': 'It made my symptoms worse',
+    'side_effects': 'Side effects',
+    'cost': 'Cost or access',
+    'doctors_advice': "Doctor's advice",
+    'other': 'Something else',
+}
+assert set(EXPERIMENT_STOP_REASON_LABELS) == set(EXPERIMENT_STOP_REASON_VALUES)
 
 
 def _parse_impairment(raw):
@@ -523,6 +533,22 @@ def _parse_onset(raw, default):
         except ValueError:
             pass
     return None, "That onset date didn't look right — use the date picker."
+
+
+def _parse_outcome_rating(raw, required=True):
+    """Experiment outcome rating (1-10) -> (int|None, error). Blank is an error
+    when required, else None ("skipped"); off-scale or non-numeric is rejected,
+    never clamped or defaulted (F8)."""
+    raw = (raw or '').strip()
+    if not raw:
+        return None, ('Choose an outcome rating from 1 to 10.' if required else None)
+    try:
+        val = int(raw)
+    except ValueError:
+        val = None
+    if val is None or not 1 <= val <= 10:
+        return None, 'The outcome rating must be a whole number from 1 to 10.'
+    return val, None
 
 
 def _parse_stabilization_weeks(raw):
@@ -592,6 +618,10 @@ def run_migrations():
         ('protocol_events',       'stop_reason_note',          'ALTER TABLE protocol_events ADD COLUMN stop_reason_note TEXT'),
         ('users',                 'diary_mode_enabled',        'ALTER TABLE users ADD COLUMN diary_mode_enabled BOOLEAN NOT NULL DEFAULT FALSE'),
         ('users',                 'diary_span_counts_both_days','ALTER TABLE users ADD COLUMN diary_span_counts_both_days BOOLEAN NOT NULL DEFAULT TRUE'),
+        # How a trial ended (10/19/26). experiments.stop_reason carries a CHECK, so it is
+        # handled in its own block below, like protocol_events.stop_reason.
+        ('experiments',           'end_date',                  'ALTER TABLE experiments ADD COLUMN end_date DATE'),
+        ('experiments',           'stop_reason_note',          'ALTER TABLE experiments ADD COLUMN stop_reason_note TEXT'),
     ]
 
     # Widen symptoms.name from varchar(100) to varchar(200) on PostgreSQL
@@ -795,6 +825,44 @@ def run_migrations():
                 conn.execute(text(
                     "ALTER TABLE protocol_events ADD CONSTRAINT protocol_events_stop_reason_check "
                     "CHECK (%s)" % STOP_REASON_CHECK_SQL
+                ))
+                conn.commit()
+                print("Migration complete.")
+
+        # --- experiments.stop_reason (+ CHECK) — why a trial was abandoned ------
+        # Same shape as the protocol_events block above (CHECK rides the ADD COLUMN on
+        # SQLite; named ADD CONSTRAINT on PostgreSQL; predicate imported from
+        # database.py). Not wrapped, deliberately — see that block.
+        exp_cols = [c['name'] for c in inspector.get_columns('experiments')]
+        if 'stop_reason' not in exp_cols:
+            print("Migrating experiments: adding stop_reason (+ CHECK)...")
+            if is_sqlite:
+                conn.execute(text(
+                    "ALTER TABLE experiments ADD COLUMN stop_reason VARCHAR(30) "
+                    "CHECK (%s)" % EXPERIMENT_STOP_REASON_CHECK_SQL
+                ))
+            else:
+                conn.execute(text(
+                    "ALTER TABLE experiments ADD COLUMN stop_reason VARCHAR(30)"
+                ))
+                conn.execute(text(
+                    "ALTER TABLE experiments ADD CONSTRAINT experiments_stop_reason_check "
+                    "CHECK (%s)" % EXPERIMENT_STOP_REASON_CHECK_SQL
+                ))
+            conn.commit()
+            print("Migration complete.")
+        elif not is_sqlite:
+            exp_check = conn.execute(text(
+                "SELECT 1 FROM information_schema.table_constraints "
+                "WHERE table_name = 'experiments' "
+                "AND constraint_type = 'CHECK' "
+                "AND constraint_name = 'experiments_stop_reason_check'"
+            )).first()
+            if not exp_check:
+                print("Migrating experiments: adding stop_reason CHECK constraint...")
+                conn.execute(text(
+                    "ALTER TABLE experiments ADD CONSTRAINT experiments_stop_reason_check "
+                    "CHECK (%s)" % EXPERIMENT_STOP_REASON_CHECK_SQL
                 ))
                 conn.commit()
                 print("Migration complete.")
@@ -2986,7 +3054,10 @@ def experiments():
         exp.is_ready = exp.ready_to_assess(today)
         exp.pct = exp.progress_pct(today)
         exp.wks_remaining = exp.weeks_remaining(today)
-    return render_template('experiments.html', active=active, completed=completed, abandoned=abandoned)
+    for exp in completed + abandoned:
+        exp.ended = exp.ended_on(today)
+    return render_template('experiments.html', active=active, completed=completed, abandoned=abandoned,
+                           stop_reason_labels=EXPERIMENT_STOP_REASON_LABELS)
 
 
 @app.route('/experiments/new', methods=['GET', 'POST'])
@@ -3122,6 +3193,9 @@ def assess_experiment(exp_id):
         if experiment.status == 'completed':
             flash('That experiment has already been assessed.', 'error')
             return redirect(url_for('experiments'))
+        if experiment.status == 'abandoned':
+            flash('That experiment was ended early, so it can no longer be assessed.', 'error')
+            return redirect(url_for('experiments'))
 
         # Before any assignment. The radios always send a listed value, so this
         # only catches a forged/garbled POST — redirect back to the page rather
@@ -3133,13 +3207,21 @@ def assess_experiment(exp_id):
             flash('Choose whether to continue, pause or stop.', 'error')
             return redirect(url_for('assess_experiment', exp_id=experiment.id))
 
-        try:
-            experiment.outcome_rating = max(1, min(10, int(request.form.get('outcome_rating', 5))))
-        except (ValueError, TypeError):
-            experiment.outcome_rating = 5
-        experiment.outcome_notes = request.form.get('outcome_notes', '').strip() or None
+        # Reject, don't clamp or default (F8). The slider always sends 1-10, so
+        # these only catch a forged/garbled POST — redirect like `decision` above.
+        rating, rating_err = _parse_outcome_rating(request.form.get('outcome_rating'))
+        outcome_notes = request.form.get('outcome_notes', '').strip() or None
+        if not rating_err and outcome_notes and len(outcome_notes) > 500:
+            rating_err = 'Notes must be 500 characters or fewer.'
+        if rating_err:
+            flash(rating_err, 'error')
+            return redirect(url_for('assess_experiment', exp_id=experiment.id))
+
+        experiment.outcome_rating = rating
+        experiment.outcome_notes = outcome_notes
         experiment.decision = decision
         experiment.status = 'completed'
+        experiment.end_date = user_today()
 
         if experiment.protocol and experiment.decision in ('pause', 'stop'):
             new_status = {'pause': 'paused', 'stop': 'stopped'}[experiment.decision]
@@ -3172,6 +3254,9 @@ def assess_experiment(exp_id):
 
     # ── Compute assessment context data ──
     today = user_today()  # local day, consistent with the dashboard windows
+    # An ended trial's "during" window stops on the day it ended, so its results
+    # page shows what happened during the trial — not everything since.
+    window_end = experiment.ended_on(today) or today
     before_start = experiment.start_date - timedelta(weeks=8)
     exp_start = experiment.start_date
 
@@ -3184,13 +3269,14 @@ def assess_experiment(exp_id):
     )
     episodes_during = (
         Episode.query.filter(Episode.user_id == user.id,
-                             Episode.onset >= datetime.combine(exp_start, datetime.min.time()))
+                             Episode.onset >= datetime.combine(exp_start, datetime.min.time()),
+                             Episode.onset < datetime.combine(window_end + timedelta(days=1), datetime.min.time()))
         .order_by(Episode.onset)
         .all()
     )
 
     weeks_before = max((exp_start - before_start).days / 7.0, 1)
-    weeks_during = max((today - exp_start).days / 7.0, 1)
+    weeks_during = max((window_end - exp_start).days / 7.0, 1)
     freq_before = round(len(episodes_before) / weeks_before, 1)
     freq_during = round(len(episodes_during) / weeks_during, 1)
 
@@ -3239,7 +3325,7 @@ def assess_experiment(exp_id):
 
     # Weekly symptom trend data across full window (before + during)
     window_start = before_start - timedelta(days=before_start.weekday())  # Monday
-    total_weeks = max(int(((today - window_start).days + 6) / 7), 1)
+    total_weeks = max(int(((window_end - window_start).days + 6) / 7), 1)
     chart_labels = []
     for i in range(total_weeks):
         ws = window_start + timedelta(weeks=i)
@@ -3286,7 +3372,9 @@ def assess_experiment(exp_id):
         'has_chart_data': len(all_window_episodes) >= 2 and bool(assess_chart_datasets),
     }
 
-    return render_template('assess_experiment.html', experiment=experiment, assess_data=assess_data)
+    return render_template('assess_experiment.html', experiment=experiment, assess_data=assess_data,
+                           ended_on=experiment.ended_on(today),
+                           stop_reason_labels=EXPERIMENT_STOP_REASON_LABELS)
 
 
 @app.route('/experiments/<int:exp_id>/edit', methods=['GET', 'POST'])
@@ -3313,23 +3401,39 @@ def edit_experiment(exp_id):
         if start_err:
             flash(start_err, 'error')
             return render_template('edit_experiment.html', experiment=experiment, preventatives=preventatives)
+        if experiment.end_date and new_start > experiment.end_date:
+            flash("The start date can't be after the day the experiment ended.", 'error')
+            return render_template('edit_experiment.html', experiment=experiment, preventatives=preventatives)
         weeks, weeks_err = _parse_stabilization_weeks(request.form.get('stabilization_weeks'))
         if weeks_err:
             flash(weeks_err, 'error')
             return render_template('edit_experiment.html', experiment=experiment, preventatives=preventatives)
+        # Which protocol is being tested (review F9). An ended trial's protocol is
+        # fixed — repointing it would misrepresent when its data was gathered, and a
+        # detached one (protocol deleted) has nothing to repoint to. A running trial
+        # may switch to another of the user's protocols but never be blanked: that
+        # leaves it active, counting down, testing nothing. An unknown id is
+        # rejected, not silently detached.
+        new_protocol_id = experiment.protocol_id
+        if experiment.status == 'active':
+            raw_pid = request.form.get('protocol_id', '').strip()
+            if raw_pid:
+                try:
+                    owned = Protocol.query.filter_by(id=int(raw_pid), user_id=user.id, type='preventative').first()
+                except ValueError:
+                    owned = None
+                if not owned:
+                    flash("That protocol isn't one of yours.", 'error')
+                    return render_template('edit_experiment.html', experiment=experiment, preventatives=preventatives)
+                new_protocol_id = owned.id
+            elif experiment.protocol_id is not None:
+                flash('Choose the protocol this experiment is testing. To stop testing it, end the experiment instead.', 'error')
+                return render_template('edit_experiment.html', experiment=experiment, preventatives=preventatives)
         experiment.name = exp_name
         experiment.hypothesis = hypothesis_val
         experiment.stabilization_weeks = weeks
         experiment.start_date = new_start
-        protocol_id = request.form.get('protocol_id')
-        if protocol_id:
-            try:
-                owned = Protocol.query.filter_by(id=int(protocol_id), user_id=user.id, type='preventative').first()
-            except (ValueError, TypeError):
-                owned = None
-            experiment.protocol_id = owned.id if owned else None
-        else:
-            experiment.protocol_id = None
+        experiment.protocol_id = new_protocol_id
         db.session.commit()
         flash(f'"{experiment.name}" updated.', 'success')
         return redirect(url_for('experiments'))
@@ -3338,14 +3442,59 @@ def edit_experiment(exp_id):
                            preventatives=preventatives)
 
 
-@app.route('/experiments/<int:exp_id>/abandon', methods=['POST'])
+@app.route('/experiments/<int:exp_id>/abandon', methods=['GET', 'POST'])
 def abandon_experiment(exp_id):
+    """End a running experiment early, recording why, when, and optionally how it went.
+
+    An abandoned trial is a result, not a deletion — "this made me worse" is what a
+    user and their doctor most need to see (owner report 10/4/26). One-shot like
+    assess: only an active experiment can be ended, checked before any assignment.
+    """
     user = get_user()
     experiment = Experiment.query.filter_by(id=exp_id, user_id=user.id).first_or_404()
-    experiment.status = 'abandoned'
-    db.session.commit()
-    flash(f'"{experiment.name}" abandoned.', 'success')
-    return redirect(url_for('experiments'))
+    if experiment.status != 'active':
+        flash('That experiment has already ended.', 'error')
+        return redirect(url_for('experiments'))
+
+    today = user_today()
+
+    def _render():
+        return render_template('abandon_experiment.html', experiment=experiment, today=today,
+                               stop_reason_labels=EXPERIMENT_STOP_REASON_LABELS)
+
+    if request.method == 'POST':
+        reason = request.form.get('stop_reason', '')
+        if reason not in EXPERIMENT_STOP_REASON_VALUES:
+            flash('Choose why you are ending this experiment.', 'error')
+            return _render()
+        note = request.form.get('stop_reason_note', '').strip() or None
+        if note and len(note) > 500:
+            flash('Notes must be 500 characters or fewer.', 'error')
+            return _render()
+        end, end_err = _parse_date(request.form.get('end_date'), today, 'end date')
+        if not end_err and end > today:
+            end_err = "The end date can't be in the future."
+        if not end_err and end < experiment.start_date:
+            end_err = "The end date can't be before the experiment started ({}).".format(
+                experiment.start_date.strftime('%b %-d, %Y'))
+        if end_err:
+            flash(end_err, 'error')
+            return _render()
+        rating, rating_err = _parse_outcome_rating(request.form.get('outcome_rating'), required=False)
+        if rating_err:
+            flash(rating_err, 'error')
+            return _render()
+
+        experiment.status = 'abandoned'
+        experiment.stop_reason = reason
+        experiment.stop_reason_note = note
+        experiment.end_date = end
+        experiment.outcome_rating = rating
+        db.session.commit()
+        flash(f'"{experiment.name}" ended. Its results stay in your experiment history.', 'success')
+        return redirect(url_for('experiments'))
+
+    return _render()
 
 
 # ---------------------------------------------------------------------------
@@ -4690,7 +4839,7 @@ def delete_protocol(protocol_id):
         # .update() returns the row count, so the flash can say what happened.
         abandoned = Experiment.query.filter_by(
             protocol_id=protocol.id, user_id=user.id, status='active'
-        ).update({'status': 'abandoned'}, synchronize_session=False)
+        ).update({'status': 'abandoned', 'end_date': user_today()}, synchronize_session=False)
         db.session.delete(protocol)
         db.session.commit()
     except IntegrityError:
@@ -4698,7 +4847,7 @@ def delete_protocol(protocol_id):
         app.logger.warning('delete_protocol failed for protocol %s', protocol_id, exc_info=True)
         flash("Couldn't delete this protocol — please try again.", 'error')
         return redirect(url_for('edit_protocol', protocol_id=protocol_id))
-    flash('Deleted.' + (' The experiment testing it was marked abandoned.' if abandoned else ''), 'success')
+    flash('Deleted.' + (' The experiment testing it was marked ended early.' if abandoned else ''), 'success')
     return redirect(url_for('protocols'))
 
 

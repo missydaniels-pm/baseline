@@ -363,86 +363,6 @@ class Protocol(db.Model):
         }.get(self.status, '')
 
 
-class Experiment(db.Model):
-    __tablename__ = 'experiments'
-
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    name = db.Column(db.String(200), nullable=False)
-    hypothesis = db.Column(db.Text, nullable=True)
-    protocol_id = db.Column(db.Integer, db.ForeignKey('protocols.id', ondelete='SET NULL'), nullable=True)
-    start_date = db.Column(db.Date, nullable=False)
-    stabilization_weeks = db.Column(db.Integer, default=3, nullable=False)
-    status = db.Column(db.String(20), nullable=False, default='active')  # active/completed/abandoned
-    baseline_episodes_per_month = db.Column(db.Integer, nullable=True)
-    outcome_rating = db.Column(db.Integer, nullable=True)  # 1-10
-    outcome_notes = db.Column(db.Text, nullable=True)
-    decision = db.Column(db.String(20), nullable=True)  # continue/pause/stop
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    protocol = db.relationship('Protocol', backref=db.backref('experiments', lazy=True, passive_deletes=True))
-
-    def __repr__(self):
-        return f'<Experiment {self.name}>'
-
-    @property
-    def assessment_date(self):
-        return self.start_date + timedelta(weeks=self.stabilization_weeks)
-
-    # These depend on "today," which for a user is their LOCAL calendar day —
-    # a request-scoped value the pure model layer must not resolve itself (no
-    # Flask/request-context import here). Callers pass `today` (from user_today())
-    # and annotate the result onto the instance for templates. Owner decision
-    # 7/17/26 (Option A) — keeps the models reusable behind the future API layer.
-    def weeks_elapsed(self, today):
-        elapsed = (today - self.start_date).days / 7
-        return min(max(0.0, elapsed), float(self.stabilization_weeks))
-
-    def weeks_remaining(self, today):
-        remaining = (self.assessment_date - today).days / 7
-        return max(0.0, remaining)
-
-    def progress_pct(self, today):
-        return min(int(self.weeks_elapsed(today) / self.stabilization_weeks * 100), 100)
-
-    def ready_to_assess(self, today):
-        return today >= self.assessment_date
-
-
-class CheckIn(db.Model):
-    __tablename__ = 'checkins'
-
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    role = db.Column(db.String(10), nullable=False)   # 'user' | 'assistant'
-    content = db.Column(db.Text, nullable=False)
-    episode_id = db.Column(db.Integer, db.ForeignKey('episodes.id', ondelete='SET NULL'), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    def __repr__(self):
-        return f'<CheckIn {self.role} {self.created_at}>'
-
-
-class ProtocolCompliance(db.Model):
-    __tablename__ = 'protocol_compliance'
-    __table_args__ = (
-        db.UniqueConstraint('user_id', 'protocol_id', 'date', name='ux_protocol_compliance_day'),
-    )
-
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    protocol_id = db.Column(db.Integer, db.ForeignKey('protocols.id', ondelete='CASCADE'), nullable=False)
-    date = db.Column(db.Date, nullable=False)
-    took = db.Column(db.Boolean, nullable=False, default=True)   # True=taken, False=missed
-    notes = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    protocol = db.relationship('Protocol')
-
-    def __repr__(self):
-        return f'<ProtocolCompliance user={self.user_id} protocol={self.protocol_id} date={self.date} took={self.took}>'
-
-
 # --- Episode-diary schema (SPEC-episode-diary.md) --------------------------
 # Layer A = DATA STRUCTURES ONLY (owner-approved 8/13/26): the columns below are
 # pre-staged so the React rebuild builds capture + rendering against a schema
@@ -477,6 +397,124 @@ STOP_REASON_CHECK_SQL = (
     "stop_reason IS NULL OR (event_type IN %s AND stop_reason IN %s)"
     % (_sql_str_in(STOP_REASON_EVENT_TYPES), _sql_str_in(STOP_REASON_VALUES))
 )
+
+# Why an experiment was abandoned. The protocol-stop vocabulary plus 'made_worse':
+# "it made my symptoms worse" is the result a user and their doctor most need to
+# see, and it is not the same as "side effects" (owner report 10/4/26). Scoped to
+# abandoned rows; the NULL branch lets the PostgreSQL ADD CONSTRAINT pass every
+# existing row (same rule as STOP_REASON_CHECK_SQL above).
+EXPERIMENT_STOP_REASON_VALUES = ('ineffective', 'made_worse', 'side_effects', 'cost', 'doctors_advice', 'other')
+EXPERIMENT_STOP_REASON_CHECK_SQL = (
+    "stop_reason IS NULL OR (status = 'abandoned' AND stop_reason IN %s)"
+    % _sql_str_in(EXPERIMENT_STOP_REASON_VALUES)
+)
+
+
+class Experiment(db.Model):
+    __tablename__ = 'experiments'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    name = db.Column(db.String(200), nullable=False)
+    hypothesis = db.Column(db.Text, nullable=True)
+    protocol_id = db.Column(db.Integer, db.ForeignKey('protocols.id', ondelete='SET NULL'), nullable=True)
+    start_date = db.Column(db.Date, nullable=False)
+    stabilization_weeks = db.Column(db.Integer, default=3, nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='active')  # active/completed/abandoned
+    baseline_episodes_per_month = db.Column(db.Integer, nullable=True)
+    outcome_rating = db.Column(db.Integer, nullable=True)  # 1-10
+    outcome_notes = db.Column(db.Text, nullable=True)
+    decision = db.Column(db.String(20), nullable=True)  # continue/pause/stop
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # How a trial ended (10/19/26 — "every trial stays visible, whatever the outcome").
+    # `end_date` = the day the trial actually ended (abandon: user-supplied, back-datable;
+    # assess: the day it was assessed). NULL on rows ended before this shipped — readers
+    # fall back via `ended_on()`. `stop_reason`/`stop_reason_note` mirror ProtocolEvent's
+    # pair (same names, same vocabulary plus 'made_worse'), and are set only on abandon.
+    end_date = db.Column(db.Date, nullable=True)
+    stop_reason = db.Column(db.String(30), nullable=True)
+    stop_reason_note = db.Column(db.Text, nullable=True)
+
+    __table_args__ = (
+        db.CheckConstraint(EXPERIMENT_STOP_REASON_CHECK_SQL, name='experiments_stop_reason_check'),
+    )
+
+    protocol = db.relationship('Protocol', backref=db.backref('experiments', lazy=True, passive_deletes=True))
+
+    def __repr__(self):
+        return f'<Experiment {self.name}>'
+
+    @property
+    def assessment_date(self):
+        return self.start_date + timedelta(weeks=self.stabilization_weeks)
+
+    # These depend on "today," which for a user is their LOCAL calendar day —
+    # a request-scoped value the pure model layer must not resolve itself (no
+    # Flask/request-context import here). Callers pass `today` (from user_today())
+    # and annotate the result onto the instance for templates. Owner decision
+    # 7/17/26 (Option A) — keeps the models reusable behind the future API layer.
+    def weeks_elapsed(self, today):
+        elapsed = (today - self.start_date).days / 7
+        return min(max(0.0, elapsed), float(self.stabilization_weeks))
+
+    def weeks_remaining(self, today):
+        remaining = (self.assessment_date - today).days / 7
+        return max(0.0, remaining)
+
+    def progress_pct(self, today):
+        return min(int(self.weeks_elapsed(today) / self.stabilization_weeks * 100), 100)
+
+    def ready_to_assess(self, today):
+        return today >= self.assessment_date
+
+    def ended_on(self, today):
+        """The last day of the trial's data window, or None while it is still running.
+
+        Prefers the recorded `end_date`; for trials ended before it existed, a completed
+        trial falls back to its scheduled assessment date and an abandoned one to
+        `today` (its end was never recorded, so nothing is cut off).
+        """
+        if self.status == 'active':
+            return None
+        if self.end_date:
+            return self.end_date
+        if self.status == 'completed':
+            return min(self.assessment_date, today)
+        return today
+
+
+class CheckIn(db.Model):
+    __tablename__ = 'checkins'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    role = db.Column(db.String(10), nullable=False)   # 'user' | 'assistant'
+    content = db.Column(db.Text, nullable=False)
+    episode_id = db.Column(db.Integer, db.ForeignKey('episodes.id', ondelete='SET NULL'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<CheckIn {self.role} {self.created_at}>'
+
+
+class ProtocolCompliance(db.Model):
+    __tablename__ = 'protocol_compliance'
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'protocol_id', 'date', name='ux_protocol_compliance_day'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    protocol_id = db.Column(db.Integer, db.ForeignKey('protocols.id', ondelete='CASCADE'), nullable=False)
+    date = db.Column(db.Date, nullable=False)
+    took = db.Column(db.Boolean, nullable=False, default=True)   # True=taken, False=missed
+    notes = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    protocol = db.relationship('Protocol')
+
+    def __repr__(self):
+        return f'<ProtocolCompliance user={self.user_id} protocol={self.protocol_id} date={self.date} took={self.took}>'
 
 
 class ProtocolEvent(db.Model):
