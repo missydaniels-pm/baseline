@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}Doctor Summary — Baseline{% endblock %}
+
+{% block content %}
+<div class="page-header no-print">
+  <h1 class="page-title">Doctor Summary</h1>
+  <button type="button" class="btn btn-primary" onclick="window.print()">Print / Save as PDF</button>
+</div>
+
+<form method="GET" class="card report-controls no-print">
+  <div class="form-row">
+    <div class="form-group">
+      <label for="start">From</label>
+      <input type="date" id="start" name="start" value="{{ s.start.strftime('%Y-%m-%d') }}" max="{{ today.strftime('%Y-%m-%d') }}">
+    </div>
+    <div class="form-group">
+      <label for="end">To</label>
+      <input type="date" id="end" name="end" value="{{ s.end.strftime('%Y-%m-%d') }}" max="{{ today.strftime('%Y-%m-%d') }}">
+    </div>
+  </div>
+  <label class="report-check">
+    <input type="checkbox" name="notes" value="1" {% if s.include_notes %}checked{% endif %}>
+    Include my episode notes
+  </label>
+  <div class="field-hint" style="font-style:normal;">
+    Notes are off by default because they can be personal. This summary stays on your device — Baseline doesn't send it anywhere. Print it, or choose "Save as PDF" in the print dialog.
+  </div>
+  <div style="margin-top:12px;">
+    <button type="submit" class="btn btn-secondary">Update summary</button>
+  </div>
+</form>
+
+<article class="report">
+  <header class="report-header">
+    <h2 class="report-title">Health summary{% if user.name and user.name != 'Default User' %} — {{ user.name }}{% endif %}</h2>
+    <div class="report-meta">
+      {{ s.start.strftime('%b %-d, %Y') }} to {{ s.end.strftime('%b %-d, %Y') }} ({{ s.days }} days)
+      · Prepared {{ today.strftime('%b %-d, %Y') }} from self-tracked data in Baseline
+    </div>
+  </header>
+
+  <section class="report-section">
+    <h3 class="report-heading">Episodes</h3>
+    <p><strong>{{ s.episode_count }}</strong> episode{{ 's' if s.episode_count != 1 }} on <strong>{{ s.episode_days }}</strong> day{{ 's' if s.episode_days != 1 }}.
+    {% if s.duration.n_with %}
+      Average duration {{ s.duration.avg_hours }} h (from {{ s.duration.n_with }} episode{{ 's' if s.duration.n_with != 1 }} with a duration recorded{% if s.duration.n_without %}; {{ s.duration.n_without }} had none{% endif %}).
+    {% elif s.episode_count %}
+      No durations were recorded for these episodes.
+    {% endif %}</p>
+    {% if s.months %}
+    <table class="report-table">
+      <thead><tr><th>Month</th><th>Episodes</th><th>Days with an episode</th></tr></thead>
+      <tbody>
+      {% for m in s.months %}
+        <tr><td>{{ m.label }}{% if m.partial %} <span class="report-muted">({{ m.days_covered }} days)</span>{% endif %}</td><td>{{ m.episodes }}</td><td>{{ m.episode_days }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="report-note">"Days with an episode" counts the day each episode started. Episodes lasting into the next day are not counted twice.</p>
+    {% endif %}
+    {% if s.impairment %}
+    <p><strong>Effect on daily function:</strong>
+      {% for i in s.impairment %}{{ impairment_labels[i.value] }} {{ i.count }}{{ ', ' if not loop.last }}{% endfor %}{% if s.impairment_unset %} · not recorded {{ s.impairment_unset }}{% endif %}.</p>
+    {% endif %}
+  </section>
+
+  {% if s.tracked %}
+  <section class="report-section">
+    <h3 class="report-heading">Tracked symptoms (per episode)</h3>
+    <table class="report-table">
+      <thead><tr><th>Item</th><th>Result</th><th>Episodes rated</th></tr></thead>
+      <tbody>
+      {% for it in s.tracked %}
+        <tr><td>{{ it.name }}</td>
+          <td>{% if it.kind == 'scale' %}average {{ it.avg }}/10 (highest {{ it.max }}){% else %}present in {{ it.yes_pct }}%{% endif %}</td>
+          <td>{{ it.n }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="report-note">1–10 scales: higher means more severe.</p>
+  </section>
+  {% endif %}
+
+  <section class="report-section">
+    <h3 class="report-heading">Preventative treatments</h3>
+    {% if s.preventatives %}
+    <table class="report-table">
+      <thead><tr><th>Treatment</th><th>Dose</th><th>Started</th><th>Status</th><th>Days logged</th></tr></thead>
+      <tbody>
+      {% for p in s.preventatives %}
+        <tr><td>{{ p.name }}</td><td>{{ p.dose or '—' }}</td>
+          <td>{{ p.start_date.strftime('%b %-d, %Y') if p.start_date else '—' }}</td>
+          <td>{{ p.status|capitalize }}{% if p.stopped_on %} {{ p.stopped_on.strftime('%b %-d, %Y') }}{% endif %}</td>
+          <td>{% if p.days_taken or p.days_missed %}{{ p.days_taken }} taken{% if p.days_missed %}, {{ p.days_missed }} missed{% endif %}{% else %}—{% endif %}</td></tr>
+        {% for dc in p.dose_changes %}
+        <tr class="report-subrow"><td colspan="5">Dose change {{ dc.date.strftime('%b %-d, %Y') }}{% if dc.detail %}: {{ dc.detail }}{% endif %}</td></tr>
+        {% endfor %}
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="report-muted">None recorded in this period.</p>
+    {% endif %}
+  </section>
+
+  <section class="report-section">
+    <h3 class="report-heading">Treatment trials</h3>
+    {% if s.experiments %}
+    <table class="report-table">
+      <thead><tr><th>Trial</th><th>Dates</th><th>Outcome</th></tr></thead>
+      <tbody>
+      {% for e in s.experiments %}
+        <tr><td>{{ e.name }}{% if e.protocol and e.protocol != e.name %} <span class="report-muted">({{ e.protocol }})</span>{% endif %}</td>
+          <td>{{ e.start_date.strftime('%b %-d, %Y') }} – {% if e.end_date %}{{ e.end_date.strftime('%b %-d, %Y') }}{% elif e.status == 'active' %}ongoing{% else %}not recorded{% endif %}</td>
+          <td>
+            {% if e.status == 'active' %}In progress
+            {% elif e.status == 'completed' %}Completed{% if e.decision %} — decided to {{ e.decision }}{% endif %}
+            {% else %}Ended early{% if e.stop_reason %} — {{ stop_reason_labels[e.stop_reason]|lower }}{% endif %}
+            {% endif %}
+            {% if e.outcome_rating %} · rated {{ e.outcome_rating }}/10{% endif %}
+            {% if e.note %}<div class="report-muted">{{ e.note }}</div>{% endif %}
+          </td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="report-note">Every trial is listed, including ones that didn't work. Ratings: 1 = no benefit, 10 = major improvement.</p>
+    {% else %}
+    <p class="report-muted">None in this period.</p>
+    {% endif %}
+  </section>
+
+  {% if s.interventions %}
+  <section class="report-section">
+    <h3 class="report-heading">Treatments used during episodes</h3>
+    <table class="report-table">
+      <thead><tr><th>Treatment</th><th>Times used</th><th>Average effectiveness</th></tr></thead>
+      <tbody>
+      {% for i in s.interventions %}
+        <tr><td>{{ i.name }}</td><td>{{ i.times_used }}</td>
+          <td>{% if i.avg_effectiveness is not none %}{{ i.avg_effectiveness }}/10 <span class="report-muted">({{ i.n_rated }} rated)</span>{% else %}not rated{% endif %}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  {% if s.triggers %}
+  <section class="report-section">
+    <h3 class="report-heading">Possible triggers noted</h3>
+    <p>{% for t in s.triggers %}{{ t.name }} ({{ t.episodes }}){{ ', ' if not loop.last }}{% endfor %}</p>
+    <p class="report-note">Number of episodes each was noted for. Self-reported; not a measured cause.</p>
+  </section>
+  {% endif %}
+
+  {% if s.include_notes %}
+  <section class="report-section">
+    <h3 class="report-heading">Episode notes</h3>
+    {% if s.notes %}
+    <ul class="report-notes">
+      {% for n in s.notes %}<li><strong>{{ n.onset.strftime('%b %-d, %Y') }}:</strong> {{ n.text }}</li>{% endfor %}
+    </ul>
+    {% else %}
+    <p class="report-muted">No notes in this period.</p>
+    {% endif %}
+  </section>
+  {% endif %}
+</article>
+{% endblock %}

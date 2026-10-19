@@ -159,7 +159,7 @@
       <span class="outcome-rating">{{ exp.outcome_rating }}/10</span>
     {% endif %}
     {% if exp.stop_reason %}
-      <span class="outcome-decision decision-stop">{{ stop_reason_labels[exp.stop_reason] }}</span>
+      <span class="outcome-decision {% if exp.stop_reason in ('made_worse', 'side_effects') %}decision-stop{% else %}decision-pause{% endif %}">{{ stop_reason_labels[exp.stop_reason] }}</span>
     {% endif %}
     {% if exp.stop_reason_note %}
       <div class="notes-text" style="margin-top:8px;">{{ exp.stop_reason_note }}</div>

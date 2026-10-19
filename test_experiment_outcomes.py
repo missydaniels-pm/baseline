@@ -223,8 +223,29 @@ def main():
         c.post(f'/experiments/{eid}/edit',
                data={'name': 'Renamed', 'start_date': str(today), 'stabilization_weeks': '3'})
         db.session.expire_all()
-        check('an ended trial\'s start date cannot move past its end date',
-              db.session.get(Experiment, eid).start_date == start)
+        x = db.session.get(Experiment, eid)
+        check('an ended trial\'s dates are locked',
+              x.start_date == start and x.stabilization_weeks == 3)
+
+        # A trial scheduled to start in the future can still be called off (QA
+        # blocker): its only valid end day is its start day.
+        fut = today + timedelta(days=5)
+        _, e5 = make_trial(u, fut, name='Future')
+        c.post(f'/experiments/{e5.id}/abandon', data={'stop_reason': 'doctors_advice', 'end_date': ''})
+        db.session.expire_all()
+        x5 = db.session.get(Experiment, e5.id)
+        check('a future-start trial can be ended (end = its start day)',
+              x5.status == 'abandoned' and x5.end_date == fut)
+
+        # Deleting the protocol of a future-start trial must not date its end
+        # before its start (QA blocker).
+        p6, e6 = make_trial(u, fut, name='Future 2')
+        e6id = e6.id
+        c.post(f'/protocols/{p6.id}/delete')
+        db.session.expire_all()
+        x6 = db.session.get(Experiment, e6id)
+        check('auto-abandon on protocol delete never ends before the start',
+              x6.status == 'abandoned' and x6.end_date == fut)
 
         # Another user's experiment is not reachable.
         u2 = make_user('other@test.com')

@@ -3401,13 +3401,14 @@ def edit_experiment(exp_id):
         if start_err:
             flash(start_err, 'error')
             return render_template('edit_experiment.html', experiment=experiment, preventatives=preventatives)
-        if experiment.end_date and new_start > experiment.end_date:
-            flash("The start date can't be after the day the experiment ended.", 'error')
-            return render_template('edit_experiment.html', experiment=experiment, preventatives=preventatives)
         weeks, weeks_err = _parse_stabilization_weeks(request.form.get('stabilization_weeks'))
         if weeks_err:
             flash(weeks_err, 'error')
             return render_template('edit_experiment.html', experiment=experiment, preventatives=preventatives)
+        if experiment.status != 'active':
+            # An ended trial's dates define its results window — locked, like its
+            # protocol below. Name and hypothesis stay editable.
+            new_start, weeks = experiment.start_date, experiment.stabilization_weeks
         # Which protocol is being tested (review F9). An ended trial's protocol is
         # fixed — repointing it would misrepresent when its data was gathered, and a
         # detached one (protocol deleted) has nothing to repoint to. A running trial
@@ -3459,7 +3460,8 @@ def abandon_experiment(exp_id):
     today = user_today()
 
     def _render():
-        return render_template('abandon_experiment.html', experiment=experiment, today=today,
+        return render_template('abandon_experiment.html', experiment=experiment,
+                               latest_end=max(today, experiment.start_date),
                                stop_reason_labels=EXPERIMENT_STOP_REASON_LABELS)
 
     if request.method == 'POST':
@@ -3471,8 +3473,11 @@ def abandon_experiment(exp_id):
         if note and len(note) > 500:
             flash('Notes must be 500 characters or fewer.', 'error')
             return _render()
-        end, end_err = _parse_date(request.form.get('end_date'), today, 'end date')
-        if not end_err and end > today:
+        # A trial scheduled to start in the future can still be called off; its
+        # only valid end day is its start day (it never ran).
+        latest_end = max(today, experiment.start_date)
+        end, end_err = _parse_date(request.form.get('end_date'), latest_end, 'end date')
+        if not end_err and end > latest_end:
             end_err = "The end date can't be in the future."
         if not end_err and end < experiment.start_date:
             end_err = "The end date can't be before the experiment started ({}).".format(
@@ -4724,6 +4729,209 @@ def log_protocol_day():
 
 
 # ---------------------------------------------------------------------------
+# Doctor summary (interim, pre-rebuild — BACKLOG "Basic doctor summary printout")
+# ---------------------------------------------------------------------------
+
+DOCTOR_SUMMARY_DEFAULT_DAYS = 90
+DOCTOR_SUMMARY_MAX_DAYS = 3 * 366
+
+
+def build_doctor_summary(user_id, start, end, include_notes=False):
+    """Everything the doctor summary shows, as plain data — no request context.
+
+    `start`/`end` are the user's local calendar days, inclusive. Episode.onset is
+    stored browser-local-naive, so `onset.date()` already is the user's local day
+    and the window is a plain [start 00:00, end+1 00:00) comparison (same frame
+    as the dashboard). The route resolves "today" and renders; this helper is the
+    part the React rebuild's API reuses unchanged. Every query is user-scoped.
+    """
+    win_lo = datetime.combine(start, datetime.min.time())
+    win_hi = datetime.combine(end + timedelta(days=1), datetime.min.time())
+    episodes = (Episode.query
+                .filter(Episode.user_id == user_id, Episode.onset >= win_lo, Episode.onset < win_hi)
+                .order_by(Episode.onset).all())
+
+    # ── Per month: episodes and distinct days with an episode ──
+    months = []
+    m = start.replace(day=1)
+    while m <= end:
+        nxt = (m.replace(day=28) + timedelta(days=4)).replace(day=1)
+        lo, hi = max(m, start), min(nxt - timedelta(days=1), end)
+        in_month = [e for e in episodes if lo <= e.onset.date() <= hi]
+        months.append({
+            'label': m.strftime('%b %Y'),
+            'partial': lo != m or hi != nxt - timedelta(days=1),
+            'days_covered': (hi - lo).days + 1,
+            'episodes': len(in_month),
+            'episode_days': len({e.onset.date() for e in in_month}),
+        })
+        m = nxt
+
+    durations = [e.duration_hours for e in episodes if e.duration_hours is not None]
+    impairment = {v: 0 for v in FUNCTIONAL_IMPAIRMENT_VALUES}
+    for e in episodes:
+        if e.functional_impairment in impairment:
+            impairment[e.functional_impairment] += 1
+
+    # ── Tracked items: scale → average, binary → % yes. Never mixed. ──
+    ep_ids = [e.id for e in episodes]
+    items = []
+    if ep_ids:
+        scores = (SymptomScore.query.join(Symptom, SymptomScore.symptom_id == Symptom.id)
+                  .filter(SymptomScore.episode_id.in_(ep_ids), Symptom.user_id == user_id).all())
+        by_symptom = defaultdict(list)
+        for sc in scores:
+            by_symptom[sc.symptom].append(sc)
+        for sym in sorted(by_symptom, key=lambda x: x.name.lower()):
+            rows = by_symptom[sym]
+            if sym.input_type == 'binary':
+                vals = [r.value_bool for r in rows if r.value_bool is not None]
+                if vals:
+                    items.append({'name': sym.name, 'kind': 'binary', 'n': len(vals),
+                                  'yes_pct': round(100 * sum(vals) / len(vals))})
+            else:
+                vals = [r.score for r in rows if r.score is not None]
+                if vals:
+                    items.append({'name': sym.name, 'kind': 'scale', 'n': len(vals),
+                                  'avg': round(sum(vals) / len(vals), 1),
+                                  'max': max(vals)})
+
+    # ── Interventions used during episodes in range ──
+    interventions = []
+    if ep_ids:
+        used = defaultdict(list)
+        for ei in (EpisodeIntervention.query.join(Protocol, EpisodeIntervention.protocol_id == Protocol.id)
+                   .filter(EpisodeIntervention.episode_id.in_(ep_ids), Protocol.user_id == user_id).all()):
+            used[ei.protocol].append(ei)
+        for proto in sorted(used, key=lambda x: (-len(used[x]), x.name.lower())):
+            rated = [ei.effectiveness for ei in used[proto] if ei.effectiveness is not None]
+            interventions.append({
+                'name': proto.name, 'times_used': len(used[proto]),
+                'avg_effectiveness': round(sum(rated) / len(rated), 1) if rated else None,
+                'n_rated': len(rated),
+            })
+
+    # ── Preventatives that overlap the range (anything not started after it) ──
+    preventatives = []
+    for p in (Protocol.query.filter_by(user_id=user_id, type='preventative')
+              .order_by(Protocol.start_date.is_(None), Protocol.start_date, Protocol.name).all()):
+        if p.start_date and p.start_date > end:
+            continue
+        events = sorted(ProtocolEvent.query.filter_by(protocol_id=p.id, user_id=user_id).all(),
+                        key=lambda ev: (ev.date, ev.created_at or datetime.min))
+        stopped_on = None
+        if p.status in ('stopped', 'paused'):
+            last = [ev for ev in events if ev.event_type == p.status]
+            stopped_on = last[-1].date if last else None
+        if stopped_on and stopped_on < start:
+            continue  # ended before the range — not part of this period
+        logs = ProtocolCompliance.query.filter(
+            ProtocolCompliance.user_id == user_id, ProtocolCompliance.protocol_id == p.id,
+            ProtocolCompliance.date >= start, ProtocolCompliance.date <= end).all()
+        preventatives.append({
+            'name': p.name, 'dose': p.dose_frequency, 'start_date': p.start_date,
+            'status': p.status, 'stopped_on': stopped_on,
+            'days_taken': sum(1 for c in logs if c.took),
+            'days_missed': sum(1 for c in logs if not c.took),
+            'dose_changes': [{'date': ev.date, 'detail': ev.detail} for ev in events
+                             if ev.event_type == 'dose_changed' and start <= ev.date <= end],
+        })
+
+    # ── Experiments that overlap the range — every outcome, failures included ──
+    today_for_open = end  # an active trial's data runs through the end of the range
+    experiments = []
+    for exp in (Experiment.query.filter_by(user_id=user_id)
+                .order_by(Experiment.start_date).all()):
+        ended = exp.ended_on(today_for_open)
+        if exp.start_date > end or (ended and ended < start):
+            continue
+        experiments.append({
+            'name': exp.name,
+            'protocol': exp.protocol.name if exp.protocol else None,
+            'hypothesis': exp.hypothesis,
+            'start_date': exp.start_date, 'end_date': exp.end_date,
+            'status': exp.status, 'decision': exp.decision,
+            'outcome_rating': exp.outcome_rating,
+            'stop_reason': exp.stop_reason,
+            'note': exp.stop_reason_note or exp.outcome_notes,
+        })
+
+    # ── Triggers by number of episodes ──
+    triggers = []
+    if ep_ids:
+        counts = defaultdict(int)
+        for et in (EpisodeTrigger.query.join(Trigger, EpisodeTrigger.trigger_id == Trigger.id)
+                   .filter(EpisodeTrigger.episode_id.in_(ep_ids),
+                           or_(Trigger.user_id.is_(None), Trigger.user_id == user_id)).all()):
+            counts[et.trigger.name] += 1
+        triggers = [{'name': n, 'episodes': c}
+                    for n, c in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0].lower()))[:10]]
+
+    notes = []
+    if include_notes:
+        notes = [{'onset': e.onset, 'text': e.notes} for e in episodes if (e.notes or '').strip()]
+
+    return {
+        'start': start, 'end': end, 'days': (end - start).days + 1,
+        'episode_count': len(episodes),
+        'episode_days': len({e.onset.date() for e in episodes}),
+        'months': months,
+        'duration': {
+            'n_with': len(durations), 'n_without': len(episodes) - len(durations),
+            'avg_hours': round(sum(durations) / len(durations), 1) if durations else None,
+        },
+        'impairment': [{'value': v, 'count': c} for v, c in impairment.items() if c],
+        'impairment_unset': sum(1 for e in episodes if e.functional_impairment not in impairment),
+        'tracked': items,
+        'interventions': interventions,
+        'preventatives': preventatives,
+        'experiments': experiments,
+        'triggers': triggers,
+        'notes': notes,
+        'include_notes': include_notes,
+    }
+
+
+IMPAIRMENT_LABELS = {
+    'working_normally': 'Working normally',
+    'working_reduced': 'Working at reduced capacity',
+    'cannot_work': 'Unable to work',
+    'completely_incapacitated': 'Completely incapacitated',
+}
+
+
+@app.route('/reports/doctor-summary')
+def doctor_summary():
+    """Print-styled summary of a date range for the user to share with a clinician.
+
+    Nothing leaves the app: no AI, no third party, no PDF library — the user
+    prints or saves it from the browser. Range defaults to the last 90 days
+    (local days); a malformed or inverted range is rejected, never substituted.
+    """
+    user = get_user()
+    today = user_today()
+    default_start = today - timedelta(days=DOCTOR_SUMMARY_DEFAULT_DAYS - 1)
+    start, err = _parse_date(request.args.get('start'), default_start, 'start date')
+    end, end_err = (None, None) if err else _parse_date(request.args.get('end'), today, 'end date')
+    err = err or end_err
+    if not err and end > today:
+        err = "The end date can't be in the future."
+    if not err and start > end:
+        err = 'The start date needs to be on or before the end date.'
+    if not err and (end - start).days + 1 > DOCTOR_SUMMARY_MAX_DAYS:
+        err = 'Choose a range of three years or less.'
+    if err:
+        flash(err, 'error')
+        start, end = default_start, today
+    include_notes = request.args.get('notes') == '1'
+
+    summary = build_doctor_summary(user.id, start, end, include_notes=include_notes)
+    return render_template('doctor_summary.html', s=summary, today=today, user=user,
+                           impairment_labels=IMPAIRMENT_LABELS,
+                           stop_reason_labels=EXPERIMENT_STOP_REASON_LABELS)
+
+
+# ---------------------------------------------------------------------------
 # Rescue options
 # ---------------------------------------------------------------------------
 
@@ -4836,10 +5044,12 @@ def delete_protocol(protocol_id):
     # already-abandoned experiments are left alone — their outcome is recorded.
     abandoned = 0
     try:
-        # .update() returns the row count, so the flash can say what happened.
-        abandoned = Experiment.query.filter_by(
-            protocol_id=protocol.id, user_id=user.id, status='active'
-        ).update({'status': 'abandoned', 'end_date': user_today()}, synchronize_session=False)
+        today = user_today()
+        for exp in Experiment.query.filter_by(protocol_id=protocol.id, user_id=user.id, status='active').all():
+            exp.status = 'abandoned'
+            # A trial not yet started ends on its start day, never before it.
+            exp.end_date = max(today, exp.start_date)
+            abandoned += 1
         db.session.delete(protocol)
         db.session.commit()
     except IntegrityError:

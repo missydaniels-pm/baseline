@@ -403,7 +403,7 @@ STOP_REASON_CHECK_SQL = (
 # see, and it is not the same as "side effects" (owner report 10/4/26). Scoped to
 # abandoned rows; the NULL branch lets the PostgreSQL ADD CONSTRAINT pass every
 # existing row (same rule as STOP_REASON_CHECK_SQL above).
-EXPERIMENT_STOP_REASON_VALUES = ('ineffective', 'made_worse', 'side_effects', 'cost', 'doctors_advice', 'other')
+EXPERIMENT_STOP_REASON_VALUES = STOP_REASON_VALUES[:1] + ('made_worse',) + STOP_REASON_VALUES[1:]
 EXPERIMENT_STOP_REASON_CHECK_SQL = (
     "stop_reason IS NULL OR (status = 'abandoned' AND stop_reason IN %s)"
     % _sql_str_in(EXPERIMENT_STOP_REASON_VALUES)

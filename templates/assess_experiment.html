@@ -14,6 +14,12 @@
   <a href="{{ url_for('experiments') }}" class="btn btn-secondary">{% if ended_on %}Back{% else %}Cancel{% endif %}</a>
 </div>
 
+{% if ended_on %}
+<div class="warning-banner" style="margin-bottom:16px;">
+  {% if experiment.status == 'completed' %}Completed{% else %}Ended early{% endif %}{% if experiment.stop_reason %} — {{ stop_reason_labels[experiment.stop_reason] }}{% endif %}.
+  Showing data from {{ experiment.start_date.strftime('%b %-d, %Y') }} to {{ ended_on.strftime('%b %-d, %Y') }}.
+</div>
+{% endif %}
 <div class="assess-layout">
   {# ── Data Panel (left) ─────────────────────────────────────────── #}
   <div class="assess-data-panel">
@@ -106,7 +112,7 @@
         {% endif %}
         <div style="font-size:13px; color:var(--text-muted); margin-top:8px;">
           Started {{ experiment.start_date.strftime('%b %-d, %Y') }}
-          · {{ experiment.stabilization_weeks }}-week stabilization period
+          {% if not ended_on %}· {{ experiment.stabilization_weeks }}-week stabilization period{% endif %}
           {% if experiment.baseline_episodes_per_month %}
             · baseline {{ experiment.baseline_episodes_per_month }} bad days/month
           {% endif %}
@@ -145,6 +151,9 @@
       {% endif %}
       {% if experiment.stop_reason_note or experiment.outcome_notes %}
       <div class="notes-text" style="margin-top:8px;">{{ experiment.stop_reason_note or experiment.outcome_notes }}</div>
+      {% endif %}
+      {% if experiment.status == 'completed' and not experiment.end_date %}
+      <div class="field-hint" style="margin-top:12px;">This experiment was assessed before end dates were recorded, so "during" runs to its scheduled assessment date.</div>
       {% endif %}
       {% if experiment.status == 'abandoned' and not experiment.end_date %}
       <div class="field-hint" style="margin-top:12px;">This experiment ended before end dates were recorded, so "during" runs to today.</div>

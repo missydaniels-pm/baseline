@@ -43,6 +43,14 @@
       <div class="char-counter"><span id="hypothesis_count">0</span>/500</div>
     </div>
 
+    {% if experiment.status != 'active' %}
+    <div class="form-group">
+      <label>Dates</label>
+      <div class="field-hint" style="font-style:normal;">
+        Started {{ experiment.start_date.strftime('%b %-d, %Y') }}{% if experiment.end_date %}, ended {{ experiment.end_date.strftime('%b %-d, %Y') }}{% endif %} — fixed once an experiment has ended.
+      </div>
+    </div>
+    {% else %}
     <div class="form-row">
       <div class="form-group">
         <label for="start_date">Start date</label>
@@ -60,9 +68,10 @@
       </div>
     </div>
 
-    <div id="assess-date-preview" class="assess-date-preview" style="display:none;">
+        {% endif %}
+    {% if experiment.status == 'active' %}<div id="assess-date-preview" class="assess-date-preview" style="display:none;">
       Assessment due: <strong id="assess-date-text"></strong>
-    </div>
+    </div>{% endif %}
 
   </form>
 
@@ -81,6 +90,7 @@
     var weeks = parseInt(document.getElementById('stabilization_weeks').value) || 3;
     var preview = document.getElementById('assess-date-preview');
     var dateText = document.getElementById('assess-date-text');
+    if (!preview) return;  // ended trial: no assessment date to preview
     if (startVal) {
       var d = new Date(startVal + 'T00:00:00');
       d.setDate(d.getDate() + weeks * 7);
@@ -91,8 +101,10 @@
       preview.style.display = 'none';
     }
   }
-  document.getElementById('start_date').addEventListener('change', updateAssessDate);
-  document.getElementById('stabilization_weeks').addEventListener('input', updateAssessDate);
-  updateAssessDate();
+  if (document.getElementById('start_date')) {  // absent on an ended trial (dates locked)
+    document.getElementById('start_date').addEventListener('change', updateAssessDate);
+    document.getElementById('stabilization_weeks').addEventListener('input', updateAssessDate);
+    updateAssessDate();
+  }
 </script>
 {% endblock %}
