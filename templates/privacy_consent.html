@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Privacy Policy Update — Baseline{% endblock %}
+
+{% block content %}
+<div class="wizard-card">
+  <h1 class="page-title" style="margin-bottom:8px;">We've updated our Privacy Policy</h1>
+  <p style="color:var(--text-muted); margin-bottom:16px;">
+    Before you continue, here's what changed on October 19, 2026:
+  </p>
+  <ul style="color:var(--text); margin:0 0 16px 18px; padding:0; line-height:1.6;">
+    <li style="margin-bottom:8px;"><strong>Backups.</strong> When you delete your account, your data leaves Baseline right away. It stays only in our encrypted backups until they expire, about 30 days later.</li>
+    <li style="margin-bottom:8px;"><strong>Where backups are kept.</strong> Encrypted backups are stored with Cloudflare, which also helps deliver the site. Cloudflare can't read them.</li>
+    <li style="margin-bottom:8px;"><strong>More detail</strong> about what we collect (such as triggers and why an experiment ended), the doctor summary, and which service providers handle data for us.</li>
+    <li><strong>Your consent.</strong> We're now asking you to say yes to Baseline storing the health information you enter.</li>
+  </ul>
+  <p style="margin-bottom:24px;">
+    <a href="{{ url_for('privacy') }}" target="_blank" rel="noopener" style="color:var(--accent);">Read the full Privacy Policy<span class="sr-only"> (opens in a new tab)</span></a>
+  </p>
+
+  <form method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-group">
+      <label class="toggle-label" style="margin-bottom:0; align-items:flex-start;">
+        <input type="checkbox" id="privacy_ack" name="privacy_ack">
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        <span>I consent to Baseline collecting and storing the health information I enter, as described in the Privacy Policy.</span>
+      </label>
+    </div>
+    <button type="submit" class="btn btn-primary" id="consent-btn" disabled aria-describedby="consent-hint">Continue</button>
+    <p id="consent-hint" class="field-hint" style="margin-top:8px;">Turn on the switch above to continue.</p>
+  </form>
+
+  <details class="consent-exit" {% if show_exits %}open{% endif %} style="margin-top:28px; color:var(--text-muted); font-size:14px;">
+    <summary style="cursor:pointer;">Don't want to consent?</summary>
+    <p style="margin:12px 0;">
+      You can <a href="{{ url_for('logout') }}" style="color:var(--accent);">log out</a> and decide later,
+      or delete your account and all its data now (our encrypted backups expire after about 30 days).
+    </p>
+    <form method="POST" action="{{ url_for('delete_account') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="delete-confirm-input" style="font-size:13px; font-weight:600; display:block; margin-bottom:6px;">
+        Type <span style="color:var(--high);">DELETE</span> to delete your account
+      </label>
+      <input type="text" id="delete-confirm-input" name="confirmation" autocomplete="off"
+        style="width:100%; margin-bottom:12px;" placeholder="DELETE">
+      <button type="submit" class="btn" id="delete-confirm-btn" disabled
+        style="background:var(--high); color:#fff; border:none; opacity:.5; cursor:not-allowed;">
+        Permanently delete my account
+      </button>
+    </form>
+  </details>
+</div>
+<script>
+(function() {
+  var ack = document.getElementById('privacy_ack');
+  var btn = document.getElementById('consent-btn');
+  ack.addEventListener('change', function() { btn.disabled = !ack.checked; });
+  btn.disabled = !ack.checked;
+
+  var del = document.getElementById('delete-confirm-input');
+  var delBtn = document.getElementById('delete-confirm-btn');
+  del.addEventListener('input', function() {
+    var ok = del.value.trim() === 'DELETE';
+    delBtn.disabled = !ok;
+    delBtn.style.opacity = ok ? '1' : '.5';
+    delBtn.style.cursor = ok ? 'pointer' : 'not-allowed';
+  });
+})();
+</script>
+{% endblock %}

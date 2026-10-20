@@ -67,7 +67,7 @@ templates/
   base.html             — base template with nav, PWA meta tags
   index.html            — dashboard with charts
   login.html            — login page
-  register.html         — self-serve registration (email + password + privacy acknowledgment)
+  register.html         — self-serve registration (email + password + consent to the privacy policy)
   offline.html          — PWA offline fallback
   [other templates]     — episodes, protocols, experiments, symptoms, settings, help
 Baseline Files/
@@ -88,7 +88,7 @@ Baseline Files/
 
 ## Data Models
 
-- **User** — email, password_hash, invite_code_used (legacy), is_active, verified_at, onboarding_complete, baseline data, ai_logging_enabled, has_seen_tour, is_admin, email_updates_enabled, `timezone` (IANA, auto-detected from the `baseline_tz` cookie and persisted; resolved **cookie-first → stored fallback** via `user_tz_name()`, which backs `user_today()`), and the **episode-diary Layer A** flags `diary_mode_enabled` (bool, default False) + `diary_span_counts_both_days` (bool, default True). **Unwritten in the monolith** — schema pre-staged for the React rebuild; no capture/render path. See `Baseline Files/SPEC-episode-diary.md`.
+- **User** — email, password_hash, invite_code_used (legacy), is_active, verified_at, onboarding_complete, baseline data, ai_logging_enabled, has_seen_tour, is_admin, email_updates_enabled, `timezone` (IANA, auto-detected from the `baseline_tz` cookie and persisted; resolved **cookie-first → stored fallback** via `user_tz_name()`, which backs `user_today()`), `privacy_consent_at` + `privacy_policy_version` (consent record, 10/19/26 — written at signup and by the one-time `/privacy/consent` page; a version other than `PRIVACY_POLICY_VERSION` gates the user to that page), and the **episode-diary Layer A** flags `diary_mode_enabled` (bool, default False) + `diary_span_counts_both_days` (bool, default True). **Unwritten in the monolith** — schema pre-staged for the React rebuild; no capture/render path. See `Baseline Files/SPEC-episode-diary.md`.
 - **InviteCode** — code, created_at, used_at, used_by_user_id (legacy — admin use only via /dev/create-invite)
 - **UsedVerifyToken** — token_hash (SHA-256), used_at. Prevents email-verification token replay.
 - **Symptom** — user-defined trackable items (name, description, is_active, input_type). Displayed as "What I Track" in UI. No hard limit on count post-onboarding. `input_type` is `'scale'` (1–10 slider) or `'binary'` (Yes/No). Type is locked once any SymptomScore for the symptom exists.
@@ -170,7 +170,7 @@ Two distinct failure modes — keep them separate. **Rule 1 is about *where stat
 
 **Database:** SQLite locally (no setup required), PostgreSQL in production. The DATABASE_URL environment variable controls which is used. The postgres:// → postgresql:// rewrite is handled in app.py, and the PostgreSQL engine sets `pool_pre_ping=True` (9/4/26 — Railway drops idle connections; without it the first request after an idle spell could 500 on a dead pooled connection).
 
-**Auth:** Self-serve registration with email verification. Flow: `/register` creates inactive user + sends signed itsdangerous token (24h TTL) → user clicks `/verify/<token>` → `verified_at` set, `is_active=True`, welcome email sent, logged in. Used tokens hashed into `used_verify_tokens` to block replay. Unverified accounts deleted after 48h by `cleanup_stale_unverified_users()` at startup. Flask-Limiter: 5/hour register + resend, 20/hour login. Disposable-email blocklist. Privacy policy acknowledgment required (server-enforced). `InviteCode` + `/dev/create-invite` retained for admin manual onboarding.
+**Auth:** Self-serve registration with email verification. Flow: `/register` creates inactive user + sends signed itsdangerous token (24h TTL) → user clicks `/verify/<token>` → `verified_at` set, `is_active=True`, welcome email sent, logged in. Used tokens hashed into `used_verify_tokens` to block replay. Unverified accounts deleted after 48h by `cleanup_stale_unverified_users()` at startup. Flask-Limiter: 5/hour register + resend, 20/hour login. Disposable-email blocklist. Consent to the privacy policy required (server-enforced; consent wording since 10/19/26 — was "acknowledge"). `InviteCode` + `/dev/create-invite` retained for admin manual onboarding.
 
 **CSRF (Flask-WTF):** `CSRFProtect(app)` protects every state-changing POST globally (opt-out, not opt-in — nothing is missed by default). Every `<form method="POST">` carries a hidden `{{ csrf_token() }}`; JSON `fetch` POSTs (`/protocols/log-day`, `/tour/complete`) send the token as an `X-CSRFToken` header, read from a `<meta name="csrf-token">` in `base.html` via the global `csrfToken()` helper. A `CSRFError` handler returns a friendly flash+redirect for forms and a `{ok:false}` 400 for JSON — never a raw 400. The CSRF secret rides `SECRET_KEY` (session-stored, Rule 1 compliant). **On by default everywhere including local dev** (so the token flow is browser-exercised before prod); the test suites opt out with `WTF_CSRF_ENABLED=false` set before importing app. When adding a new form or fetch POST, include the token (see CONVENTIONS.md).
 

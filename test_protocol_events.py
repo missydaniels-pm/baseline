@@ -32,6 +32,7 @@ os.environ.setdefault('SECRET_KEY', 'test-secret-key')
 from datetime import date, datetime, timedelta
 
 from app import app, _resolve_effective_date
+from app import PRIVACY_POLICY_VERSION  # fixtures are consented users (consent gate)
 from database import db, User, Protocol, Experiment, ProtocolEvent
 
 failures = []
@@ -83,7 +84,7 @@ def main():
     with app.app_context():
         # verified_at + onboarding_complete matter: require_auth redirects an
         # unverified or mid-onboarding user away before the route ever runs.
-        u = User(name='Ev Test', email='ev@test.com', is_active=True,
+        u = User(privacy_policy_version=PRIVACY_POLICY_VERSION, name='Ev Test', email='ev@test.com', is_active=True,
                  verified_at=datetime.utcnow(), onboarding_complete=True)
         u.password_hash = 'x'
         db.session.add(u)
@@ -118,7 +119,7 @@ def main():
 
     # ── 3. Route-level: the status floor (reviewers' repros) ─────────────
     with app.app_context():
-        u2 = User(name='Floor Test', email='floor@test.com', is_active=True,
+        u2 = User(privacy_policy_version=PRIVACY_POLICY_VERSION, name='Floor Test', email='floor@test.com', is_active=True,
                   verified_at=datetime.utcnow(), onboarding_complete=True)
         u2.password_hash = 'x'
         db.session.add(u2)
@@ -175,7 +176,7 @@ def main():
 
     # ── 4. assess_experiment guards ──────────────────────────────────────
     with app.app_context():
-        u3 = User(name='Assess Guard', email='guard@test.com', is_active=True,
+        u3 = User(privacy_policy_version=PRIVACY_POLICY_VERSION, name='Assess Guard', email='guard@test.com', is_active=True,
                   verified_at=datetime.utcnow(), onboarding_complete=True)
         u3.password_hash = 'x'
         db.session.add(u3)

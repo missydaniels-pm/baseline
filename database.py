@@ -143,6 +143,12 @@ class User(db.Model):
     #   post-rebuild — no historical data depends on it. See SPEC G3/G4.
     diary_mode_enabled = db.Column(db.Boolean, default=False, nullable=False)
     diary_span_counts_both_days = db.Column(db.Boolean, default=True, nullable=False)
+    # Privacy-policy consent (10/19/26, WA MHMD): when the user consented and to which
+    # policy version (PRIVACY_POLICY_VERSION in app.py). Written at signup and by the
+    # one-time re-consent page. NULL = an account from before consent was recorded; a
+    # version other than the current one sends the user to /privacy/consent.
+    privacy_consent_at = db.Column(db.DateTime, nullable=True)
+    privacy_policy_version = db.Column(db.String(20), nullable=True)
 
     episodes = db.relationship('Episode', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)
     protocols = db.relationship('Protocol', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)

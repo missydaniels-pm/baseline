@@ -22,6 +22,7 @@ from datetime import datetime
 from sqlalchemy.exc import IntegrityError
 
 from app import app, run_migrations, SEED_TRIGGERS
+from app import PRIVACY_POLICY_VERSION  # fixtures are consented users (consent gate)
 from database import db, User, Episode, Trigger, EpisodeTrigger
 
 
@@ -52,8 +53,8 @@ def main():
             print("PASS: duplicate global rejected (case-insensitive)")
 
         # Two users for the custom-trigger cases.
-        u1 = User(name='u1', email='u1@example.com')
-        u2 = User(name='u2', email='u2@example.com')
+        u1 = User(privacy_policy_version=PRIVACY_POLICY_VERSION, name='u1', email='u1@example.com')
+        u2 = User(privacy_policy_version=PRIVACY_POLICY_VERSION, name='u2', email='u2@example.com')
         db.session.add_all([u1, u2])
         db.session.commit()
 

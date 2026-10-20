@@ -38,6 +38,7 @@ from datetime import datetime, timedelta
 from itertools import count
 
 from app import app, bcrypt, _pw, generate_verify_token, load_verify_token
+from app import PRIVACY_POLICY_VERSION  # fixtures are consented users (consent gate)
 from database import db, User, Episode, UsedVerifyToken
 
 FAILS = []
@@ -79,6 +80,14 @@ def main():
             r = c.post('/register', data=data, headers=fresh_ip())
             check(r.status_code == 200 and User.query.count() == 0,
                   f'[register] {label} → form re-rendered, no user created')
+
+        # Consent, not acknowledgement (privacy policy update, owner-approved 10/19/26).
+        r = c.get('/register', headers=fresh_ip())
+        check(b'I consent to Baseline collecting and storing the health information I enter' in r.data,
+              '[register] the checkbox asks for consent to collect and store health information')
+        r = c.post('/register', data={k: v for k, v in GOOD.items() if k != 'privacy_ack'}, headers=fresh_ip())
+        check(b'please consent to Baseline collecting and storing your health information' in r.data,
+              '[register] no consent → the consent message is shown')
 
         r = c.post('/register', data=GOOD, headers=fresh_ip())
         u = User.query.filter_by(email=GOOD['email']).first()
@@ -139,7 +148,7 @@ def main():
         check(r.status_code == 302 and signed_in(c) == u.id, '[login] right password (email any case) signs in')
 
         # A deactivated (but verified) account can't sign in.
-        gone = User(email='deactivated@example.com', is_active=False, verified_at=datetime.utcnow(),
+        gone = User(privacy_policy_version=PRIVACY_POLICY_VERSION, email='deactivated@example.com', is_active=False, verified_at=datetime.utcnow(),
                     onboarding_complete=True,
                     password_hash=bcrypt.generate_password_hash(_pw('Passw0rdX')).decode())
         db.session.add(gone)
@@ -175,7 +184,7 @@ def main():
         check(pw_ok('Newpass99') and not pw_ok(GOOD['password']), '[password] success swaps the hash')
 
         # ── Settings: email ──
-        taken = User(email='taken@example.com', is_active=True, verified_at=datetime.utcnow(),
+        taken = User(privacy_policy_version=PRIVACY_POLICY_VERSION, email='taken@example.com', is_active=True, verified_at=datetime.utcnow(),
                      onboarding_complete=True, password_hash='x')
         db.session.add(taken)
         db.session.commit()

@@ -32,6 +32,7 @@ os.environ.pop('RESEND_API_KEY', None)
 from datetime import datetime, timedelta
 
 from app import app, seed_test_data, generate_unsubscribe_token
+from app import PRIVACY_POLICY_VERSION  # fixtures are consented users (consent gate)
 from database import (db, User, Episode, Protocol, Symptom, SymptomScore, Experiment, Trigger)
 
 FAILS = []
@@ -42,7 +43,8 @@ SKIP = {'static', 'logout', 'serve_sw', 'tour_restart', 'dev_reset', 'dev_seed',
 
 
 # GET endpoints that legitimately redirect a signed-in, onboarded user.
-EXPECTED_REDIRECTS = {'login', 'register', 'onboarding_step2', 'admin_analytics', 'admin_users'}
+EXPECTED_REDIRECTS = {'login', 'register', 'onboarding_step2', 'admin_analytics', 'admin_users',
+                      'privacy_consent'}  # consented users are sent on to the dashboard
 
 
 def check(cond, msg):
@@ -59,7 +61,7 @@ def client_for(uid):
 
 
 def make_user(email, **kw):
-    u = User(name='T', email=email, is_active=True, verified_at=datetime.utcnow(),
+    u = User(privacy_policy_version=PRIVACY_POLICY_VERSION, name='T', email=email, is_active=True, verified_at=datetime.utcnow(),
              onboarding_complete=True, has_seen_tour=True, **kw)
     u.password_hash = 'x'
     db.session.add(u)
@@ -134,7 +136,7 @@ def main():
             check(co.get(url).status_code == 404, f'[scope] another user gets 404 on {url}')
 
         # ── 2. Onboarding ──
-        new = User(name='N', email='onb@test.com', is_active=True, verified_at=datetime.utcnow(),
+        new = User(privacy_policy_version=PRIVACY_POLICY_VERSION, name='N', email='onb@test.com', is_active=True, verified_at=datetime.utcnow(),
                    onboarding_complete=False)
         new.password_hash = 'x'
         db.session.add(new)

@@ -27,6 +27,7 @@ import resend
 
 import app as app_module
 from app import app
+from app import PRIVACY_POLICY_VERSION  # fixtures are consented users (consent gate)
 from database import db, User
 
 FAILS = []
@@ -61,7 +62,7 @@ def main():
     resend.Contacts.remove = boom
 
     with app.app_context():
-        u = User(email=ADDR, is_active=True, verified_at=datetime.utcnow(), onboarding_complete=True)
+        u = User(privacy_policy_version=PRIVACY_POLICY_VERSION, email=ADDR, is_active=True, verified_at=datetime.utcnow(), onboarding_complete=True)
         u.password_hash = 'x'
         db.session.add(u)
         db.session.commit()

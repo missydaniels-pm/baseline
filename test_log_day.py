@@ -27,6 +27,7 @@ os.environ.setdefault('SECRET_KEY', 'test-secret')
 from datetime import datetime, timedelta
 
 from app import app, user_today
+from app import PRIVACY_POLICY_VERSION  # fixtures are consented users (consent gate)
 from database import db, User, Protocol, ProtocolCompliance
 
 FAILS = []
@@ -43,8 +44,8 @@ def main():
         today = user_today()
 
     with app.app_context():
-        u = User(email='ld@test.com', is_active=True, verified_at=datetime.utcnow(), onboarding_complete=True)
-        other = User(email='ld2@test.com', is_active=True, verified_at=datetime.utcnow(), onboarding_complete=True)
+        u = User(privacy_policy_version=PRIVACY_POLICY_VERSION, email='ld@test.com', is_active=True, verified_at=datetime.utcnow(), onboarding_complete=True)
+        other = User(privacy_policy_version=PRIVACY_POLICY_VERSION, email='ld2@test.com', is_active=True, verified_at=datetime.utcnow(), onboarding_complete=True)
         u.password_hash = other.password_hash = 'x'
         db.session.add_all([u, other])
         db.session.flush()

@@ -38,6 +38,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.exc import IntegrityError
 
 from app import app, user_today
+from app import PRIVACY_POLICY_VERSION  # fixtures are consented users (consent gate)
 from database import db, User, Protocol, Experiment, Episode
 
 failures = []
@@ -52,7 +53,7 @@ def check(label, condition):
 
 
 def make_user(email):
-    u = User(name='T', email=email, is_active=True,
+    u = User(privacy_policy_version=PRIVACY_POLICY_VERSION, name='T', email=email, is_active=True,
              verified_at=datetime.utcnow(), onboarding_complete=True)
     u.password_hash = 'x'
     db.session.add(u)

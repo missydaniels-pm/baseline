@@ -81,6 +81,17 @@ here in the same commit.
   DEBUG; value `HSTS_VALUE`, being ramped — BACKLOG). Logout sends `Clear-Site-Data: "cache"`
   (best-effort, not Safari). `test_security_headers.py` pins all of this.
 
+## Privacy policy changes (consent is recorded — 10/19/26)
+- Consent is per user: `privacy_consent_at` + `privacy_policy_version`, written only through
+  `record_privacy_consent()` (signup and `/privacy/consent`).
+- **A material policy change** (what's collected, who processes it, retention, purposes) needs the
+  owner's approval, then: edit `privacy.html`, set its "Effective" date, and bump
+  `PRIVACY_POLICY_VERSION` to that date (`test_privacy_consent.py` fails if they differ). Every
+  signed-in user is then asked to consent again on their next request. Update the summary bullets
+  in `privacy_consent.html` to say what changed. A typo fix is not material: don't bump.
+- New endpoints are gated by default. Only `CONSENT_GATE_EXEMPT` (the consent page and its exits:
+  logout, delete account) passes; don't add to it without a reason.
+
 ## Protocol events: when it happened vs when you recorded it
 - `ProtocolEvent` has **two** dates and they are not interchangeable. `date` = the day
   the change actually took effect (user-supplied, back-datable). `created_at` = when the

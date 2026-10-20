@@ -28,6 +28,7 @@ from datetime import datetime
 import bcrypt as raw_bcrypt
 
 from app import app, limiter
+from app import PRIVACY_POLICY_VERSION  # fixtures are consented users (consent gate)
 from database import db, User, normalize_database_url
 
 FAILS = []
@@ -80,7 +81,7 @@ def main():
 
         # ── 1b. Legacy hash: made by old bcrypt from a long password (= first 72 bytes) ──
         legacy = raw_bcrypt.hashpw(MULTI.encode('utf-8')[:72], raw_bcrypt.gensalt()).decode()
-        old = User(email='legacy@example.com', is_active=True, verified_at=datetime.utcnow(),
+        old = User(privacy_policy_version=PRIVACY_POLICY_VERSION, email='legacy@example.com', is_active=True, verified_at=datetime.utcnow(),
                    onboarding_complete=True, password_hash=legacy)
         db.session.add(old)
         db.session.commit()

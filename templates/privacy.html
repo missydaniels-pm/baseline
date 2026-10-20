@@ -69,7 +69,7 @@
   <div class="privacy-container">
     <div class="privacy-brand">Base<span>line</span></div>
     <h1>Privacy Policy</h1>
-    <p class="privacy-effective">Effective April 24, 2026</p>
+    <p class="privacy-effective">Effective October 19, 2026</p>
 
     <p>
       Baseline is a personal health tracking application. We take the privacy of your health data
@@ -80,7 +80,7 @@
     <h2>1. Data We Collect</h2>
     <ul>
       <li><strong>Account information:</strong> email address, a hashed password, and your device's timezone (detected automatically so your entries land on the correct day). We do not collect your real name unless you choose to provide it.</li>
-      <li><strong>Health data you enter:</strong> episodes (severity scores, duration, notes), protocols, experiments, interventions, and daily compliance logs.</li>
+      <li><strong>Health data you enter:</strong> the symptoms and other items you choose to track; episodes (scores, duration, how much they affected your day, notes, and possible triggers); protocols and interventions; experiments and their outcomes, including why an experiment was ended; and daily compliance logs.</li>
       <li><strong>AI check-in messages:</strong> if you opt in to AI logging, the text you type on the Check-in page is sent to Anthropic's API to generate structured health records. These messages are stored in your account history.</li>
       <li><strong>Usage activity:</strong> we log internal usage events — such as logins, page views, and signup timestamps — tied to your account. These records contain only event types, timestamps, and which pages you visited. They never include the content of your health data, notes, or check-in messages.</li>
     </ul>
@@ -91,6 +91,7 @@
       <li>To generate dashboard insights (charts, trends, experiment assessments) from your own data.</li>
       <li>To understand how the application is used — which features are visited, how often users log in, and whether the app is meeting its users' needs. This helps us prioritize improvements. Usage activity records never contain health data content.</li>
       <li>If AI logging is enabled, to send your check-in text to Anthropic's Claude API for natural language processing. Anthropic's data usage policy applies to that interaction.</li>
+      <li>To produce a doctor summary when you ask for one. It is generated on request from your own data and shown only to you; Baseline does not send it anywhere — you decide whether to print, save or share it. It is not stored by your browser or the app's offline cache.</li>
     </ul>
 
     <h3 style="font-size:1rem;font-weight:600;margin-top:18px;margin-bottom:8px;color:var(--text);">Email We Send</h3>
@@ -121,7 +122,7 @@
     <h2>3. Data We Do Not Collect</h2>
     <ul>
       <li>We do not use third-party analytics or advertising trackers. Internal usage activity (logins, page views) is collected and stored only in our own database — it is never sent to third parties.</li>
-      <li>We do not sell, rent, or share your data with anyone.</li>
+      <li>We do not sell or rent your data, and we do not share it with anyone except the service providers listed in Section 4, which process it only to run Baseline on our behalf.</li>
       <li>We do not track you across other websites or apps.</li>
     </ul>
 
@@ -144,6 +145,14 @@
       may process standard server logs (IP addresses, request timestamps). See
       <a href="https://railway.app/legal/privacy" target="_blank" rel="noopener">Railway's privacy policy</a>.
     </p>
+    <p>
+      <strong>Cloudflare (network and backup storage):</strong> requests to mybaselineapp.com pass
+      through Cloudflare's network, which processes standard connection data (IP addresses, request
+      metadata) to deliver and protect the site. Our encrypted database backups are stored in
+      Cloudflare R2; they are encrypted before they leave our servers, and Cloudflare does not hold
+      the key. See
+      <a href="https://www.cloudflare.com/privacypolicy/" target="_blank" rel="noopener">Cloudflare's privacy policy</a>.
+    </p>
 
     <h3 style="font-size:1rem;font-weight:600;margin-top:18px;margin-bottom:8px;color:var(--text);">Administrative Access</h3>
     <p>
@@ -163,13 +172,14 @@
       <li>Passwords are hashed using bcrypt and are never stored in plain text.</li>
       <li>Baseline uses email verification to confirm user identity during registration. Your account is not active until you click the verification link we email to you.</li>
       <li>All connections use HTTPS encryption in transit.</li>
+      <li>Database backups are encrypted (AES-256) before storage and kept for about 30 days.</li>
     </ul>
 
     <h2>6. Your Rights</h2>
     <p>Under the <strong>Washington My Health My Data Act</strong> and our commitment to your privacy, you have the right to:</p>
     <ul>
       <li><strong>Access:</strong> view all health data stored in your account at any time through the app.</li>
-      <li><strong>Delete:</strong> permanently delete your account and all associated health data from Settings. Deletion is immediate and irreversible.</li>
+      <li><strong>Delete:</strong> permanently delete your account and all associated health data from Settings. Deletion from the live service is immediate and irreversible; encrypted backups expire after about 30 days (see Data Retention).</li>
       <li><strong>Withdraw consent:</strong> disable AI logging at any time in Settings to stop sending data to Anthropic's API.</li>
       <li><strong>Manage email:</strong> opt out of app-update emails at any time via <em>Settings &rarr; Email Preferences</em> or the <em>Unsubscribe</em> link in any such email.</li>
     </ul>
@@ -178,7 +188,11 @@
     <p>
       Your data is retained for as long as your account exists. When you delete your account, all
       data — episodes, protocols, experiments, compliance logs, check-in history, usage activity
-      logs, and tracking records — is permanently removed from our database.
+      logs, and tracking records — is immediately and permanently removed from our live database.
+      For disaster recovery we keep encrypted nightly backups of the database for about 30 days; a
+      deleted account's data remains only in those encrypted backups until they expire, about
+      30 days after deletion, and is never restored into the live service except to recover from
+      a failure of the whole system.
     </p>
 
     <h3 style="font-size:1rem;font-weight:600;margin-top:18px;margin-bottom:8px;color:var(--text);">Unverified Accounts</h3>

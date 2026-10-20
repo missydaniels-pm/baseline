@@ -38,6 +38,7 @@ from datetime import datetime, date
 from sqlalchemy import text
 
 from app import app
+from app import PRIVACY_POLICY_VERSION  # fixtures are consented users (consent gate)
 from database import (db, User, Episode, Protocol, Symptom, SymptomScore,
                       EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance,
                       ProtocolEvent, UserActivity, Trigger, EpisodeTrigger,
@@ -59,7 +60,7 @@ def _fixture():
     # onboarding_complete/is_active matter for the route-level test below —
     # without them the auth guard redirects to onboarding before the delete
     # route is ever reached, and the assertion fails for the wrong reason.
-    u = User(name='FK Test', email=f'fk{datetime.utcnow().timestamp()}@test.com',
+    u = User(privacy_policy_version=PRIVACY_POLICY_VERSION, name='FK Test', email=f'fk{datetime.utcnow().timestamp()}@test.com',
              onboarding_complete=True, is_active=True)
     db.session.add(u)
     db.session.flush()

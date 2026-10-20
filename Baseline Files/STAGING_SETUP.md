@@ -151,6 +151,9 @@ curl -sI "$URL/login" | grep -iE "cache-control|x-frame|strict-transport"       
 curl -s "$URL/login" | grep -o "sw.js?v=[0-9a-f]*" && curl -s "$URL/sw.js?v=$(curl -s "$URL/login" | grep -o 'sw.js?v=[0-9a-f]*' | cut -d= -f2)" | grep -o "baseline-v[0-9]*"  # expect the current CACHE_NAME
 ```
 
+> **Consent page (10/19/26):** accounts made by `seed_staging.py` or `/dev/bootstrap` carry no privacy-policy consent, so their first sign-in shows `/privacy/consent` once. That's expected, and it doubles as a check that the gate works: consent, then carry on.
+
+
 - If the build config changed, confirm the *build* too: `railway logs --build` should show
   `load build definition from Dockerfile` and `python:3.14-slim` — never `mise` or railpack.
 - **Confirm the dashboard isn't overriding the image.** Railway's service **Settings → Deploy →

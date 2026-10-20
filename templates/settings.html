@@ -174,6 +174,7 @@
     <p style="font-size:14px; color:var(--text-muted); margin-bottom:16px;">
       This will permanently delete your account and all health data including
       episodes, protocols, experiments, and check-in history. This cannot be undone.
+      (Our encrypted backups expire after about 30 days — see the Privacy Policy.)
     </p>
     <form method="POST" action="{{ url_for('delete_account') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

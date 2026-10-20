@@ -21,6 +21,7 @@ os.environ.setdefault('SECRET_KEY', 'test-secret-key')
 from datetime import datetime
 
 from app import app
+from app import PRIVACY_POLICY_VERSION  # fixtures are consented users (consent gate)
 from database import db, User, Episode, Trigger, EpisodeTrigger
 
 FAILS = []
@@ -35,7 +36,7 @@ def check(cond, msg):
 
 
 def make_user(email):
-    u = User(email=email, is_active=True, verified_at=datetime.utcnow(),
+    u = User(privacy_policy_version=PRIVACY_POLICY_VERSION, email=email, is_active=True, verified_at=datetime.utcnow(),
              onboarding_complete=True)
     u.password_hash = 'x'
     db.session.add(u)

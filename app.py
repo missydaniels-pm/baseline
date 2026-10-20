@@ -649,6 +649,10 @@ def run_migrations():
         # handled in its own block below, like protocol_events.stop_reason.
         ('experiments',           'end_date',                  'ALTER TABLE experiments ADD COLUMN end_date DATE'),
         ('experiments',           'stop_reason_note',          'ALTER TABLE experiments ADD COLUMN stop_reason_note TEXT'),
+        # Privacy-policy consent record (10/19/26). Nullable: existing accounts consent
+        # through /privacy/consent.
+        ('users',                 'privacy_consent_at',        'ALTER TABLE users ADD COLUMN privacy_consent_at TIMESTAMP'),
+        ('users',                 'privacy_policy_version',    'ALTER TABLE users ADD COLUMN privacy_policy_version VARCHAR(20)'),
     ]
 
     # Widen symptoms.name from varchar(100) to varchar(200) on PostgreSQL
@@ -1572,6 +1576,22 @@ def _missed_message_for(protocol, hypothesis=None):
 # Authentication gate + onboarding gate
 # ---------------------------------------------------------------------------
 
+# The privacy policy users consent to. Bump it (and the "Effective" date in
+# privacy.html — test_privacy_consent.py checks they match) on a material policy
+# change: every signed-in user is then asked to consent again (require_auth).
+PRIVACY_POLICY_VERSION = '2026-10-19'
+
+# Reachable while a signed-in user still owes consent to the current policy:
+# the consent page, and the two ways out (log out, delete the account).
+CONSENT_GATE_EXEMPT = {'privacy_consent', 'logout', 'delete_account'}
+
+
+def record_privacy_consent(user):
+    """Record that `user` consented to the current policy (caller commits)."""
+    user.privacy_consent_at = datetime.utcnow()
+    user.privacy_policy_version = PRIVACY_POLICY_VERSION
+
+
 PUBLIC_ENDPOINTS = {'login', 'register', 'static', 'dev_bootstrap', 'serve_sw', 'offline', 'privacy', 'verify_email', 'resend_verification', 'verify_sent', 'unsubscribe'}
 
 @app.context_processor
@@ -1579,6 +1599,7 @@ def inject_onboarding_state():
     user = get_user()
     return {
         'onboarding_in_progress': user is not None and not user.onboarding_complete,
+        'consent_pending': user is not None and user.privacy_policy_version != PRIVACY_POLICY_VERSION,
         'current_user': user,
     }
 
@@ -1601,10 +1622,21 @@ def require_auth():
     # and persist the browser-detected timezone if it changed.
     g.user = user
     sync_user_timezone(user)
-    # Onboarding gate — let onboarding endpoints and logout through. (Logout was
-    # gated until 10/19/26: a user mid-onboarding tapping "Log out" was sent back
-    # to step 1 and stayed signed in — found writing test_auth_settings.py.)
-    if request.endpoint.startswith('onboarding_') or request.endpoint == 'logout':
+    # Consent gate (10/19/26): a user who hasn't consented to the current privacy
+    # policy sees it before anything else, onboarding included. New accounts
+    # consent at signup, so this only reaches accounts from before a policy change.
+    # `!=`, not `<`, on purpose: any version other than the current one asks again
+    # (a rollback of the constant re-prompts rather than silently accepting).
+    if (user.privacy_policy_version != PRIVACY_POLICY_VERSION
+            and request.endpoint not in CONSENT_GATE_EXEMPT):
+        return redirect(url_for('privacy_consent'))
+    # Onboarding gate — let onboarding endpoints and the consent gate's exits
+    # (consent page, logout, delete account) through. (Logout was gated until
+    # 10/19/26: a user mid-onboarding tapping "Log out" was sent back to step 1
+    # and stayed signed in — found writing test_auth_settings.py. The consent
+    # page must pass too, or a mid-onboarding user owing consent loops between
+    # the two gates — found writing test_privacy_consent.py.)
+    if request.endpoint.startswith('onboarding_') or request.endpoint in CONSENT_GATE_EXEMPT:
         return
     if not user.onboarding_complete:
         return redirect(url_for('onboarding_step1'))
@@ -1788,7 +1820,7 @@ def register():
         if password != confirm:
             errors.append('Passwords do not match.')
         if not privacy_ack:
-            errors.append('You must acknowledge the Privacy Policy to create an account.')
+            errors.append('To create an account, please consent to Baseline collecting and storing your health information as described in the Privacy Policy.')
 
         if errors:
             for e in errors:
@@ -1803,6 +1835,7 @@ def register():
             is_active=False,
             verified_at=None,
         )
+        record_privacy_consent(user)
         try:
             db.session.add(user)
             db.session.commit()
@@ -2076,6 +2109,24 @@ def tour_restart():
 @app.route('/privacy')
 def privacy():
     return render_template('privacy.html')
+
+
+@app.route('/privacy/consent', methods=['GET', 'POST'])
+def privacy_consent():
+    """One-time consent to an updated privacy policy (require_auth sends users here)."""
+    user = get_user()
+    if user.privacy_policy_version == PRIVACY_POLICY_VERSION:
+        return redirect(url_for('index'))
+    if request.method == 'POST':
+        if 'privacy_ack' not in request.form:
+            flash('Please turn on the consent switch to continue, or use the options at the '
+                  'bottom to log out or delete your account.', 'error')
+            return render_template('privacy_consent.html', show_exits=True), 400
+        record_privacy_consent(user)
+        db.session.commit()
+        flash('Thanks — your consent is recorded.', 'success')
+        return redirect(url_for('index'))
+    return render_template('privacy_consent.html')
 
 
 @app.route('/settings', methods=['GET', 'POST'])

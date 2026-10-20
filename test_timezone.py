@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 from flask import g
 
 from app import app, user_today, user_now, user_tz_name, sync_user_timezone, db
+from app import PRIVACY_POLICY_VERSION  # fixtures are consented users (consent gate)
 from database import User
 
 LA = 'America/Los_Angeles'
@@ -66,7 +67,7 @@ def main():
     # ── Increment 1: stored User.timezone + cookie-first precedence ──────────
     with app.app_context():
         db.create_all()
-        u = User(name='t', email='tz1@t.local', is_active=True,
+        u = User(privacy_policy_version=PRIVACY_POLICY_VERSION, name='t', email='tz1@t.local', is_active=True,
                  onboarding_complete=True, timezone=NY)
         db.session.add(u)
         db.session.commit()
@@ -104,7 +105,7 @@ def main():
     # 9. sync_user_timezone write path: persists a valid cookie zone, ignores
     #    junk, and is a no-op when unchanged.
     with app.app_context():
-        u2 = User(name='t2', email='tz2@t.local', is_active=True, onboarding_complete=True)
+        u2 = User(privacy_policy_version=PRIVACY_POLICY_VERSION, name='t2', email='tz2@t.local', is_active=True, onboarding_complete=True)
         db.session.add(u2)
         db.session.commit()
         uid2 = u2.id
@@ -120,7 +121,7 @@ def main():
 
     # 10. Full request dispatch through require_auth persists the zone end-to-end.
     with app.app_context():
-        u3 = User(name='t3', email='tz3@t.local', is_active=True, onboarding_complete=True)
+        u3 = User(privacy_policy_version=PRIVACY_POLICY_VERSION, name='t3', email='tz3@t.local', is_active=True, onboarding_complete=True)
         db.session.add(u3)
         db.session.commit()
         uid3 = u3.id

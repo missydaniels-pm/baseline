@@ -1,4 +1,6 @@
-# Privacy policy update — DRAFT for Missy's approval (not live)
+# Privacy policy update — APPLIED 10/19/26 (owner-approved; kept as the rationale record)
+
+> **Status:** approved by Missy 10/19/26 and applied to `templates/privacy.html` (items 1–4, 6) and `templates/register.html` (item 5, consent wording as recommended). §6 "Your Rights" also got a pointer to the 30-day backup note so it agrees with §7. The text below is the original proposal.
 
 Drafted 10/19/26 for BACKLOG "Privacy posture" part (a). **Nothing here is published** —
 `templates/privacy.html` is unchanged until you approve. Legal/WA MHMD implications: this

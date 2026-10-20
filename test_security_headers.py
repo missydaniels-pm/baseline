@@ -28,6 +28,7 @@ os.environ.pop('RESEND_API_KEY', None)
 from datetime import datetime
 
 from app import app, SW_VERSION, HSTS_VALUE
+from app import PRIVACY_POLICY_VERSION  # fixtures are consented users (consent gate)
 from database import db, User
 
 FAILS = []
@@ -59,7 +60,7 @@ def check_headers(r, label, cacheable=False):
 
 def main():
     with app.app_context():
-        u = User(name='T', email='headers@test.com', is_active=True, verified_at=datetime.utcnow(),
+        u = User(privacy_policy_version=PRIVACY_POLICY_VERSION, name='T', email='headers@test.com', is_active=True, verified_at=datetime.utcnow(),
                  onboarding_complete=True, has_seen_tour=True)
         u.password_hash = 'x'
         db.session.add(u)

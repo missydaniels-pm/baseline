@@ -26,6 +26,7 @@ os.environ['ANTHROPIC_API_KEY'] = 'sk-ant-test-dummy'
 from datetime import datetime
 
 from app import app, CHECKIN_TRANSIENT_MSG, CHECKIN_REJECTED_MSG
+from app import PRIVACY_POLICY_VERSION  # fixtures are consented users (consent gate)
 from database import db, User, Episode, CheckIn
 
 FAILS = []
@@ -58,7 +59,7 @@ def main():
     stub_url = f'http://127.0.0.1:{srv.server_address[1]}'
 
     with app.app_context():
-        u = User(email='ai@test.com', is_active=True, verified_at=datetime.utcnow(),
+        u = User(privacy_policy_version=PRIVACY_POLICY_VERSION, email='ai@test.com', is_active=True, verified_at=datetime.utcnow(),
                  onboarding_complete=True, ai_logging_enabled=True)
         u.password_hash = 'x'
         db.session.add(u)

@@ -28,6 +28,7 @@ os.environ.pop('RESEND_API_KEY', None)
 from datetime import datetime, date, timedelta
 
 from app import app
+from app import PRIVACY_POLICY_VERSION  # fixtures are consented users (consent gate)
 from database import db, User, Episode, Protocol, ProtocolEvent, Experiment, Symptom, SymptomScore, ProtocolCompliance, EpisodeIntervention, Trigger
 
 FAILS = []
@@ -41,7 +42,7 @@ def check(cond, msg):
 
 def main():
     with app.app_context():
-        u = User(email='v@test.com', is_active=True, verified_at=datetime.utcnow(),
+        u = User(privacy_policy_version=PRIVACY_POLICY_VERSION, email='v@test.com', is_active=True, verified_at=datetime.utcnow(),
                  onboarding_complete=True)
         u.password_hash = 'x'
         db.session.add(u)
@@ -273,7 +274,7 @@ def main():
               '[log today] valid entry saves')
 
         # Onboarding step 1: reject instead of truncating; typed input survives.
-        u2 = User(email='onb@test.com', is_active=True, verified_at=datetime.utcnow(),
+        u2 = User(privacy_policy_version=PRIVACY_POLICY_VERSION, email='onb@test.com', is_active=True, verified_at=datetime.utcnow(),
                   onboarding_complete=False)
         u2.password_hash = 'x'
         db.session.add(u2)
@@ -296,7 +297,7 @@ def main():
     # Onboarding duplicate against a kept (scored) symptom; resubmitting the
     # pre-filled kept row must not duplicate it.
     with app.app_context():
-        u3 = User(email='onb3@test.com', is_active=True, verified_at=datetime.utcnow(),
+        u3 = User(privacy_policy_version=PRIVACY_POLICY_VERSION, email='onb3@test.com', is_active=True, verified_at=datetime.utcnow(),
                   onboarding_complete=False)
         u3.password_hash = 'x'
         db.session.add(u3)

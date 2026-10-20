@@ -30,6 +30,7 @@ os.environ['ANTHROPIC_API_KEY'] = 'sk-ant-test-dummy'
 from datetime import datetime, date
 
 from app import app
+from app import PRIVACY_POLICY_VERSION  # fixtures are consented users (consent gate)
 from database import db, User, Episode, CheckIn, Experiment, Protocol
 
 FAILS = []
@@ -85,7 +86,7 @@ REQUIRED = [
 
 
 def make_user(email):
-    u = User(email=email, is_active=True, verified_at=datetime.utcnow(),
+    u = User(privacy_policy_version=PRIVACY_POLICY_VERSION, email=email, is_active=True, verified_at=datetime.utcnow(),
              onboarding_complete=True, ai_logging_enabled=True)
     u.password_hash = 'x'
     db.session.add(u)
