@@ -7,6 +7,8 @@ upgrade (10/4/26) that the other suites can't see.
    locked out for good. _pw() feeds bcrypt the first 72 UTF-8 bytes — exactly
    what the old version did — so old hashes still verify. Route-level, real
    requests, incl. a multi-byte password (the limit is bytes, not characters).
+   Since 10/19/26 a *new* password over 72 bytes is refused with a message
+   (password_problem); login still accepts a legacy long one.
 2. SQLAlchemy 2.1 maps a bare postgresql:// to psycopg 3, which isn't installed —
    production would crash at boot. normalize_database_url() names psycopg2.
    (CI runs SQLite, so the URL mapping is asserted directly.)
@@ -66,18 +68,12 @@ def main():
     with app.app_context():
         c = app.test_client()
 
-        # ── 1a. Registration with a long password, then log in with it ──
+        # ── 1a. Registration with a long password: refused with a message, never a 500 ──
         r = c.post('/register', data={'email': 'long@example.com', 'password': LONG,
                                       'confirm_password': LONG, 'privacy_ack': 'on'})
-        check(r.status_code in (200, 302), f'register with a 100-byte password does not 500 (got {r.status_code})')
-        u = User.query.filter_by(email='long@example.com').first()
-        check(u is not None, 'the account was created')
-        u.is_active, u.verified_at, u.onboarding_complete = True, datetime.utcnow(), True
-        db.session.commit()
-        r = login(c, 'long@example.com', LONG)
-        check(r.status_code == 302 and '/login' not in r.headers.get('Location', ''),
-              'login with the same 100-byte password succeeds')
-        c.get('/logout')
+        check(r.status_code == 200 and b'too long' in r.data,
+              f'register with a 100-byte password is refused with a message, not a 500 (got {r.status_code})')
+        check(User.query.filter_by(email='long@example.com').first() is None, 'no account was created')
 
         # ── 1b. Legacy hash: made by old bcrypt from a long password (= first 72 bytes) ──
         legacy = raw_bcrypt.hashpw(MULTI.encode('utf-8')[:72], raw_bcrypt.gensalt()).decode()
@@ -97,11 +93,11 @@ def main():
         NEW = 'Bb2' + 'y' * 120
         r = c.post('/settings/password', data={'current_password': MULTI, 'new_password': NEW,
                                                'confirm_new_password': NEW})
-        check(r.status_code == 302, f'change password with long values does not 500 (got {r.status_code})')
+        check(r.status_code == 302, f'change password with a long current + new does not 500 (got {r.status_code})')
         c.get('/logout')
-        r = login(c, 'legacy@example.com', NEW)
+        r = login(c, 'legacy@example.com', MULTI)
         check(r.status_code == 302 and '/login' not in r.headers.get('Location', ''),
-              'the new long password works')
+              'the long new password was refused, so the legacy one still works')
 
     limiter.enabled = True
     if FAILS:

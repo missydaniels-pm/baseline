@@ -149,6 +149,10 @@ class User(db.Model):
     # version other than the current one sends the user to /privacy/consent.
     privacy_consent_at = db.Column(db.DateTime, nullable=True)
     privacy_policy_version = db.Column(db.String(20), nullable=True)
+    # Session revocation (10/19/26, review F1): copied into the session cookie at
+    # sign-in (session['sv']); bumped by a password change or reset, so every other
+    # device's cookie stops matching and is signed out on its next request.
+    session_version = db.Column(db.Integer, default=0, server_default='0', nullable=False)
 
     episodes = db.relationship('Episode', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)
     protocols = db.relationship('Protocol', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)

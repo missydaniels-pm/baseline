@@ -63,7 +63,7 @@ A few places where I made deliberate product calls rather than just technical on
 
 **Experiment default of 3 weeks, not 8.** Early version defaulted to 8 weeks. A user with chronic migraine told me that was too long — by week 3 she already knew something wasn't working. Changed to 3 weeks with user-adjustable duration.
 
-**Trust-first registration.** Health data requires trust. Baseline started invite-only, then opened to self-serve registration gated by email verification — with rate limiting, CSRF protection, and required consent to the privacy policy — so growth can scale without lowering the bar on security.
+**Trust-first registration.** Health data requires trust. Baseline started invite-only, then opened to self-serve registration gated by email verification — with rate limiting, CSRF protection, required consent to the privacy policy, and self-service password reset that signs out a user's other devices — so growth can scale without lowering the bar on security.
 
 **Privacy-first from day one.** Washington State's My Health MY Data Act applies. Privacy policy written before meaningful user growth. Account deletion built before it was requested.
 

@@ -34,7 +34,7 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label for="email">Email</label>
-        <input type="email" id="email" name="email" placeholder="you@example.com" autocomplete="email" autofocus required>
+        <input type="email" id="email" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" name="email" placeholder="you@example.com" autocomplete="email" autofocus required>
       </div>
       <button type="submit" class="btn btn-primary auth-submit">Send verification link</button>
     </form>

@@ -31,7 +31,7 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label for="email">Email</label>
-        <input type="email" id="email" name="email" value="{{ email or '' }}"
+        <input type="email" id="email" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" name="email" value="{{ email or '' }}"
                placeholder="you@example.com" autocomplete="email" autofocus>
       </div>
 

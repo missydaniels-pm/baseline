@@ -157,6 +157,8 @@ limiter = Limiter(
 
 VERIFY_TOKEN_MAX_AGE = 60 * 60 * 24  # 24 hours
 VERIFY_SALT = 'baseline-email-verify-v1'
+RESET_TOKEN_MAX_AGE = 60 * 60  # 1 hour
+RESET_SALT = 'baseline-password-reset-v1'
 
 
 def _compute_asset_version(relpath):
@@ -218,6 +220,54 @@ def load_verify_token(token, max_age=VERIFY_TOKEN_MAX_AGE):
         return None, 'expired'
     except BadSignature:
         return None, 'invalid'
+
+
+def _password_fingerprint(user):
+    """Short digest of the current password hash and email. A reset token carries
+    it, so the token stops working once the password changes (single-use with no
+    table) or the account's email changes (a link in an old inbox dies)."""
+    material = f"{user.password_hash or ''}\0{(user.email or '').lower()}"
+    return hashlib.sha256(material.encode('utf-8')).hexdigest()[:16]
+
+
+def generate_reset_token(user):
+    return _verify_serializer().dumps([user.id, _password_fingerprint(user)], salt=RESET_SALT)
+
+
+def load_reset_token(token, max_age=RESET_TOKEN_MAX_AGE):
+    """Return (user, error) — error is 'expired', 'invalid', or None.
+
+    'invalid' also covers a token already used (the password changed since it was
+    issued) and an account that is gone, deactivated or unverified."""
+    try:
+        uid, fingerprint = _verify_serializer().loads(token, salt=RESET_SALT, max_age=max_age)
+    except SignatureExpired:
+        return None, 'expired'
+    except (BadSignature, ValueError, TypeError):
+        return None, 'invalid'
+    user = db.session.get(User, uid)
+    if (not user or not user.is_active or user.verified_at is None
+            or not hmac.compare_digest(fingerprint, _password_fingerprint(user))):
+        return None, 'invalid'
+    return user, None
+
+
+def password_problem(password):
+    """The first rule a new password breaks, as a message — or None.
+
+    One rule set for every place a password is *set* (register, change, reset).
+    Never used at login: legacy passwords that break today's rules must still work."""
+    if len(password) < 8:
+        return 'Password must be at least 8 characters.'
+    if not re.search(r'[A-Z]', password):
+        return 'Password must contain at least one uppercase letter.'
+    if not re.search(r'[0-9]', password):
+        return 'Password must contain at least one number.'
+    if len(password.encode('utf-8')) > 72:
+        # bcrypt only uses the first 72 bytes (see _pw); refuse rather than
+        # silently keep a shorter password than the one chosen.
+        return 'Password is too long — use at most 72 characters (fewer with emoji or accented letters).'
+    return None
 
 
 UNSUBSCRIBE_SALT = b'baseline-email-unsubscribe-v1'
@@ -412,6 +462,50 @@ This link expires in 24 hours. If you didn't create a Baseline account, you can 
 </html>"""
 
     return _send_email(user_email, 'Verify your Baseline account', html, plain)
+
+
+def send_password_reset_email(user_email, reset_url):
+    """Send the reset-your-password link. Returns True if sent, False otherwise."""
+    plain = f"""Reset your Baseline password
+
+Someone (hopefully you) asked to reset the password for this Baseline account. Choose a new password here:
+
+{reset_url}
+
+This link expires in 1 hour and works once. If it has expired, ask for a new one from "Forgot password?" on the login page. Setting a new password signs out your other devices.
+
+If you didn't ask for this, you can ignore this email — your password stays the same.
+
+— The Baseline Team
+"""
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0; padding:0; background:#f8f8f8; font-family:'Inter','Helvetica Neue',Helvetica,Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f8f8; padding:32px 16px;">
+<tr><td align="center">
+<table width="480" cellpadding="0" cellspacing="0" style="background:#ffffff; border:1px solid #ececee; border-radius:10px; padding:36px 32px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+<tr><td>
+  <div style="font-size:20px; font-weight:700; color:#1a1a2e; margin-bottom:24px;">
+    <span style="color:#7c3aed;">B</span>aseline
+  </div>
+  <h1 style="font-size:22px; font-weight:700; color:#1a1a2e; margin:0 0 12px;">Reset your password</h1>
+  <p style="font-size:14px; color:#666666; line-height:1.7; margin:0 0 20px;">Someone (hopefully you) asked to reset the password for this Baseline account.</p>
+  <div style="text-align:center; margin:24px 0;">
+    <a href="{reset_url}" style="display:inline-block; background:#7c3aed; color:#ffffff; text-decoration:none; padding:12px 28px; border-radius:8px; font-size:14px; font-weight:600;">Choose a new password</a>
+  </div>
+  <p style="font-size:13px; color:#666666; line-height:1.7; margin:0 0 12px;">Or paste this link into your browser:</p>
+  <p style="font-size:12px; color:#7c3aed; word-break:break-all; margin:0 0 20px;">{reset_url}</p>
+  <p style="font-size:13px; color:#666666; line-height:1.7; margin:0;">This link expires in 1 hour and works once — if it has expired, ask for a new one from "Forgot password?" on the login page. Setting a new password signs out your other devices. If you didn't ask for this, you can ignore this email — your password stays the same.</p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>"""
+
+    return _send_email(user_email, 'Reset your Baseline password', html, plain)
 
 
 def send_welcome_email(user_email, user_name):
@@ -653,6 +747,8 @@ def run_migrations():
         # through /privacy/consent.
         ('users',                 'privacy_consent_at',        'ALTER TABLE users ADD COLUMN privacy_consent_at TIMESTAMP'),
         ('users',                 'privacy_policy_version',    'ALTER TABLE users ADD COLUMN privacy_policy_version VARCHAR(20)'),
+        # Session revocation on password change/reset (10/19/26).
+        ('users',                 'session_version',           'ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0'),
     ]
 
     # Widen symptoms.name from varchar(100) to varchar(200) on PostgreSQL
@@ -1250,9 +1346,29 @@ def get_user():
     if not user_id:
         return None
     cached = getattr(g, 'user', None)
-    if cached is not None and cached.id == user_id:
-        return cached
-    return db.session.get(User, user_id)
+    user = cached if cached is not None and cached.id == user_id else db.session.get(User, user_id)
+    # Signed out elsewhere: the password changed after this cookie was issued.
+    # Cookies from before session versions existed carry no 'sv' and read as 0.
+    if user is not None and session.get('sv', 0) != user.session_version:
+        return None
+    return user
+
+
+def set_password(user, password):
+    """Set a new password and sign out every session that has the old one
+    (bumps session_version). The caller commits, then re-signs-in this device."""
+    user.password_hash = bcrypt.generate_password_hash(_pw(password)).decode('utf-8')
+    # Incremented in SQL, so two concurrent changes can't both write N+1. The
+    # attribute reloads after commit, before sign_in() reads it.
+    user.session_version = User.session_version + 1
+
+
+def sign_in(user, remember=False):
+    """Start a session for `user` — every sign-in path goes through here."""
+    session.clear()
+    session['user_id'] = user.id
+    session['sv'] = user.session_version
+    session.permanent = remember
 
 
 def get_active_experiment(user_id):
@@ -1592,7 +1708,7 @@ def record_privacy_consent(user):
     user.privacy_policy_version = PRIVACY_POLICY_VERSION
 
 
-PUBLIC_ENDPOINTS = {'login', 'register', 'static', 'dev_bootstrap', 'serve_sw', 'offline', 'privacy', 'verify_email', 'resend_verification', 'verify_sent', 'unsubscribe'}
+PUBLIC_ENDPOINTS = {'login', 'register', 'forgot_password', 'reset_password', 'static', 'dev_bootstrap', 'serve_sw', 'offline', 'privacy', 'verify_email', 'resend_verification', 'verify_sent', 'unsubscribe'}
 
 @app.context_processor
 def inject_onboarding_state():
@@ -1613,6 +1729,18 @@ def require_auth():
         return
     user = get_user()
     if not user:
+        stale_id = session.get('user_id')
+        if stale_id:
+            # A cookie that no longer signs anyone in: drop it and say why. A
+            # password change elsewhere gets its own message — the person on this
+            # device may not have changed it (a shared tablet, the home-screen app).
+            owner = db.session.get(User, stale_id)
+            session.clear()
+            if owner is not None:
+                flash("You've been signed out because this account's password was changed. "
+                      "Sign in with the new password, or use \"Forgot password?\".", 'warning')
+            else:
+                flash('Please sign in again.', 'warning')
         return redirect(url_for('login'))
     if not user.is_active:
         session.clear()
@@ -1775,13 +1903,8 @@ def login():
             if not user.is_active:
                 flash('Your account has been deactivated.', 'error')
                 return render_template('login.html')
-            session.clear()
-            session['user_id'] = user.id
+            sign_in(user, remember=remember)
             log_activity('login', user_id=user.id)
-            if remember:
-                session.permanent = True
-            else:
-                session.permanent = False
             if not user.onboarding_complete:
                 return redirect(url_for('onboarding_step1'))
             return redirect(url_for('index'))
@@ -1811,12 +1934,9 @@ def register():
             errors.append('Please use a non-disposable email address.')
         elif User.query.filter_by(email=email).first():
             errors.append('An account with that email already exists.')
-        if len(password) < 8:
-            errors.append('Password must be at least 8 characters.')
-        elif not re.search(r'[A-Z]', password):
-            errors.append('Password must contain at least one uppercase letter.')
-        elif not re.search(r'[0-9]', password):
-            errors.append('Password must contain at least one number.')
+        pw_error = password_problem(password)
+        if pw_error:
+            errors.append(pw_error)
         if password != confirm:
             errors.append('Passwords do not match.')
         if not privacy_ack:
@@ -1899,8 +2019,7 @@ def verify_email(token):
     send_welcome_email(user.email, user.name)
     resend_contact_upsert(user.email, unsubscribed=not user.email_updates_enabled)
 
-    session.clear()
-    session['user_id'] = user.id
+    sign_in(user)
     if not user.onboarding_complete:
         return redirect(url_for('onboarding_step1'))
     return redirect(url_for('index'))
@@ -1925,6 +2044,55 @@ def resend_verification():
         return redirect(url_for('verify_sent'))
 
     return render_template('resend_verification.html')
+
+
+@app.route('/forgot-password', methods=['GET', 'POST'])
+@limiter.limit('5 per hour', methods=['POST'])
+def forgot_password():
+    """Ask for a reset link. The same response body whether or not the address
+    has an account (review F1, 10/19/26). Not timing-safe: the email is sent
+    in-request, so a real account answers slower — the same as /register and
+    /resend-verification today; the Rule 2 email queue fixes all three."""
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        user = User.query.filter_by(email=email).first() if email else None
+        # Only active, verified accounts: an unverified one needs its verification
+        # link (linked from the page), and a deactivated one stays out.
+        if user and user.is_active and user.verified_at is not None and user.password_hash:
+            app_url = os.environ.get('APP_URL', 'https://baseline-health.up.railway.app')
+            reset_url = f"{app_url.rstrip('/')}/reset-password/{generate_reset_token(user)}"
+            send_password_reset_email(user.email, reset_url)
+            if not os.environ.get('DATABASE_URL'):  # local SQLite only — never logs in prod
+                print(f'[DEV] Password reset URL for {email}: {reset_url}')
+        # Redirect-after-POST (like resend_verification): a reload can't resend.
+        return redirect(url_for('forgot_password', sent=1))
+    return render_template('forgot_password.html', sent=request.args.get('sent') == '1')
+
+
+@app.route('/reset-password/<token>', methods=['GET', 'POST'])
+@limiter.limit('10 per hour', methods=['POST'])
+def reset_password(token):
+    """Choose a new password from an emailed link: signs the user in on this
+    device and out everywhere else (owner decisions 10/19/26)."""
+    user, err = load_reset_token(token)
+    if err:
+        return render_template('reset_password.html', status=err), 400
+    if request.method == 'POST':
+        password = request.form.get('password', '')
+        pw_error = password_problem(password)
+        if not pw_error and password != request.form.get('confirm_password', ''):
+            pw_error = 'Passwords do not match.'
+        if pw_error:
+            flash(pw_error, 'error')
+            return render_template('reset_password.html', status='ok', email=user.email), 400
+        set_password(user, password)
+        db.session.commit()
+        sign_in(user)
+        log_activity('login', user_id=user.id)
+        flash("Password updated — you're signed in here. Other devices, including the Baseline "
+              "home-screen app, are signed out; sign in there with the new password.", 'success')
+        return redirect(url_for('index'))
+    return render_template('reset_password.html', status='ok', email=user.email)
 
 
 @app.route('/logout')
@@ -2197,19 +2365,15 @@ def change_password():
 
     if not bcrypt.check_password_hash(user.password_hash, _pw(current)):
         flash('Current password is incorrect.', 'error')
-    elif len(new_pw) < 8:
-        flash('New password must be at least 8 characters.', 'error')
-    elif not re.search(r'[A-Z]', new_pw):
-        flash('New password must contain at least one uppercase letter.', 'error')
-    elif not re.search(r'[0-9]', new_pw):
-        flash('New password must contain at least one number.', 'error')
+    elif (pw_error := password_problem(new_pw)):
+        flash(pw_error, 'error')
     elif new_pw != confirm:
         flash('New passwords do not match.', 'error')
     else:
-        new_hash = bcrypt.generate_password_hash(_pw(new_pw)).decode('utf-8')
-        User.query.filter_by(id=user.id).update({'password_hash': new_hash})
+        set_password(user, new_pw)
         db.session.commit()
-        flash('Password updated.', 'success')
+        sign_in(user, remember=session.permanent)  # this device stays signed in
+        flash('Password updated. Your other devices have been signed out.', 'success')
 
     return redirect(url_for('settings'))
 

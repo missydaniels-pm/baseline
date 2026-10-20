@@ -429,6 +429,18 @@ JSON field goes in `CHECKIN_SCHEMA` *and* the prompt's template, together.
 - Every SQLAlchemy URL built from `DATABASE_URL` goes through
   **`normalize_database_url()`** (explicit `+psycopg2` driver) — app, scripts, tools.
 
+## Sessions and passwords (10/19/26)
+- **Every sign-in goes through `sign_in(user, remember)`** — it clears the old session (no
+  fixation) and stores `session['sv']`. Never set `session['user_id']` by hand: a cookie
+  without the current `sv` can't be revoked.
+- **Every password write goes through `set_password(user, pw)`** — it bumps
+  `session_version`, signing out every other device. Re-`sign_in()` the current device after.
+- **Validate a new password with `password_problem(pw)`** (register, change, reset) — one rule
+  set, incl. the 72-byte cap. Never at login.
+- Emailed-link tokens follow the verify pattern: `_verify_serializer()` with their **own salt**
+  and max age; make them single-use by binding to state that changes when used (reset binds a
+  digest of the password hash + email) or by a used-token table (`UsedVerifyToken`).
+
 ## Client IP (rate limiting, anything that reads "who is this")
 - The only way to get a client's address is **`_client_ip_key()`** — Railway's
   `X-Real-IP`, IPv6 grouped by /64, falling back to `remote_addr`. Never read
