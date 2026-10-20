@@ -11,6 +11,15 @@ real user's data.
 (prod + staging side by side, each with its own Postgres + variables). **Email is off on staging**
 (`RESEND_API_KEY` unset) so testing registration flows can never email a real person.
 
+> **Emailed-link flows can't be finished on staging (10/19/26).** Verification and password reset
+> send nothing there — no key, and the seed user's `staging@baseline.test` is a reserved,
+> undeliverable domain — and the local "print the link" fallback is off because `DATABASE_URL`
+> is set. On staging, verify what doesn't need the email: the pages render, a bad link gets the
+> 400 page, the schema change landed. Verify delivery **on production with the owner's own
+> account** after deploying (a reset changes that password and signs out its other devices).
+> Don't mint links by importing `app.py` against staging's database — importing the app runs
+> startup jobs against whatever `DATABASE_URL` is set (BACKLOG "Side-effect-free import").
+
 > The app is already staging-ready in code — all config is env-var driven (`DATABASE_URL`,
 > `APP_URL`, `SECRET_KEY`). Nothing here requires a code change beyond the `seed_staging.py` script
 > already in the repo. The steps below are Railway-dashboard + CLI work.
