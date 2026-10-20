@@ -166,8 +166,8 @@ def main():
         check('trials wholly outside the range do not', 'Ancient' not in names)
         check('another user\'s trial never appears', 'OtherTrial' not in names)
         q = next(e for e in s['experiments'] if e['name'] == 'Qulipta')
-        check('ended-early trial carries its reason and note',
-              q['stop_reason'] == 'made_worse' and q['note'] == 'worse')
+        check('ended-early trial carries its reason; its free-text note follows the notes toggle',
+              q['stop_reason'] == 'made_worse' and q['note'] is None)
 
         # 5. Preventatives
         pnames = [p['name'] for p in s['preventatives']]
@@ -181,6 +181,38 @@ def main():
         s2 = build_doctor_summary(u.id, start, end, include_notes=True)
         check('notes appear when asked for, own only',
               [n['text'] for n in s2['notes']] == ['bad one'])
+        check('trial note appears when notes are asked for',
+              next(e for e in s2['experiments'] if e['name'] == 'Qulipta')['note'] == 'worse')
+
+        # Status history: a stopped protocol with no event row is listed with its
+        # missing date stated (not silently undated); pause/resume inside the range
+        # are listed as changes.
+        legacy = Protocol(user_id=u.id, name='Legacy', type='preventative',
+                          start_date=date(2025, 1, 1), status='stopped')
+        bumpy = Protocol(user_id=u.id, name='Bumpy', type='preventative',
+                         start_date=date(2026, 7, 1), status='active')
+        db.session.add_all([legacy, bumpy])
+        db.session.flush()
+        db.session.add_all([
+            ProtocolEvent(protocol_id=bumpy.id, user_id=u.id, event_type='paused', date=date(2026, 9, 5)),
+            ProtocolEvent(protocol_id=bumpy.id, user_id=u.id, event_type='reactivated', date=date(2026, 9, 12)),
+        ])
+        db.session.commit()
+        s3 = build_doctor_summary(u.id, start, end)
+        lg = next(p for p in s3['preventatives'] if p['name'] == 'Legacy')
+        check('stopped protocol with no event: listed, stop date flagged missing',
+              lg['stop_date_missing'] and lg['stopped_on'] is None)
+        bp = next(p for p in s3['preventatives'] if p['name'] == 'Bumpy')
+        check('pause and resume inside the range are listed',
+              [(c['label'], c['date']) for c in bp['changes']] ==
+              [('Paused', date(2026, 9, 5)), ('Resumed', date(2026, 9, 12))])
+
+        # Month rows across a year boundary, partial at both ends.
+        s4 = build_doctor_summary(u.id, date(2025, 11, 20), date(2026, 2, 10))
+        check('month rows across a year boundary',
+              [(m['label'], m['partial'], m['days_covered']) for m in s4['months']] ==
+              [('Nov 2025', True, 11), ('Dec 2025', False, 31), ('Jan 2026', False, 31), ('Feb 2026', True, 10)])
+        check('an empty range renders as zeros', s4['episode_count'] == 0 and s4['tracked'] == [])
 
         # Route
         c = app.test_client()
@@ -189,7 +221,10 @@ def main():
         r = c.get('/reports/doctor-summary?start=2026-09-01&end=2026-09-30')
         body = r.get_data(as_text=True)
         check('route renders the chosen range', r.status_code == 200 and 'Sep 1, 2026 to Sep 30, 2026' in body
-              and 'it made my symptoms worse' in body)
+              and 'It made my symptoms worse' in body)
+        check('the page is never cached (browser or offline cache)',
+              'no-store' in r.headers.get('Cache-Control', ''))
+        check('trial note hidden by default on the page', '>worse<' not in body.replace(' ', ''))
         check('route hides notes by default', 'bad one' not in body)
         r = c.get('/reports/doctor-summary?start=2026-09-01&end=2026-09-30&notes=1')
         check('route shows notes when asked', 'bad one' in r.get_data(as_text=True))
@@ -197,15 +232,15 @@ def main():
 
         with app.test_request_context():
             today = user_today()
-        default_label = (today - timedelta(days=89)).strftime('%b %-d, %Y')
         for qs, msg in (('start=2026-09-30&end=2026-09-01', 'on or before'),
                         ('start=nope', 'look right'),
                         (f'end={(today + timedelta(days=1)).isoformat()}', 'future'),
                         ('start=2020-01-01', 'three years')):
-            r = c.get(f'/reports/doctor-summary?{qs}', follow_redirects=True)
+            r = c.get(f'/reports/doctor-summary?{qs}')
             body = r.get_data(as_text=True)
-            check(f'bad range ({qs}) is rejected with a message and the default range shown',
-                  r.status_code == 200 and msg in body and default_label in body)
+            check(f'bad range ({qs}) is rejected with a message and no report',
+                  r.status_code == 400 and msg in body and 'Health summary' not in body
+                  and 'no-store' in r.headers.get('Cache-Control', ''))
 
         r = c.get('/settings')
         check('settings links to the doctor summary', '/reports/doctor-summary' in r.get_data(as_text=True))

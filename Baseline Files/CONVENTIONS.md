@@ -50,6 +50,23 @@ here in the same commit.
   Never import `flask.g`/`request`/`user_tz_name` into `database.py` — the model
   layer must stay reusable behind the future non-Flask API (owner decision 7/17/26).
 
+## Ended records: an outcome, not a disappearance
+- An ended experiment (completed or **ended early**) keeps a full-weight card, its
+  outcome, and a read-only results page. Never render an outcome as faded/hidden —
+  "this made me worse" is the result a user and their doctor most need (10/19/26).
+- **Its data window ends at `Experiment.ended_on(today)`** — use it wherever a
+  trial's "during" period is computed (results page, doctor summary). It handles
+  rows ended before `end_date` existed; don't re-derive the fallback.
+- What defines a result is **locked once it ends**: an ended trial's protocol,
+  start date and stabilization weeks are fixed (name and hypothesis stay editable).
+- Ending is one-shot, like assess: check the status **before any assignment**.
+
+## Pages holding concentrated health data: `no-store`
+- A page that gathers a user's health data in one place for sharing (the doctor
+  summary) sends `Cache-Control: no-store`, and `static/sw.js` never caches a
+  navigation marked `no-store`. New pages of that kind do the same. (Whether every
+  signed-in page should is an open owner decision — BACKLOG.)
+
 ## Protocol events: when it happened vs when you recorded it
 - `ProtocolEvent` has **two** dates and they are not interchangeable. `date` = the day
   the change actually took effect (user-supplied, back-datable). `created_at` = when the

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'baseline-v4';
+const CACHE_NAME = 'baseline-v5';
 const STATIC_ASSETS = [
   '/static/css/style.css',
   '/static/icons/icon-192.png',
@@ -33,9 +33,13 @@ self.addEventListener('fetch', event => {
     event.respondWith(
       fetch(request)
         .then(response => {
-          // Cache successful navigation responses
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
+          // Cache successful navigation responses — except ones the server marks
+          // no-store (e.g. the doctor summary), which must never be kept on the device.
+          const cc = response.headers.get('Cache-Control') || '';
+          if (!cc.includes('no-store')) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
+          }
           return response;
         })
         .catch(() => caches.match('/offline').then(r => r || new Response('Offline')))

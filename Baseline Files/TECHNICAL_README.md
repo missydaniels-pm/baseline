@@ -1,6 +1,6 @@
 # Baseline — Technical README
 
-Last updated: September 25, 2026
+Last updated: October 19, 2026
 
 ---
 
@@ -75,7 +75,9 @@ templates/
   episodes.html               — episode log
   protocols.html              — protocol management
   experiments.html            — experiment tracking
-  assess_experiment.html      — data-informed experiment assessment
+  assess_experiment.html      — data-informed experiment assessment; read-only "Experiment Results" for ended trials
+  abandon_experiment.html     — end an experiment early (reason, last day, optional note + rating)
+  doctor_summary.html         — print-styled doctor summary (browser Print → Save as PDF)
   help.html                   — user help and documentation
 
 Baseline Files/
@@ -105,7 +107,7 @@ templates/privacy.html          — in-app privacy policy (single source of trut
 | ProtocolEvent | status/dose-change log: `protocol_id`, `user_id`, `event_type`, `detail`, back-datable `date`, `created_at`. **Episode-diary Layer A** added `stop_reason` (nullable VARCHAR(30)) + `stop_reason_note` (nullable TEXT). `stop_reason` carries CHECK `protocol_events_stop_reason_check` = `stop_reason IS NULL OR (event_type IN ('stopped','paused') AND stop_reason IN ('ineffective','side_effects','cost','doctors_advice','other'))` — predicate defined once as `STOP_REASON_CHECK_SQL` in `database.py`, imported by `run_migrations()` so model DDL and migration can't drift. `detail` deliberately NOT reused (`assess_experiment` already writes it on a status event). Both columns unwritten in the monolith (capture = React). |
 | ProtocolCompliance | daily compliance log per protocol: (user_id, protocol_id, date, took bool, notes). One row per (user, protocol, day) enforced by unique index `ux_protocol_compliance_day` (dedup pass + `CREATE UNIQUE INDEX IF NOT EXISTS` in `run_migrations()`, plus a model-level UniqueConstraint for fresh DBs). All writers (dashboard batch confirm, protocol-detail form, AI check-in) go through the shared `_upsert_compliance()` helper — the most recent explicit statement wins. Days with no row = nothing recorded; the dashboard card's "assumed taken" state is UI-only and never written until the user confirms. |
 | RescueOption | interventions (stored as Protocol with type='rescue') |
-| Experiment | hypothesis, protocol_id, start_date, stabilization_weeks (default 3), status, outcome |
+| Experiment | hypothesis, protocol_id, start_date, stabilization_weeks (default 3), status (`active`/`completed`/`abandoned` — shown as "Ended early"), outcome_rating, outcome_notes, decision. **How a trial ended (10/19/26):** `end_date` (DATE — abandon: user-chosen last day, back-datable, `start_date ≤ end ≤ max(today, start_date)`; assess: the day assessed; protocol-delete auto-abandon: `max(today, start_date)`), `stop_reason` (VARCHAR(30), CHECK `experiments_stop_reason_check` = `stop_reason IS NULL OR (status = 'abandoned' AND stop_reason IN (…))`, vocabulary `EXPERIMENT_STOP_REASON_VALUES` = ProtocolEvent's `STOP_REASON_VALUES` + `made_worse`, predicate `EXPERIMENT_STOP_REASON_CHECK_SQL` in database.py), `stop_reason_note` (TEXT ≤500). `outcome_rating` is optional on abandon. `ended_on(today)` returns the end of the trial's data window: `end_date`, else (rows ended before 10/19/26) the scheduled assessment date for completed and today for abandoned; None while active. |
 | CheckIn | AI chat history |
 | UserActivity | First-party usage analytics: user_id (nullable FK), event_type (signup/login/page_view), detail (endpoint name), created_at. Indexed on (event_type, created_at). |
 
@@ -212,7 +214,10 @@ Killing the dev server: `pkill -f "python3 app.py"` does **not** match it — th
 | `/symptoms` | GET, POST | Symptom management |
 | `/protocols` | GET, POST | Protocol management |
 | `/experiments` | GET, POST | Experiment tracking (supports inline protocol creation) |
-| `/experiments/<id>/assess` | GET, POST | Experiment assessment |
+| `/experiments/<id>/assess` | GET, POST | Experiment assessment. For an **ended** trial the GET is a read-only "Experiment Results" page whose "during" window stops at `ended_on()`; POST is one-shot (refuses completed and abandoned trials) and rejects — never clamps — an off-scale rating (`_parse_outcome_rating`). Records `end_date`. |
+| `/experiments/<id>/abandon` | GET, POST | End early (10/19/26): form with required reason (`EXPERIMENT_STOP_REASON_VALUES`), optional note ≤500, last day (default today; not before the start, not after `max(today, start)`), optional 1–10 rating. One-shot: only an active trial; validated before any assignment. Does **not** change the protocol (the page says so and links to it). |
+| `/experiments/<id>/edit` | GET, POST | Name/hypothesis always editable. A running trial's protocol can switch to another own preventative but can't be blanked or set to an unknown id (review F9); an ended trial's protocol, start date and stabilization weeks are locked (they define its results window). |
+| `/reports/doctor-summary` | GET | Doctor summary (10/19/26, linked from Settings): `?start=&end=&notes=1`, local days inclusive, default last 90 days, max 3 years; a malformed/inverted/future range flashes and falls back to the default. Data from **`build_doctor_summary(user_id, start, end, include_notes)`** — request-context-free, returns a dict, the part the rebuild's API reuses. No AI, no third party, no PDF library: `@media print` CSS + browser Print. Notes off unless `notes=1`. |
 | `/settings` | GET, POST | User settings |
 | `/settings/password` | POST | Change password |
 | `/settings/email` | POST | Change email. Also updates Resend contact (delete old, upsert new with current `email_updates_enabled`). |
@@ -223,7 +228,7 @@ Killing the dev server: `pkill -f "python3 app.py"` does **not** match it — th
 | `/admin/users` | GET | Admin-only read-only user directory: email, verified, joined, last login, email_updates_enabled, episode count. Unauthorized access logs a warning. Excluded from `SKIP_TRACKING` so admin browsing doesn't pollute analytics. |
 | `/protocols/log-day` | POST | JSON batch compliance save for the dashboard Today's Protocols card (confirm + 7-day backfill). Body `{date, entries: [{protocol_id, took, note}]}`. `took` is tri-state: `true`/`false` upsert the day's row, `null` un-logs it (deletes any existing row). Validates date within `[user_today−7, user_today+1]` (anchored on the user's local day via `user_today()` so it lines up with the browser-local date the card sends), ownership of every protocol id, `took ∈ {true,false,null}` (other types → 400), note ≤500 chars — all before touching the session, so an invalid entry can't partial-write. Single commit, returns `{ok, date, day_status}` where day_status ∈ hollow/amber/green. |
 | `/episodes/<id>/delete` | POST | FK-safe (fixed 7/12/26): detaches AI check-in messages referencing the episode (`checkins.episode_id=NULL` — chat history survives) before deleting; SymptomScores/EpisodeInterventions removed by ORM cascade; IntegrityError → rollback + friendly flash. Previously 500'd in production for episodes logged via AI check-in. |
-| `/protocols/<id>/delete` | POST | Hard delete is **one statement** as of FK cleanup Increment 2 (8/8/26): `db.session.delete(protocol)` and the DB cascades EpisodeIntervention / ProtocolCompliance / ProtocolEvent, and detaches Experiments via `ON DELETE SET NULL` (hypothesis/outcome history survives; templates guard with `{% if exp.protocol %}`). **Do not reintroduce hand-ordered child cleanup.** An active experiment testing the protocol is marked abandoned first (8/8/26) — that's product logic no FK directive can express. Rescue protocols with historical episode usage soft-delete (`status='removed'`) instead. Guarded by `deletion_blocked_response()` + `except IntegrityError`. |
+| `/protocols/<id>/delete` | POST | Hard delete is **one statement** as of FK cleanup Increment 2 (8/8/26): `db.session.delete(protocol)` and the DB cascades EpisodeIntervention / ProtocolCompliance / ProtocolEvent, and detaches Experiments via `ON DELETE SET NULL` (hypothesis/outcome history survives; templates guard with `{% if exp.protocol %}`). **Do not reintroduce hand-ordered child cleanup.** An active experiment testing the protocol is marked abandoned first (8/8/26), with `end_date = max(today, start_date)` (10/19/26) — that's product logic no FK directive can express. Rescue protocols with historical episode usage soft-delete (`status='removed'`) instead. Guarded by `deletion_blocked_response()` + `except IntegrityError`. |
 | `/tour/complete` | POST | Mark welcome tour as seen (JSON response) |
 | `/tour/restart` | GET | Reset tour flag and redirect to dashboard |
 
@@ -323,6 +328,8 @@ public-domain **target port** still pointed at the previous deployment's port, s
 Baseline is a Progressive Web App. Users can install it to their home screen:
 - **iOS:** Safari → Share → Add to Home Screen
 - **Android:** Chrome → Add to Home Screen
+
+Service worker (`static/sw.js`, cache `baseline-v5`): network-first for pages and CSS/JS, cache-first for other static assets, `/offline` fallback. Navigations whose response carries `Cache-Control: no-store` are **not** cached (10/19/26 — the doctor summary sends it); bumping the cache name drops every older cache on activate.
 
 Icons are generated by `generate_icons.py` using Pillow. Purple background (#7c3aed), white EKG pulse graphic. Regenerate with:
 ```bash

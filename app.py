@@ -7,7 +7,7 @@ import hashlib
 import hmac
 import base64
 import resend
-from flask import Flask, render_template, request, redirect, url_for, flash, session, g
+from flask import Flask, render_template, request, redirect, url_for, flash, session, g, make_response
 from flask_bcrypt import Bcrypt
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from flask_limiter import Limiter
@@ -3478,7 +3478,7 @@ def abandon_experiment(exp_id):
         latest_end = max(today, experiment.start_date)
         end, end_err = _parse_date(request.form.get('end_date'), latest_end, 'end date')
         if not end_err and end > latest_end:
-            end_err = "The end date can't be in the future."
+            end_err = "The last day can't be after {}.".format(latest_end.strftime('%b %-d, %Y'))
         if not end_err and end < experiment.start_date:
             end_err = "The end date can't be before the experiment started ({}).".format(
                 experiment.start_date.strftime('%b %-d, %Y'))
@@ -3496,7 +3496,10 @@ def abandon_experiment(exp_id):
         experiment.end_date = end
         experiment.outcome_rating = rating
         db.session.commit()
-        flash(f'"{experiment.name}" ended. Its results stay in your experiment history.', 'success')
+        msg = f'"{experiment.name}" ended. Its results stay in your experiment history.'
+        if experiment.protocol and experiment.protocol.status == 'active':
+            msg += f' {experiment.protocol.name} is still active — if you\'ve stopped taking it, update it on the Protocols page.'
+        flash(msg, 'success')
         return redirect(url_for('experiments'))
 
     return _render()
@@ -4812,29 +4815,45 @@ def build_doctor_summary(user_id, start, end, include_notes=False):
             })
 
     # ── Preventatives that overlap the range (anything not started after it) ──
+    # Events and in-range compliance are fetched once for all of them (no per-protocol
+    # queries) and grouped here. Dose and status are the protocol's CURRENT values —
+    # the template labels them so; in-range dose and status changes are listed as rows.
+    prevs = (Protocol.query.filter_by(user_id=user_id, type='preventative')
+             .order_by(Protocol.start_date.is_(None), Protocol.start_date, Protocol.name).all())
+    prev_ids = [p.id for p in prevs]
+    events_by = defaultdict(list)
+    logs_by = defaultdict(list)
+    if prev_ids:
+        for ev in ProtocolEvent.query.filter(ProtocolEvent.user_id == user_id,
+                                             ProtocolEvent.protocol_id.in_(prev_ids)).all():
+            events_by[ev.protocol_id].append(ev)
+        for c in ProtocolCompliance.query.filter(
+                ProtocolCompliance.user_id == user_id, ProtocolCompliance.protocol_id.in_(prev_ids),
+                ProtocolCompliance.date >= start, ProtocolCompliance.date <= end).all():
+            logs_by[c.protocol_id].append(c)
+    change_labels = {'dose_changed': 'Dose change', 'paused': 'Paused',
+                     'reactivated': 'Resumed', 'stopped': 'Stopped'}
     preventatives = []
-    for p in (Protocol.query.filter_by(user_id=user_id, type='preventative')
-              .order_by(Protocol.start_date.is_(None), Protocol.start_date, Protocol.name).all()):
+    for p in prevs:
         if p.start_date and p.start_date > end:
             continue
-        events = sorted(ProtocolEvent.query.filter_by(protocol_id=p.id, user_id=user_id).all(),
-                        key=lambda ev: (ev.date, ev.created_at or datetime.min))
+        events = sorted(events_by[p.id], key=lambda ev: (ev.date, ev.created_at or datetime.min))
         stopped_on = None
         if p.status in ('stopped', 'paused'):
             last = [ev for ev in events if ev.event_type == p.status]
             stopped_on = last[-1].date if last else None
         if stopped_on and stopped_on < start:
             continue  # ended before the range — not part of this period
-        logs = ProtocolCompliance.query.filter(
-            ProtocolCompliance.user_id == user_id, ProtocolCompliance.protocol_id == p.id,
-            ProtocolCompliance.date >= start, ProtocolCompliance.date <= end).all()
+        logs = logs_by[p.id]
         preventatives.append({
             'name': p.name, 'dose': p.dose_frequency, 'start_date': p.start_date,
             'status': p.status, 'stopped_on': stopped_on,
+            'stop_date_missing': p.status in ('stopped', 'paused') and stopped_on is None,
             'days_taken': sum(1 for c in logs if c.took),
             'days_missed': sum(1 for c in logs if not c.took),
-            'dose_changes': [{'date': ev.date, 'detail': ev.detail} for ev in events
-                             if ev.event_type == 'dose_changed' and start <= ev.date <= end],
+            'changes': [{'date': ev.date, 'label': change_labels[ev.event_type], 'detail': ev.detail}
+                        for ev in events
+                        if ev.event_type in change_labels and start <= ev.date <= end],
         })
 
     # ── Experiments that overlap the range — every outcome, failures included ──
@@ -4853,7 +4872,8 @@ def build_doctor_summary(user_id, start, end, include_notes=False):
             'status': exp.status, 'decision': exp.decision,
             'outcome_rating': exp.outcome_rating,
             'stop_reason': exp.stop_reason,
-            'note': exp.stop_reason_note or exp.outcome_notes,
+                # Free text — personal, so it follows the notes toggle like episode notes.
+            'note': (exp.stop_reason_note or exp.outcome_notes) if include_notes else None,
         })
 
     # ── Triggers by number of episodes ──
@@ -4920,15 +4940,24 @@ def doctor_summary():
         err = 'The start date needs to be on or before the end date.'
     if not err and (end - start).days + 1 > DOCTOR_SUMMARY_MAX_DAYS:
         err = 'Choose a range of three years or less.'
-    if err:
-        flash(err, 'error')
-        start, end = default_start, today
     include_notes = request.args.get('notes') == '1'
-
-    summary = build_doctor_summary(user.id, start, end, include_notes=include_notes)
-    return render_template('doctor_summary.html', s=summary, today=today, user=user,
-                           impairment_labels=IMPAIRMENT_LABELS,
-                           stop_reason_labels=EXPERIMENT_STOP_REASON_LABELS)
+    if err:
+        # Reject, don't substitute: show the error and the controls, but no
+        # report — a missed flash must not lead to printing the wrong period.
+        flash(err, 'error')
+        summary = {'start': default_start, 'end': today, 'include_notes': include_notes}
+        resp = make_response(render_template('doctor_summary.html', s=summary, today=today, user=user,
+                                             report_error=True), 400)
+    else:
+        summary = build_doctor_summary(user.id, start, end, include_notes=include_notes)
+        resp = make_response(render_template('doctor_summary.html', s=summary, today=today, user=user,
+                                             impairment_labels=IMPAIRMENT_LABELS,
+                                             stop_reason_labels=EXPERIMENT_STOP_REASON_LABELS))
+    # Concentrated health data (and optional notes): never kept by the browser
+    # cache or the PWA's offline cache (sw.js skips no-store responses).
+    resp.headers['Cache-Control'] = 'no-store'
+    resp.headers['Pragma'] = 'no-cache'
+    return resp
 
 
 # ---------------------------------------------------------------------------

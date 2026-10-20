@@ -45,7 +45,7 @@
 
     {% if experiment.status != 'active' %}
     <div class="form-group">
-      <label>Dates</label>
+      <div class="form-label-static">Dates</div>
       <div class="field-hint" style="font-style:normal;">
         Started {{ experiment.start_date.strftime('%b %-d, %Y') }}{% if experiment.end_date %}, ended {{ experiment.end_date.strftime('%b %-d, %Y') }}{% endif %} — fixed once an experiment has ended.
       </div>

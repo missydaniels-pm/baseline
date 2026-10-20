@@ -23,7 +23,7 @@
     and show up in your doctor summary.
     {% if experiment.protocol and experiment.protocol.status == 'active' %}
     It doesn't change <strong>{{ experiment.protocol.name }}</strong> itself — if you've stopped taking it,
-    <a href="{{ url_for('edit_protocol', protocol_id=experiment.protocol.id) }}">update the protocol</a> too.
+    update it on the Protocols page afterwards.
     {% endif %}
   </div>
 

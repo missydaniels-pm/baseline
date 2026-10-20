@@ -17,7 +17,8 @@ Baseline gives users the structure to do that:
 - **Health tracking** — define what you're measuring
 - **Protocol management** — track preventative medications, supplements, and lifestyle changes
 - **Episode logging** — record what happens and when, along with the triggers behind it, via natural language check-in or manual entry
-- **Experiment framework** — form a hypothesis, run a protocol for a defined period, assess the outcome with your own data
+- **Experiment framework** — form a hypothesis, run a protocol for a defined period, assess the outcome with your own data. Trials that end early ("it made my symptoms worse") are recorded as results with a reason, not lost
+- **Doctor summary** — a one-page, print-ready summary of a date range (episodes, symptoms, treatments, every trial and how it ended) to bring to an appointment; generated in-app, nothing sent to a third party
 - **Dashboard** — visualize patterns, protocol impact markers, intervention effectiveness, and trends over time
 
 In active use by a small group of early users managing chronic migraine, mold toxicity, MS, and other conditions.
@@ -78,9 +79,9 @@ The planned next chapter is a React frontend rebuild with an API-first Flask bac
 
 ## What's next
 
-Recently shipped: multiple interventions per episode with effectiveness tracking, trigger capture (manual and AI-assisted), email-verified self-serve registration, and timezone-correct day handling.
+Recently shipped: a printable doctor summary, ended-early experiments recorded with their reason, multiple interventions per episode with effectiveness tracking, trigger capture (manual and AI-assisted), email-verified self-serve registration, and timezone-correct day handling.
 
-Current focus: backend groundwork ahead of the React rebuild — data-model cleanup, a "date stopped" field for protocols, and the query spec for a neurologist report export (auto-generated PDF for insurance documentation).
+Current focus: backend groundwork ahead of the React rebuild — data-model cleanup and the remaining items from a pre-rebuild code review. The insurance-grade episode diary (days-per-month thresholds, step-therapy documentation) comes with the rebuild.
 
 Longer term: React frontend rebuild, native mobile, HealthKit integration, and stats-first pattern detection that turns "this might be a trigger" into a testable experiment.
 

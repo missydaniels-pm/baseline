@@ -14,6 +14,7 @@
   <a href="#protocols">Protocols</a>
   <a href="#experiments">Running Experiments</a>
   <a href="#dashboard">Your Dashboard</a>
+  <a href="#doctor-summary">Doctor Summary</a>
   <a href="#managing-tracking">Managing What You Track</a>
   <a href="#account">Your Account</a>
   <a href="#install">Install as an App</a>
@@ -206,6 +207,14 @@
 
   <h3 class="help-subheading">When will my charts appear?</h3>
   <p>The dashboard shows an empty state message until you have at least two weeks of data. This is intentional — the charts need enough data points to be meaningful. Keep logging consistently and the insights will build up.</p>
+</section>
+
+<hr class="divider">
+
+<section class="help-section" id="doctor-summary">
+  <h2 class="help-heading">Doctor Summary</h2>
+  <p>Going to an appointment? <a href="{{ url_for('settings') }}">Settings</a> → <strong>Open Doctor Summary</strong> builds a one-page summary of a date range (the last 90 days unless you pick another): how many episodes and on how many days, month by month; your average symptom scores; your preventative treatments and how consistently you logged them; every experiment, including ones you ended early and why; and the treatments you used during episodes.</p>
+  <p>Tap <strong>Print / Save as PDF</strong> to print it or save a PDF to send. Your episode notes are left out unless you tick <strong>Include my episode notes</strong>. The summary is built inside Baseline and isn't sent anywhere — you decide who sees it.</p>
 </section>
 
 <hr class="divider">

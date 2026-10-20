@@ -15,7 +15,7 @@
 </div>
 
 {% if ended_on %}
-<div class="warning-banner" style="margin-bottom:16px;">
+<div class="{% if experiment.status == 'abandoned' %}warning-banner{% else %}card{% endif %}" style="margin-bottom:16px;">
   {% if experiment.status == 'completed' %}Completed{% else %}Ended early{% endif %}{% if experiment.stop_reason %} — {{ stop_reason_labels[experiment.stop_reason] }}{% endif %}.
   Showing data from {{ experiment.start_date.strftime('%b %-d, %Y') }} to {{ ended_on.strftime('%b %-d, %Y') }}.
 </div>

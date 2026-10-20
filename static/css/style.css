@@ -305,7 +305,7 @@ a:hover { text-decoration: underline; }
   gap: 16px;
 }
 
-label {
+label, .form-label-static {
   display: block;
   font-size: 13px;
   font-weight: 500;
@@ -3276,7 +3276,8 @@ button.tp-dot-btn:hover .tp-dot { transform: scale(1.12); }
 .report-table td { padding: 8px 8px 8px 0; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: break-word; }
 .report-subrow td { font-size: 13px; color: var(--text-muted); padding-left: 16px; }
 .report-muted { color: var(--text-muted); font-size: 13px; }
-.report-note { font-size: 12px !important; color: var(--text-muted); }
+.report-section .report-note { font-size: 12px; color: var(--text-muted); }
+.report-table-wrap { overflow-x: auto; }
 .report-notes { padding-left: 18px; font-size: 14px; }
 .report-notes li { margin-bottom: 6px; overflow-wrap: anywhere; }
 @media (max-width: 768px) {
@@ -3289,8 +3290,10 @@ button.tp-dot-btn:hover .tp-dot { transform: scale(1.12); }
   body, .main, .report { background: #fff !important; color: #000 !important; }
   .main { padding: 0 !important; max-width: none !important; }
   .report { border: none; padding: 0; }
-  .report-meta, .report-muted, .report-note, .report-table th, .report-subrow td { color: #444 !important; }
+  .report-meta, .report-muted, .report-section .report-note, .report-table th, .report-subrow td { color: #444 !important; }
   .report-table th, .report-table td, .report-header { border-color: #bbb !important; }
-  .report-section { break-inside: avoid; }
+  @page { margin: 14mm; }
+  .report-heading { break-after: avoid; }
+  .report-table-wrap { overflow: visible; }
   .report-table tr { break-inside: avoid; }
 }
