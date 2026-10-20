@@ -10,6 +10,7 @@ Last updated: October 19, 2026 · open self-serve registration
 
 | Bug | Size | Notes |
 |---|---|---|
+| **Date fields overflow their box on iPhone** | S | Owner report 10/19/26 (screenshot, iPhone, Doctor Summary): the From/To date inputs run past the card's right edge. Likely cause: iOS Safari gives `input[type=date]` an intrinsic minimum width that wins over the shared `width: 100%` (style.css ~L318), so the field is wider than its container. Probably affects **every** date/date-time field on iPhone, not just this page: protocol start/effective dates, episode onset (`datetime-local`), experiment start/end. Likely fix, once for all: `input[type="date"], input[type="datetime-local"] { min-width: 0; max-width: 100%; display: block; }` (and `-webkit-appearance: none` if needed), then check each page on a real iPhone, since desktop browsers and the browser-pane emulator don't reproduce iOS's native date control. **Rebuild check:** React redoes the forms, but the cause is the same CSS on the same platform, so fix it once here (cheap) and carry the rule over. |
 
 <!-- Blank-name validation closed 8/12/26 — see Decision Log. -->
 <!-- Follow-up-creates-second-episode moved to React Rebuild → AI / data layer, owner decision 10/3/26. -->
