@@ -32,18 +32,20 @@
         (3, 'Nausea', 'Nausea and stomach upset'),
       ] %}
       {% set existing = symptoms[idx-1] if symptoms|length >= idx else None %}
-      {% set existing_type = existing.input_type if existing else 'scale' %}
-      <div class="symptom-row" id="row-{{ idx }}" {% if not existing %}style="display:none;"{% endif %}>
+      {% set existing_type = request.form.get('input_type_' ~ idx, existing.input_type if existing else 'scale') %}
+      {% set typed_name = request.form.get('name_' ~ idx, existing.name if existing else '') %}
+      {% set typed_desc = request.form.get('description_' ~ idx, existing.description if existing and existing.description else '') %}
+      <div class="symptom-row" id="row-{{ idx }}" {% if not existing and not typed_name %}style="display:none;"{% endif %}>
         <div class="symptom-row-fields">
           <div class="form-group" style="flex:1;">
             <label for="name_{{ idx }}">Name</label>
             <input type="text" id="name_{{ idx }}" name="name_{{ idx }}" placeholder="e.g. {{ ph_name }}"
-                   value="{{ existing.name if existing else '' }}"{% if idx == 1 %} required{% endif %}>
+                   value="{{ typed_name }}" maxlength="200"{% if idx == 1 %} required{% endif %}>
           </div>
           <div class="form-group" style="flex:1.4;">
             <label for="description_{{ idx }}">Description <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
             <input type="text" id="description_{{ idx }}" name="description_{{ idx }}" placeholder="e.g. {{ ph_desc }}"
-                   value="{{ existing.description if existing and existing.description else '' }}">
+                   value="{{ typed_desc }}" maxlength="500">
           </div>
         </div>
         <div class="onboarding-type-row">

@@ -1132,17 +1132,55 @@ def check_fk_ondelete():
         )
 
 
-def _safe_float(val, default=None, min_val=None):
-    """Safely convert a form value to float, returning default on failure."""
-    if not val:
-        return default
+def _parse_nonneg_float(raw, label):
+    """Optional non-negative number from a form field -> (float|None, error).
+    Blank is None; non-numeric or negative is rejected, never clamped (F8)."""
+    raw = (raw or '').strip()
+    if not raw:
+        return None, None
     try:
-        result = float(val)
-        if min_val is not None and result < min_val:
-            result = min_val
-        return result
-    except (ValueError, TypeError):
-        return default
+        val = float(raw)
+    except ValueError:
+        val = None
+    if val is None or val != val or val < 0 or val == float('inf'):
+        return None, f'{label} must be a number, 0 or more.'
+    return val, None
+
+
+def _validate_episode_form(form, symptoms):
+    """Every number and name on the episode form, checked before any write.
+
+    The sliders, selects and the trigger input can only send valid values, so
+    this only catches a forged or garbled POST — but it rejects with a message
+    instead of clamping, defaulting or silently dropping (review F8). Returns an
+    error string or None.
+    """
+    _, err = _parse_nonneg_float(form.get('duration_hours'), 'Duration')
+    if err:
+        return err
+    for sym in symptoms:
+        if form.get(f'score_{sym.id}_rated') != '1':
+            continue
+        if sym.input_type == 'binary':
+            if (form.get(f'binary_{sym.id}', '') or '').strip().lower() not in ('', 'yes', 'no'):
+                return f'"{sym.name}" must be Yes or No.'
+        else:
+            raw = (form.get(f'score_{sym.id}', '') or '').strip()
+            if raw and not (raw.isdigit() and 1 <= int(raw) <= 10):
+                return f'"{sym.name}" must be a score from 1 to 10.'
+    for i in range(5):
+        if not form.get(f'intervention_protocol_{i}', '').strip():
+            continue
+        eff = form.get(f'intervention_effectiveness_{i}', '').strip()
+        if eff and not (eff.isdigit() and 1 <= int(eff) <= 10):
+            return 'Effectiveness must be from 1 to 10.'
+        _, err = _parse_nonneg_float(form.get(f'intervention_relief_{i}'), 'Time to relief')
+        if err:
+            return err
+    for raw in form.getlist('new_trigger_names'):
+        if len(_normalize_trigger_name(raw)) > 100:
+            return 'Trigger names must be 100 characters or fewer.'
+    return None
 
 
 def get_user():
@@ -1802,15 +1840,27 @@ def onboarding_step1():
 
     if request.method == 'POST':
         # Collect submitted names first
+        # Reject, don't truncate or substitute (F8) — same caps as /symptoms/new.
         new_rows = []
+        row_err = None
         for i in range(1, 4):
-            name = request.form.get(f'name_{i}', '').strip()[:200]
+            name = request.form.get(f'name_{i}', '').strip()
             if name:
-                desc = request.form.get(f'description_{i}', '').strip()[:500] or None
+                desc = request.form.get(f'description_{i}', '').strip() or None
                 input_type = request.form.get(f'input_type_{i}', 'scale').strip()
-                if input_type not in ('scale', 'binary'):
-                    input_type = 'scale'
+                if len(name) > 200:
+                    row_err = 'Names must be 200 characters or fewer.'
+                elif desc and len(desc) > 500:
+                    row_err = 'Descriptions must be 500 characters or fewer.'
+                elif input_type not in ('scale', 'binary'):
+                    row_err = 'Choose Scale or Yes / No for each item.'
+                elif name.lower() in {n.lower() for n, _, _ in new_rows}:
+                    row_err = f'"{name}" is listed twice.'
                 new_rows.append((name, desc, input_type))
+        if row_err:
+            flash(row_err, 'error')
+            symptoms = Symptom.query.filter_by(user_id=user.id).all()
+            return render_template('onboarding_step1.html', symptoms=symptoms)
 
         if not new_rows:
             flash('Add at least one thing to track.', 'error')
@@ -2640,7 +2690,9 @@ def checkin():
                     onset=onset,
                     peak_severity=None,
                     functional_impairment=ep_data.get('functional_impairment') if ep_data.get('functional_impairment') in FUNCTIONAL_IMPAIRMENT_VALUES else None,
-                    notes=ep_data.get('notes') or None,
+                    # AI path: cap-and-continue (F8). The user can't be asked to
+                    # shorten a model's text; the form path rejects instead.
+                    notes=(str(ep_data.get('notes') or '').strip()[:500] or None),
                 )
                 db.session.add(episode)
                 db.session.flush()
@@ -2702,7 +2754,9 @@ def checkin():
 
                 new_intervention_names = []
                 for intervention in interventions_list:
-                    iname = (intervention.get('name') or '').strip()
+                    # Cap-and-continue (F8): an over-long AI name used to raise
+                    # DataError on PostgreSQL (VARCHAR(200)) and lose the message.
+                    iname = str(intervention.get('name') or '').strip()[:200]
                     if not iname:
                         continue
                     # Match to existing Protocol (type='rescue') for user
@@ -3848,11 +3902,8 @@ def _save_symptom_entries_from_form(episode_id, symptoms, form):
             score_str = (form.get(f'score_{s.id}', '') or '').strip()
             if not score_str:
                 continue
-            try:
-                score = max(1, min(10, int(score_str)))
-            except ValueError:
-                continue
-            db.session.add(SymptomScore(episode_id=episode_id, symptom_id=s.id, score=score))
+            # Validated 1-10 by _validate_episode_form before any write.
+            db.session.add(SymptomScore(episode_id=episode_id, symptom_id=s.id, score=int(score_str)))
 
 
 def _normalize_trigger_name(raw):
@@ -4060,17 +4111,19 @@ def new_episode():
             return render_template('new_episode.html', rescue_options=rescue_options, symptoms=symptoms, triggers=triggers, selected_trigger_ids=[])
 
         notes_val = request.form.get('notes', '').strip()
-        if notes_val and len(notes_val) > 500:
-            flash('Notes must be 500 characters or fewer.', 'error')
+        form_err = 'Notes must be 500 characters or fewer.' if len(notes_val) > 500 else \
+            _validate_episode_form(request.form, symptoms)
+        if form_err:
+            flash(form_err, 'error')
             return render_template('new_episode.html', rescue_options=rescue_options, symptoms=symptoms, triggers=triggers, selected_trigger_ids=[])
 
         episode = Episode(
             user_id=user.id,
             onset=onset,
             peak_severity=None,
-            duration_hours=_safe_float(request.form.get('duration_hours'), min_val=0),
+            duration_hours=_parse_nonneg_float(request.form.get('duration_hours'), 'Duration')[0],
             functional_impairment=impairment,
-            notes=request.form.get('notes') or None,
+            notes=notes_val or None,
         )
         db.session.add(episode)
         db.session.flush()
@@ -4092,14 +4145,9 @@ def new_episode():
                 continue
             eff_str = request.form.get(f'intervention_effectiveness_{i}', '').strip()
             relief_str = request.form.get(f'intervention_relief_{i}', '').strip()
-            try:
-                eff_val = max(1, min(10, int(eff_str))) if eff_str else None
-            except ValueError:
-                eff_val = None
-            try:
-                relief_val = max(0, float(relief_str)) if relief_str else None
-            except ValueError:
-                relief_val = None
+            # Validated by _validate_episode_form before any write.
+            eff_val = int(eff_str) if eff_str else None
+            relief_val, _ = _parse_nonneg_float(relief_str, 'Time to relief')
             db.session.add(EpisodeIntervention(
                 episode_id=episode.id,
                 protocol_id=protocol.id,
@@ -4188,8 +4236,10 @@ def edit_episode(episode_id):
                                    suggested_trigger_names=suggested_trigger_names)
 
         notes_val = request.form.get('notes', '').strip()
-        if notes_val and len(notes_val) > 500:
-            flash('Notes must be 500 characters or fewer.', 'error')
+        form_err = 'Notes must be 500 characters or fewer.' if len(notes_val) > 500 else \
+            _validate_episode_form(request.form, symptoms)
+        if form_err:
+            flash(form_err, 'error')
             existing_entries = {ss.symptom_id: ss for ss in episode.symptom_scores}
             return render_template('edit_episode.html', episode=episode, rescue_options=rescue_options,
                                    symptoms=symptoms, existing_entries=existing_entries,
@@ -4197,7 +4247,7 @@ def edit_episode(episode_id):
                                    suggested_trigger_names=suggested_trigger_names)
 
         episode.onset = new_onset
-        episode.duration_hours = _safe_float(request.form.get('duration_hours'), min_val=0)
+        episode.duration_hours = _parse_nonneg_float(request.form.get('duration_hours'), 'Duration')[0]
         episode.functional_impairment = impairment
         episode.notes = notes_val or None
 
@@ -4227,14 +4277,9 @@ def edit_episode(episode_id):
                 continue
             eff_str = request.form.get(f'intervention_effectiveness_{i}', '').strip()
             relief_str = request.form.get(f'intervention_relief_{i}', '').strip()
-            try:
-                eff_val = max(1, min(10, int(eff_str))) if eff_str else None
-            except ValueError:
-                eff_val = None
-            try:
-                relief_val = max(0, float(relief_str)) if relief_str else None
-            except ValueError:
-                relief_val = None
+            # Validated by _validate_episode_form before any write.
+            eff_val = int(eff_str) if eff_str else None
+            relief_val, _ = _parse_nonneg_float(relief_str, 'Time to relief')
             db.session.add(EpisodeIntervention(
                 episode_id=episode.id,
                 protocol_id=protocol.id,
@@ -4658,10 +4703,17 @@ def log_protocol_today(protocol_id):
     user = get_user()
     protocol = Protocol.query.filter_by(id=protocol_id, user_id=user.id, type='preventative').first_or_404()
 
-    took = request.form.get('took') == 'yes'
+    # Reject, don't substitute or truncate (F8): a missing/garbled choice used to
+    # be logged as "missed", and an over-long note was silently cut.
+    took_raw = request.form.get('took')
+    if took_raw not in ('yes', 'no'):
+        flash('Choose whether you took it today.', 'error')
+        return redirect(url_for('protocol_detail', protocol_id=protocol_id))
+    took = took_raw == 'yes'
     notes = (request.form.get('notes', '').strip() or None)
     if notes and len(notes) > 500:
-        notes = notes[:500]  # match the 500-char cap enforced on the other compliance paths
+        flash('Notes must be 500 characters or fewer.', 'error')
+        return redirect(url_for('protocol_detail', protocol_id=protocol_id))
 
     _commit_compliance(user.id, user_today(), [(protocol_id, took, notes)])
     flash('Logged.', 'success')

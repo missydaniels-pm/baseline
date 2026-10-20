@@ -29,7 +29,7 @@ os.environ['ANTHROPIC_API_KEY'] = 'sk-ant-test-dummy'
 from datetime import datetime
 
 from app import app, CHECKIN_SCHEMA, CHECKIN_UNREADABLE_MSG
-from database import db, User, Episode, CheckIn, Symptom, SymptomScore
+from database import db, User, Episode, CheckIn, Symptom, SymptomScore, EpisodeIntervention, Protocol
 
 FAILS = []
 
@@ -158,6 +158,27 @@ def main():
             check(r.status_code == 200, f'[{label}] returns 200 (got {r.status_code})')
             check(Episode.query.filter_by(user_id=uid).count() == before, f'[{label}] no Episode written')
             check(last_reply() == CHECKIN_UNREADABLE_MSG, f'[{label}] reply is the fixed unreadable wording')
+
+    # Review F8 (10/19/26): the AI path caps and continues. An over-long AI
+    # intervention name used to raise DataError on PostgreSQL (VARCHAR(200)) → 500,
+    # losing the message; AI notes were uncapped.
+    with app.app_context():
+        long_reply = json.loads(reply(True))
+        long_reply['episode_data']['interventions'] = [{'name': 'Z' * 250, 'effectiveness': 7,
+                                                        'time_to_relief_hours': 1}]
+        long_reply['episode_data']['notes'] = 'n' * 800
+        NEXT.update(text=json.dumps(long_reply), stop_reason='end_turn')
+        c = app.test_client()
+        u = User.query.filter_by(email='s@test.com').first()
+        with c.session_transaction() as sess:
+            sess['user_id'] = u.id
+        r = c.post('/checkin', data={'message': 'migraine, took a long-named thing'}, follow_redirects=True)
+        ep = Episode.query.filter_by(user_id=u.id).order_by(Episode.id.desc()).first()
+        ei = EpisodeIntervention.query.filter_by(episode_id=ep.id).first() if ep else None
+        check(r.status_code == 200 and ep is not None and len(ep.notes or '') == 500,
+              '[F8] AI notes capped at 500, episode still logged')
+        check(ei is not None and len(db.session.get(Protocol, ei.protocol_id).name) == 200,
+              '[F8] AI intervention name capped at 200, intervention still linked')
 
     srv.shutdown()
     if FAILS:

@@ -27,7 +27,7 @@ os.environ.pop('RESEND_API_KEY', None)
 from datetime import datetime, date, timedelta
 
 from app import app
-from database import db, User, Episode, Protocol, ProtocolEvent, Experiment
+from database import db, User, Episode, Protocol, ProtocolEvent, Experiment, Symptom, ProtocolCompliance, EpisodeIntervention, Trigger
 
 FAILS = []
 
@@ -194,6 +194,84 @@ def main():
                       follow_redirects=True)
         check(r.status_code == 200 and b'trouble sending your verification email' in r.data,
               '[register] failed verification send shows the warning')
+
+    # ── Write-path caps converge: reject on forms, cap-and-continue on AI (review F8, 10/19/26) ──
+    with app.app_context():
+        sym = Symptom(user_id=uid, name='Pain', input_type='scale')
+        yn = Symptom(user_id=uid, name='Aura', input_type='binary')
+        rescue = Protocol(user_id=uid, name='Triptan', type='rescue')
+        prev = Protocol(user_id=uid, name='Mag', type='preventative', status='active')
+        db.session.add_all([sym, yn, rescue, prev])
+        db.session.commit()
+        base = {'onset': yesterday, 'functional_impairment': ''}
+
+        def episodes():
+            return Episode.query.filter_by(user_id=uid).count()
+
+        for label, extra, msg in [
+            ('negative duration', {'duration_hours': '-3'}, b'Duration must be'),
+            ('non-numeric duration', {'duration_hours': 'abc'}, b'Duration must be'),
+            ('score 11', {f'score_{sym.id}_rated': '1', f'score_{sym.id}': '11'}, b'score from 1 to 10'),
+            ('binary garbage', {f'score_{yn.id}_rated': '1', f'binary_{yn.id}': 'maybe'}, b'Yes or No'),
+            ('effectiveness 0', {'intervention_protocol_0': str(rescue.id),
+                                 'intervention_effectiveness_0': '0'}, b'Effectiveness must be'),
+            ('negative relief', {'intervention_protocol_0': str(rescue.id),
+                                 'intervention_relief_0': '-1'}, b'Time to relief must be'),
+            ('trigger name over 100', {'new_trigger_names': 'x' * 101}, b'100 characters'),
+            ('notes over 500', {'notes': 'n' * 501}, b'500 characters'),
+        ]:
+            before = episodes()
+            r = c.post('/episodes/new', data=dict(base, **extra))
+            check(episodes() == before and msg in r.data,
+                  f'[new episode, {label}] rejected with a message, nothing written')
+
+        before = episodes()
+        c.post('/episodes/new', data=dict(base, duration_hours='2.5', **{
+            f'score_{sym.id}_rated': '1', f'score_{sym.id}': '7',
+            'intervention_protocol_0': str(rescue.id), 'intervention_effectiveness_0': '8',
+            'intervention_relief_0': '1.5', 'new_trigger_names': 'Bright light'}))
+        ep = Episode.query.filter_by(user_id=uid).order_by(Episode.id.desc()).first()
+        ei = EpisodeIntervention.query.filter_by(episode_id=ep.id).first()
+        check(episodes() == before + 1 and ep.duration_hours == 2.5
+              and ep.symptom_scores[0].score == 7 and ei.effectiveness == 8 and ei.time_to_relief_hours == 1.5,
+              '[new episode] valid numbers still save exactly')
+
+        r = c.post(f'/episodes/{ep.id}/edit', data=dict(base, duration_hours='-1'))
+        db.session.expire_all()
+        check(db.session.get(Episode, ep.id).duration_hours == 2.5,
+              '[edit episode] negative duration rejected, value unchanged')
+
+        # Protocol detail "log today": missing choice and over-long note rejected.
+        def logs():
+            return ProtocolCompliance.query.filter_by(protocol_id=prev.id).count()
+        c.post(f'/protocols/{prev.id}/log', data={'notes': 'x'})
+        check(logs() == 0, '[log today] missing took is rejected, not logged as missed')
+        c.post(f'/protocols/{prev.id}/log', data={'took': 'yes', 'notes': 'n' * 501})
+        check(logs() == 0, '[log today] note over 500 rejected, not truncated')
+        c.post(f'/protocols/{prev.id}/log', data={'took': 'no', 'notes': 'late'})
+        check(logs() == 1 and ProtocolCompliance.query.filter_by(protocol_id=prev.id).first().took is False,
+              '[log today] valid entry saves')
+
+        # Onboarding step 1: reject instead of truncating; typed input survives.
+        u2 = User(email='onb@test.com', is_active=True, verified_at=datetime.utcnow(),
+                  onboarding_complete=False)
+        u2.password_hash = 'x'
+        db.session.add(u2)
+        db.session.commit()
+        c2 = app.test_client()
+        with c2.session_transaction() as sess:
+            sess['user_id'] = u2.id
+        r = c2.post('/onboarding/step1', data={'name_1': 'y' * 201, 'input_type_1': 'scale'})
+        check(Symptom.query.filter_by(user_id=u2.id).count() == 0 and b'200 characters' in r.data,
+              '[onboarding] name over 200 rejected (was silently truncated)')
+        r = c2.post('/onboarding/step1', data={'name_1': 'Pain', 'input_type_1': 'scale',
+                                                'name_2': 'Fog', 'input_type_2': 'sliders'})
+        check(Symptom.query.filter_by(user_id=u2.id).count() == 0 and b'value="Fog"' in r.data,
+              '[onboarding] off-list type rejected and typed names kept on re-render')
+        r = c2.post('/onboarding/step1', data={'name_1': 'Pain', 'input_type_1': 'scale',
+                                                'name_2': 'pain', 'input_type_2': 'scale'})
+        check(Symptom.query.filter_by(user_id=u2.id).count() == 0 and b'listed twice' in r.data,
+              '[onboarding] duplicate names rejected')
 
     if FAILS:
         print(f'\n{len(FAILS)} FAILED')
