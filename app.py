@@ -1593,8 +1593,10 @@ def require_auth():
     # and persist the browser-detected timezone if it changed.
     g.user = user
     sync_user_timezone(user)
-    # Onboarding gate — let auth and onboarding endpoints through
-    if request.endpoint.startswith('onboarding_'):
+    # Onboarding gate — let onboarding endpoints and logout through. (Logout was
+    # gated until 10/19/26: a user mid-onboarding tapping "Log out" was sent back
+    # to step 1 and stayed signed in — found writing test_auth_settings.py.)
+    if request.endpoint.startswith('onboarding_') or request.endpoint == 'logout':
         return
     if not user.onboarding_complete:
         return redirect(url_for('onboarding_step1'))
