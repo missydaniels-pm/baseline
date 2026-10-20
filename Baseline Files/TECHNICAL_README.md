@@ -60,6 +60,7 @@ static/
   icons/                      — PWA app icons (192px, 512px, apple-touch)
   manifest.json               — PWA manifest
   sw.js                       — service worker: offline page + static-asset cache (never caches pages)
+  js/password-toggle.js       — show/hide button on every password field (cache-busted by JS_VERSION)
 
 templates/
   base.html                   — base template, nav, PWA meta tags

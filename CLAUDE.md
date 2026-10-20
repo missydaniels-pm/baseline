@@ -63,6 +63,7 @@ static/
   icons/                — PWA app icons (192, 512, apple-touch)
   manifest.json         — PWA manifest
   sw.js                 — service worker
+  js/password-toggle.js — show/hide button on password fields (the only static JS; `JS_VERSION` cache-bust)
 templates/
   base.html             — base template with nav, PWA meta tags
   index.html            — dashboard with charts

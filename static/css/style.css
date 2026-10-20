@@ -3304,3 +3304,16 @@ button.tp-dot-btn:hover .tp-dot { transform: scale(1.12); }
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 }
 .consent-exit summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+/* ── Show/hide password (static/js/password-toggle.js, 10/19/26) ───────── */
+.password-field { position: relative; }
+.password-field input { display: block; padding-right: 44px; }
+input::-ms-reveal { display: none; }  /* Edge's own eye — ours replaces it */
+.password-toggle {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 44px;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--text-muted);
+}
+.password-toggle:hover { color: var(--text); }
+.password-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 8px; }

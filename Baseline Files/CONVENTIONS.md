@@ -437,6 +437,10 @@ JSON field goes in `CHECKIN_SCHEMA` *and* the prompt's template, together.
   `session_version`, signing out every other device. Re-`sign_in()` the current device after.
 - **Validate a new password with `password_problem(pw)`** (register, change, reset) — one rule
   set, incl. the 72-byte cap. Never at login.
+- **Password fields get a show/hide button automatically** from `static/js/password-toggle.js`
+  (included by `base.html`). A standalone page (no `base.html`) with a password field must
+  include it too, with `v=JS_VERSION`. Shared JS goes in `static/js/` with a content-hash version,
+  like `CSS_VERSION`.
 - Emailed-link tokens follow the verify pattern: `_verify_serializer()` with their **own salt**
   and max age; make them single-use by binding to state that changes when used (reset binds a
   digest of the password hash + email) or by a used-token table (`UsedVerifyToken`).

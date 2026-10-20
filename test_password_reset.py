@@ -187,6 +187,20 @@ def main():
         check(login(app.test_client(), 'oldlong@test.com', long_pw).status_code == 302,
               '[72] a legacy long password still signs in')
 
+        # ── 7. Show-password toggle is on every page with a password field ──
+        from app import JS_VERSION
+        tag = f'js/password-toggle.js?v={JS_VERSION}'.encode()
+        anon = app.test_client()
+        for path in ('/login', '/register', f'/reset-password/{generate_reset_token(reload(uid))}'):
+            check(tag in anon.get(path).data, f'[toggle] {path.split("/")[1]} loads the show-password script')
+        signed = app.test_client()
+        login(signed, 'me@test.com', 'Th1rdPassword')
+        check(tag in signed.get('/settings').data, '[toggle] settings loads it (via base.html)')
+        r = anon.get(f'/static/js/password-toggle.js?v={JS_VERSION}')
+        check(r.status_code == 200 and 'javascript' in r.headers.get('Content-Type', ''),
+              '[toggle] the script is served as JavaScript')
+        r.close()
+
     if FAILS:
         print(f'\n{len(FAILS)} FAILED')
         raise SystemExit(1)

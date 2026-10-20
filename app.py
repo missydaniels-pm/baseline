@@ -178,11 +178,12 @@ CSS_VERSION = _compute_asset_version('css/style.css')
 # production, not on staging), which would otherwise keep serving an old worker
 # for hours after a deploy (10/19/26).
 SW_VERSION = _compute_asset_version('sw.js')
+JS_VERSION = _compute_asset_version('js/password-toggle.js')
 
 
 @app.context_processor
 def inject_asset_versions():
-    return {'CSS_VERSION': CSS_VERSION, 'SW_VERSION': SW_VERSION}
+    return {'CSS_VERSION': CSS_VERSION, 'SW_VERSION': SW_VERSION, 'JS_VERSION': JS_VERSION}
 
 DISPOSABLE_EMAIL_DOMAINS = {
     'mailinator.com', 'tempmail.com', 'temp-mail.org', 'guerrillamail.com',
