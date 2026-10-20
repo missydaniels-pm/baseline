@@ -1,4 +1,5 @@
-const CACHE_NAME = 'baseline-v5';
+// Bumping the name makes activate delete every older cache (v6: 10/19/26).
+const CACHE_NAME = 'baseline-v6';
 const STATIC_ASSETS = [
   '/static/css/style.css',
   '/static/icons/icon-192.png',
@@ -24,25 +25,16 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-// Fetch — network-first for navigation, cache-first for static assets
+// Fetch — network-only for navigation, network-first for CSS/JS, cache-first for other static assets
 self.addEventListener('fetch', event => {
   const { request } = event;
 
-  // Navigation requests (HTML pages): network-first with offline fallback
+  // Navigation requests (HTML pages): network only, offline page as the fallback.
+  // Pages are never cached — they carry health data and must not stay on the
+  // device after logout. The server also marks them no-store.
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
-        .then(response => {
-          // Cache successful navigation responses — except ones the server marks
-          // no-store (e.g. the doctor summary), which must never be kept on the device.
-          const cc = response.headers.get('Cache-Control') || '';
-          if (!cc.includes('no-store')) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
-          }
-          return response;
-        })
-        .catch(() => caches.match('/offline').then(r => r || new Response('Offline')))
+      fetch(request).catch(() => caches.match('/offline').then(r => r || new Response('Offline')))
     );
     return;
   }

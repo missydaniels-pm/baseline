@@ -147,6 +147,8 @@ feature work  →  push `staging`  →  WAIT for the build  →  VERIFY on the s
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" "$URL/?__debugger__=yes&cmd=resource&f=debugger.js"  # expect NOT 200
 curl -s -w " %{http_code}\n" "$URL/dev/bootstrap"                                             # expect 403
+curl -sI "$URL/login" | grep -iE "cache-control|x-frame|strict-transport"                    # expect no-store, DENY, max-age=…
+curl -s "$URL/login" | grep -o "sw.js?v=[0-9a-f]*" && curl -s "$URL/sw.js?v=$(curl -s "$URL/login" | grep -o 'sw.js?v=[0-9a-f]*' | cut -d= -f2)" | grep -o "baseline-v[0-9]*"  # expect the current CACHE_NAME
 ```
 
 - If the build config changed, confirm the *build* too: `railway logs --build` should show

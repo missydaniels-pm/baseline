@@ -61,11 +61,25 @@ here in the same commit.
   start date and stabilization weeks are fixed (name and hypothesis stay editable).
 - Ending is one-shot, like assess: check the status **before any assignment**.
 
-## Pages holding concentrated health data: `no-store`
-- A page that gathers a user's health data in one place for sharing (the doctor
-  summary) sends `Cache-Control: no-store`, and `static/sw.js` never caches a
-  navigation marked `no-store`. New pages of that kind do the same. (Whether every
-  signed-in page should is an open owner decision — BACKLOG.)
+## Response headers and caching (every response — 10/19/26)
+- **One place:** `set_security_headers` (`after_request` in `app.py`) sets them all. Don't
+  set security headers per route.
+- **Every dynamic response is `Cache-Control: no-store`**: pages, JSON, redirects, errors. Only
+  `CACHEABLE_ENDPOINTS` (`static`, `serve_sw`, `offline`) are exempt. A new public, data-free
+  asset route that must be cacheable goes in that set; nothing that renders user data does.
+  A route's own `Cache-Control` wins (`setdefault`), so never set a weaker one on a page with
+  user data. The doctor summary also sets `no-store` itself, as a belt-and-braces measure.
+- **`static/sw.js` never caches navigations** (network-only, `/offline` as the fallback). Its
+  cache holds only public static files. Change what it stores → bump `CACHE_NAME` so activate
+  deletes the old caches.
+- **Register the worker at its versioned URL**: `url_for('serve_sw', v=SW_VERSION)` (content
+  hash, like `CSS_VERSION`), on **every** page that registers it, never bare `/sw.js`.
+  Cloudflare edge-caches `.js` (4h on production; staging has no Cloudflare, so it won't show
+  there), and a page registering a different URL swaps that worker in.
+- Also on every response: `nosniff`, `X-Frame-Options: DENY` + CSP `frame-ancestors 'none'`
+  (a script CSP waits for the React rebuild), `Referrer-Policy: same-origin`, HSTS (not under
+  DEBUG; value `HSTS_VALUE`, being ramped — BACKLOG). Logout sends `Clear-Site-Data: "cache"`
+  (best-effort, not Safari). `test_security_headers.py` pins all of this.
 
 ## Protocol events: when it happened vs when you recorded it
 - `ProtocolEvent` has **two** dates and they are not interchangeable. `date` = the day

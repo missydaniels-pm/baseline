@@ -311,7 +311,7 @@
 <script>
   // Register service worker
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(function() {});
+    navigator.serviceWorker.register('{{ url_for('serve_sw', v=SW_VERSION) }}').catch(function() {});
   }
 
   // Install prompt (Chrome/Edge)

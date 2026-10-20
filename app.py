@@ -171,11 +171,16 @@ def _compute_asset_version(relpath):
 
 
 CSS_VERSION = _compute_asset_version('css/style.css')
+# The service worker is registered as /sw.js?v=<hash> so each new version is a
+# new URL: Cloudflare caches .js at the edge (max-age=14400 observed on
+# production, not on staging), which would otherwise keep serving an old worker
+# for hours after a deploy (10/19/26).
+SW_VERSION = _compute_asset_version('sw.js')
 
 
 @app.context_processor
 def inject_asset_versions():
-    return {'CSS_VERSION': CSS_VERSION}
+    return {'CSS_VERSION': CSS_VERSION, 'SW_VERSION': SW_VERSION}
 
 DISPOSABLE_EMAIL_DOMAINS = {
     'mailinator.com', 'tempmail.com', 'temp-mail.org', 'guerrillamail.com',
@@ -1608,6 +1613,40 @@ def require_auth():
         log_activity('page_view', detail=request.endpoint, user_id=user.id)
 
 
+# Responses the browser may cache: static files and the PWA shell (the service
+# worker script and the offline page, which sw.js pre-caches). Everything else
+# Flask renders is a page or JSON that can carry health data.
+CACHEABLE_ENDPOINTS = {'static', 'serve_sw', 'offline'}
+HSTS_VALUE = 'max-age=86400'
+
+
+@app.after_request
+def set_security_headers(resp):
+    """Security + cache headers on every response (review F3 + F10, 10/19/26).
+
+    no-store keeps health data out of the browser's HTTP cache and back/forward
+    cache, so it isn't on the device after logout; a route that sets its own
+    Cache-Control keeps it. CSP is frame-ancestors only for now: a script CSP
+    needs the inline scripts and handlers moved out, which the React rebuild
+    does anyway (BACKLOG). HSTS has no includeSubDomains/preload — those are
+    hard to undo and cover hosts this app doesn't serve — and starts at one day:
+    a browser that has seen it refuses plain http for the whole max-age, so a
+    TLS or Cloudflare misconfiguration would lock users out that long. Raised
+    to a year on a dated BACKLOG check once a day-long value has held.
+    """
+    if request.endpoint not in CACHEABLE_ENDPOINTS:
+        resp.headers.setdefault('Cache-Control', 'no-store')
+    resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    resp.headers.setdefault('X-Frame-Options', 'DENY')
+    resp.headers.setdefault('Content-Security-Policy', "frame-ancestors 'none'")
+    # same-origin: page URLs (e.g. /episodes/12/edit) aren't sent to the CDN or
+    # Google Fonts; same-origin requests keep the full Referer.
+    resp.headers.setdefault('Referrer-Policy', 'same-origin')
+    if not app.debug:  # local dev is plain http
+        resp.headers.setdefault('Strict-Transport-Security', HSTS_VALUE)
+    return resp
+
+
 # ---------------------------------------------------------------------------
 # PWA routes
 # ---------------------------------------------------------------------------
@@ -1859,7 +1898,12 @@ def resend_verification():
 def logout():
     session.clear()
     flash('You have been logged out.', 'success')
-    return redirect(url_for('login'))
+    resp = redirect(url_for('login'))
+    # Drop anything this origin left in the browser's HTTP cache. Best-effort
+    # (Chromium/Firefox; not Safari). Not "storage": that would also wipe the
+    # PWA's service worker and offline page.
+    resp.headers['Clear-Site-Data'] = '"cache"'
+    return resp
 
 
 @app.route('/unsubscribe/<token>')
@@ -5077,7 +5121,8 @@ def doctor_summary():
                                              impairment_labels=IMPAIRMENT_LABELS,
                                              stop_reason_labels=EXPERIMENT_STOP_REASON_LABELS))
     # Concentrated health data (and optional notes): never kept by the browser
-    # cache or the PWA's offline cache (sw.js skips no-store responses).
+    # cache. (Every page is now no-store via set_security_headers; set here too
+    # so this one can't regress if that default ever changes.)
     resp.headers['Cache-Control'] = 'no-store'
     resp.headers['Pragma'] = 'no-cache'
     return resp
