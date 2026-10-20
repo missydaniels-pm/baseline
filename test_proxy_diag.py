@@ -13,7 +13,8 @@ import os
 import re
 import tempfile
 
-os.environ['DATABASE_URL'] = f'sqlite:///{tempfile.mkdtemp()}/t.db'
+# TEST_DATABASE_URL (CI's Postgres job) wins; otherwise an isolated temp SQLite DB.
+os.environ['DATABASE_URL'] = os.environ.get('TEST_DATABASE_URL') or f'sqlite:///{tempfile.mkdtemp()}/t.db'
 os.environ['WTF_CSRF_ENABLED'] = 'false'
 os.environ.setdefault('SECRET_KEY', 'test-secret')
 

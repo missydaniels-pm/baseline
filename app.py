@@ -267,9 +267,12 @@ def _resend_audience_configured():
     return os.environ['RESEND_AUDIENCE_ID']
 
 
-def _user_ref(email):
+def _user_ref(email, user_id=None):
     """Who a failed email/Resend call was about, for logs: the user id, never the
-    address (review F5 logging hygiene). Runs only on the error path."""
+    address (review F5 logging hygiene). Runs only on the error path. Callers that
+    already know the id pass it (after delete_account the row is gone)."""
+    if user_id is not None:
+        return f'user {user_id}'
     try:
         u = User.query.filter(db.func.lower(User.email) == (email or '').lower()).first()
     except Exception:
@@ -280,7 +283,7 @@ def _user_ref(email):
 _EMAIL_LIKE = re.compile(r'[^\s@<>()"\']+@[^\s@<>()"\']+')
 
 
-def _redact_email(exc, email=None):
+def _redact_email(exc):
     """The exception text with anything address-shaped masked — the SDK may echo
     the recipient (or another address) in any case."""
     return _EMAIL_LIKE.sub('<email>', str(exc))
@@ -314,11 +317,11 @@ def resend_contact_upsert(email, unsubscribed=False):
             if os.environ.get('DATABASE_URL'):
                 app.logger.warning(
                     'resend_contact_upsert failed: %s: %s (%s)',
-                    type(e2).__name__, _redact_email(e2, email), _user_ref(email),
+                    type(e2).__name__, _redact_email(e2), _user_ref(email),
                 )
 
 
-def resend_contact_delete(email):
+def resend_contact_delete(email, user_id=None):
     """Remove a contact from the Resend audience."""
     audience_id = _resend_audience_configured()
     if not audience_id:
@@ -329,7 +332,7 @@ def resend_contact_delete(email):
         if os.environ.get('DATABASE_URL'):
             app.logger.warning(
                 'resend_contact_delete failed: %s: %s (%s)',
-                type(e).__name__, _redact_email(e, email), _user_ref(email),
+                type(e).__name__, _redact_email(e), _user_ref(email, user_id),
             )
 
 
@@ -357,7 +360,7 @@ def _send_email(to_email, subject, html, text):
         if os.environ.get('DATABASE_URL'):
             app.logger.error(
                 '_send_email failed: %s: %s (%s, subject=%s)',
-                type(e).__name__, _redact_email(e, to_email), _user_ref(to_email), subject,
+                type(e).__name__, _redact_email(e), _user_ref(to_email), subject,
             )
         return False
 
@@ -2083,7 +2086,7 @@ def change_email():
         # Keep Resend audience in sync: remove the old contact, add the new
         # one carrying the user's current email-updates preference.
         if old_email:
-            resend_contact_delete(old_email)
+            resend_contact_delete(old_email, user_id=user.id)
         resend_contact_upsert(new_email, unsubscribed=not user.email_updates_enabled)
         flash('Email updated.', 'success')
 
@@ -2164,7 +2167,7 @@ def delete_account():
     # call and is NOT part of the DB transaction — doing it first would drop the
     # user from the mailing list while their account and health data survived.
     if user_email:
-        resend_contact_delete(user_email)
+        resend_contact_delete(user_email, user_id=user_id)
 
     session.clear()
     flash('Your account has been deleted.', 'success')

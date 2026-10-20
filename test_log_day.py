@@ -18,7 +18,8 @@ Isolated temp DB (set before importing app). Run: python test_log_day.py
 import os
 import tempfile
 
-os.environ['DATABASE_URL'] = f'sqlite:///{tempfile.mkdtemp()}/t.db'
+# TEST_DATABASE_URL (CI's Postgres job) wins; otherwise an isolated temp SQLite DB.
+os.environ['DATABASE_URL'] = os.environ.get('TEST_DATABASE_URL') or f'sqlite:///{tempfile.mkdtemp()}/t.db'
 os.environ['DEBUG'] = 'true'
 os.environ['WTF_CSRF_ENABLED'] = 'false'
 os.environ.setdefault('SECRET_KEY', 'test-secret')
@@ -120,6 +121,19 @@ def main():
         r = post(today, [{'protocol_id': aid, 'took': True}])
         check(r.get_json()['day_status'] == 'green',
               'day_status scopes to active protocols: a stopped one no longer makes it partial')
+
+        # A protocol starting after the day being logged isn't due that day, so it
+        # doesn't make the day partial (the `start_date <= day` scope).
+        later = Protocol(user_id=uid, name='Starts tomorrow', type='preventative', status='active',
+                         start_date=today + timedelta(days=1))
+        db.session.add(later)
+        db.session.commit()
+        r = post(today, [{'protocol_id': aid, 'took': True}])
+        check(r.get_json()['day_status'] == 'green',
+              'a protocol starting after the day is not counted for that day')
+        r = post(today + timedelta(days=1), [{'protocol_id': aid, 'took': True}])
+        check(r.get_json()['day_status'] == 'amber', '…but is counted from its start day')
+        post(today + timedelta(days=1), [{'protocol_id': aid, 'took': None}])
 
         anon = app.test_client()
         r = anon.post('/protocols/log-day', json={'date': str(today), 'entries': [{'protocol_id': aid, 'took': True}]})

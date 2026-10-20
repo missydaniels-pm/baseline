@@ -9,7 +9,8 @@ Isolated temp DB (set before importing app). Run: python test_onset_resolver.py
 import os
 import tempfile
 
-os.environ['DATABASE_URL'] = f'sqlite:///{tempfile.mkdtemp()}/t.db'
+# TEST_DATABASE_URL (CI's Postgres job) wins; otherwise an isolated temp SQLite DB.
+os.environ['DATABASE_URL'] = os.environ.get('TEST_DATABASE_URL') or f'sqlite:///{tempfile.mkdtemp()}/t.db'
 os.environ['DEBUG'] = 'true'
 os.environ['WTF_CSRF_ENABLED'] = 'false'
 os.environ.setdefault('SECRET_KEY', 'test-secret')

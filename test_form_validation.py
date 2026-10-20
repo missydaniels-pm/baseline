@@ -18,7 +18,8 @@ Run: python test_form_validation.py
 import os
 import tempfile
 
-os.environ['DATABASE_URL'] = f'sqlite:///{tempfile.mkdtemp()}/t.db'
+# TEST_DATABASE_URL (CI's Postgres job) wins; otherwise an isolated temp SQLite DB.
+os.environ['DATABASE_URL'] = os.environ.get('TEST_DATABASE_URL') or f'sqlite:///{tempfile.mkdtemp()}/t.db'
 os.environ['DEBUG'] = 'true'
 os.environ['WTF_CSRF_ENABLED'] = 'false'
 os.environ.setdefault('SECRET_KEY', 'test-secret')
@@ -238,6 +239,22 @@ def main():
         check(episodes() == before + 1 and ep.duration_hours == 2.5
               and ep.symptom_scores[0].score == 7 and ei.effectiveness == 8 and ei.time_to_relief_hours == 1.5,
               '[new episode] valid numbers still save exactly')
+
+        # Route-level: a future onset is refused (the guard is exact in the user's zone).
+        before = episodes()
+        future = (datetime.now() + timedelta(days=2)).strftime('%Y-%m-%dT%H:%M')
+        r = c.post('/episodes/new', data=dict(base, onset=future))
+        check(episodes() == before and b'cannot be in the future' in r.data,
+              '[new episode] future onset refused on the real route')
+
+        # Route-level: scale and binary items land in their own columns, never mixed.
+        c.post('/episodes/new', data=dict(base, **{
+            f'score_{sym.id}_rated': '1', f'score_{sym.id}': '6',
+            f'score_{yn.id}_rated': '1', f'binary_{yn.id}': 'yes'}))
+        ep2 = Episode.query.filter_by(user_id=uid).order_by(Episode.id.desc()).first()
+        got = {ss.symptom_id: (ss.score, ss.value_bool) for ss in ep2.symptom_scores}
+        check(got == {sym.id: (6, None), yn.id: (None, True)},
+              '[new episode] scale → score only, binary → value_bool only')
 
         r = c.post(f'/episodes/{ep.id}/edit', data=dict(base, duration_hours='-1'))
         db.session.expire_all()

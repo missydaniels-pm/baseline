@@ -13,7 +13,8 @@ import logging
 import os
 import tempfile
 
-os.environ['DATABASE_URL'] = f'sqlite:///{tempfile.mkdtemp()}/t.db'
+# TEST_DATABASE_URL (CI's Postgres job) wins; otherwise an isolated temp SQLite DB.
+os.environ['DATABASE_URL'] = os.environ.get('TEST_DATABASE_URL') or f'sqlite:///{tempfile.mkdtemp()}/t.db'
 os.environ['DEBUG'] = 'true'
 os.environ['WTF_CSRF_ENABLED'] = 'false'
 os.environ.setdefault('SECRET_KEY', 'test-secret')
@@ -77,6 +78,11 @@ def main():
             check(bool(cap.lines), f'[{label}] the failure is still logged')
             check(ADDR.lower() not in joined.lower(), f'[{label}] no email address in the log')
             check(f'user {uid}' in joined, f'[{label}] the log names the user id')
+
+        cap.lines.clear()
+        app_module.resend_contact_delete('gone@example.com', user_id=999)
+        check(any('user 999' in ln for ln in cap.lines) and not any('gone@' in ln for ln in cap.lines),
+              '[resend_contact_delete] after account deletion the caller-supplied id is logged')
 
         cap.lines.clear()
         app_module._send_email('nobody@example.com', 'Hi', '<p>x</p>', 'x')

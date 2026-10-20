@@ -26,7 +26,8 @@ unset (sends no-op). Run: python test_auth_settings.py
 import os
 import tempfile
 
-os.environ['DATABASE_URL'] = f'sqlite:///{tempfile.mkdtemp()}/t.db'
+# TEST_DATABASE_URL (CI's Postgres job) wins; otherwise an isolated temp SQLite DB.
+os.environ['DATABASE_URL'] = os.environ.get('TEST_DATABASE_URL') or f'sqlite:///{tempfile.mkdtemp()}/t.db'
 os.environ['DEBUG'] = 'true'
 os.environ['WTF_CSRF_ENABLED'] = 'false'
 os.environ.setdefault('SECRET_KEY', 'test-secret')
@@ -91,10 +92,14 @@ def main():
 
         r = c.post('/register', data=dict(GOOD, email='NEW.User@Example.com'), headers=fresh_ip())
         check(User.query.count() == 1, '[register] duplicate email (any case) creates nothing')
+        r = c.post('/register', data=dict(GOOD, email='someone@mailinator.com'), headers=fresh_ip())
+        check(User.query.count() == 1 and b'non-disposable' in r.data,
+              '[register] disposable-email domain rejected')
 
         # ── Login before verifying ──
         r = c.post('/login', data={'email': GOOD['email'], 'password': GOOD['password']}, headers=fresh_ip())
-        check(r.status_code == 200 and signed_in(c) is None, '[login] unverified account is not signed in')
+        check(r.status_code == 200 and signed_in(c) is None and b'Please verify your email' in r.data,
+              '[login] unverified account → the verify-your-email notice, not signed in')
 
         # ── Verify ──
         token = generate_verify_token(GOOD['email'])
@@ -132,6 +137,18 @@ def main():
         r = c.post('/login', data={'email': GOOD['email'].upper(), 'password': GOOD['password']},
                    headers=fresh_ip())
         check(r.status_code == 302 and signed_in(c) == u.id, '[login] right password (email any case) signs in')
+
+        # A deactivated (but verified) account can't sign in.
+        gone = User(email='deactivated@example.com', is_active=False, verified_at=datetime.utcnow(),
+                    onboarding_complete=True,
+                    password_hash=bcrypt.generate_password_hash(_pw('Passw0rdX')).decode())
+        db.session.add(gone)
+        db.session.commit()
+        cd = app.test_client()
+        r = cd.post('/login', data={'email': 'deactivated@example.com', 'password': 'Passw0rdX'},
+                    headers=fresh_ip())
+        check(signed_in(cd) is None and b'deactivated' in r.data,
+              '[login] deactivated account → refused with the deactivated message')
 
         # ── Resend verification: enumeration-safe ──
         anon = app.test_client()

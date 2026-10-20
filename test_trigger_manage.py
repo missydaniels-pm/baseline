@@ -10,7 +10,8 @@ import os
 import tempfile
 
 _tmpdir = tempfile.mkdtemp()
-os.environ['DATABASE_URL'] = f'sqlite:///{_tmpdir}/test_trigger_manage.db'
+# TEST_DATABASE_URL (CI's Postgres job) wins; otherwise an isolated temp SQLite DB.
+os.environ['DATABASE_URL'] = os.environ.get('TEST_DATABASE_URL') or f'sqlite:///{_tmpdir}/test_trigger_manage.db'
 os.environ['DEBUG'] = 'true'
 os.environ['WTF_CSRF_ENABLED'] = 'false'  # test client posts without tokens
 os.environ.setdefault('SECRET_KEY', 'test-secret-key')

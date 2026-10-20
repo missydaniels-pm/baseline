@@ -22,7 +22,8 @@ Isolated temp DB. Run: python test_pages_and_crud.py
 import os
 import tempfile
 
-os.environ['DATABASE_URL'] = f'sqlite:///{tempfile.mkdtemp()}/t.db'
+# TEST_DATABASE_URL (CI's Postgres job) wins; otherwise an isolated temp SQLite DB.
+os.environ['DATABASE_URL'] = os.environ.get('TEST_DATABASE_URL') or f'sqlite:///{tempfile.mkdtemp()}/t.db'
 os.environ['DEBUG'] = 'true'
 os.environ['WTF_CSRF_ENABLED'] = 'false'
 os.environ.setdefault('SECRET_KEY', 'test-secret')
@@ -38,6 +39,10 @@ FAILS = []
 # Routes that aren't pages a signed-in user browses to with GET.
 SKIP = {'static', 'logout', 'serve_sw', 'tour_restart', 'dev_reset', 'dev_seed',
         'dev_bootstrap', 'dev_create_invite', 'verify_sent'}
+
+
+# GET endpoints that legitimately redirect a signed-in, onboarded user.
+EXPECTED_REDIRECTS = {'login', 'register', 'onboarding_step2', 'admin_analytics', 'admin_users'}
 
 
 def check(cond, msg):
@@ -77,7 +82,9 @@ def main():
                 from flask import url_for
                 url = url_for(ep)
             r = c.get(url)
-            check(r.status_code in (200, 302), f'[smoke] GET {url} → {r.status_code}')
+            # Onboarded user: only these may redirect; everything else must render.
+            ok = (200, 302) if ep in EXPECTED_REDIRECTS else (200,)
+            check(r.status_code in ok, f'[smoke] GET {url} → {r.status_code}')
 
         # Detail/edit pages for real ids.
         ep_ = Episode.query.filter_by(user_id=uid).first()
@@ -96,7 +103,10 @@ def main():
             r = c.get(url)
             check(r.status_code == 200, f'[smoke] GET {url} → {r.status_code}')
         r = c.get('/')
-        check(r.status_code == 200 and b'Baseline' in r.data, '[smoke] dashboard renders with 12 weeks of data')
+        a_symptom = Symptom.query.filter_by(user_id=uid, is_active=True).first().name.encode()
+        a_protocol = Protocol.query.filter_by(user_id=uid, type='preventative', status='active').first().name.encode()
+        check(r.status_code == 200 and a_symptom in r.data and a_protocol in r.data,
+              '[smoke] dashboard renders the seeded data (a tracked item and a preventative)')
 
         # Admin pages: admin renders, others redirect.
         for url in ('/admin/analytics', '/admin/users'):

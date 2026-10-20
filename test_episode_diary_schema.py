@@ -18,7 +18,8 @@ import tempfile
 # Isolated scratch DB — never touch the real dev DB.
 _FD, _PATH = tempfile.mkstemp(suffix='.db', prefix='diary_schema_test_')
 os.close(_FD)
-os.environ['DATABASE_URL'] = 'sqlite:///' + _PATH
+# TEST_DATABASE_URL (CI's Postgres job) wins; otherwise an isolated temp SQLite DB.
+os.environ['DATABASE_URL'] = os.environ.get('TEST_DATABASE_URL') or 'sqlite:///' + _PATH
 os.environ.setdefault('WTF_CSRF_ENABLED', 'false')
 
 from sqlalchemy import inspect, text  # noqa: E402
@@ -48,16 +49,16 @@ def _insert_user(conn, email, diary=False, span_both=True):
     conn.execute(text(
         "INSERT INTO users (name,email,is_active,onboarding_complete,ai_logging_enabled,"
         "has_seen_tour,is_admin,email_updates_enabled,diary_mode_enabled,diary_span_counts_both_days) "
-        "VALUES ('t',:e,1,0,0,0,0,1,:d,:s)"
-    ), {'e': email, 'd': 1 if diary else 0, 's': 1 if span_both else 0})
+        "VALUES ('t',:e,:t,:f,:f,:f,:f,:t,:d,:s)"
+    ), {'e': email, 't': True, 'f': False, 'd': bool(diary), 's': bool(span_both)})
     return conn.execute(text("SELECT id FROM users WHERE email=:e"), {'e': email}).scalar()
 
 
 def _insert_protocol(conn, uid):
     conn.execute(text(
         "INSERT INTO protocols (user_id,name,type,status,available) "
-        "VALUES (:u,'P','preventative','active',1)"
-    ), {'u': uid})
+        "VALUES (:u,'P','preventative','active',:t)"
+    ), {'u': uid, 't': True})
     return conn.execute(text("SELECT id FROM protocols WHERE user_id=:u ORDER BY id DESC LIMIT 1"),
                         {'u': uid}).scalar()
 
@@ -126,17 +127,28 @@ def main():
     with app.app_context():
         # Rebuild protocol_events without the diary columns/CHECK (SQLite can't DROP a
         # CHECK'd column), and plain-drop the others, to mimic a pre-diary database.
+        is_sqlite = db.engine.url.get_backend_name() == 'sqlite'
         with db.engine.begin() as conn:
-            conn.execute(text('PRAGMA foreign_keys=OFF'))
-            conn.execute(text('''CREATE TABLE protocol_events_old (
-                id INTEGER PRIMARY KEY, protocol_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
-                event_type VARCHAR(30) NOT NULL, detail TEXT, date DATE NOT NULL, created_at DATETIME)'''))
-            conn.execute(text('DROP TABLE protocol_events'))
-            conn.execute(text('ALTER TABLE protocol_events_old RENAME TO protocol_events'))
-            conn.execute(text('ALTER TABLE protocols DROP COLUMN med_class'))
-            conn.execute(text('ALTER TABLE users DROP COLUMN diary_mode_enabled'))
-            conn.execute(text('ALTER TABLE users DROP COLUMN diary_span_counts_both_days'))
-            conn.execute(text('PRAGMA foreign_keys=ON'))
+            if not is_sqlite:
+                # PostgreSQL can drop a CHECK'd column (its constraint goes with it), which
+                # is exactly the pre-diary state; then run_migrations() takes the PG branch
+                # (ADD COLUMN + named ADD CONSTRAINT) that SQLite never exercises.
+                conn.execute(text('ALTER TABLE protocol_events DROP COLUMN stop_reason'))
+                conn.execute(text('ALTER TABLE protocol_events DROP COLUMN stop_reason_note'))
+                conn.execute(text('ALTER TABLE protocols DROP COLUMN med_class'))
+                conn.execute(text('ALTER TABLE users DROP COLUMN diary_mode_enabled'))
+                conn.execute(text('ALTER TABLE users DROP COLUMN diary_span_counts_both_days'))
+            else:
+                conn.execute(text('PRAGMA foreign_keys=OFF'))
+                conn.execute(text('''CREATE TABLE protocol_events_old (
+                    id INTEGER PRIMARY KEY, protocol_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
+                    event_type VARCHAR(30) NOT NULL, detail TEXT, date DATE NOT NULL, created_at DATETIME)'''))
+                conn.execute(text('DROP TABLE protocol_events'))
+                conn.execute(text('ALTER TABLE protocol_events_old RENAME TO protocol_events'))
+                conn.execute(text('ALTER TABLE protocols DROP COLUMN med_class'))
+                conn.execute(text('ALTER TABLE users DROP COLUMN diary_mode_enabled'))
+                conn.execute(text('ALTER TABLE users DROP COLUMN diary_span_counts_both_days'))
+                conn.execute(text('PRAGMA foreign_keys=ON'))
         pre = _cols('protocol_events')
         check('stop_reason' not in pre, 'migration: pre-state has no stop_reason column')
 
