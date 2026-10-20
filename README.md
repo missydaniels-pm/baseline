@@ -79,11 +79,11 @@ The planned next chapter is a React frontend rebuild with an API-first Flask bac
 
 ## What's next
 
-Recently shipped: a printable doctor summary, ended-early experiments recorded with their reason, multiple interventions per episode with effectiveness tracking, trigger capture (manual and AI-assisted), email-verified self-serve registration, and timezone-correct day handling.
+Recently shipped: an updated privacy policy with recorded consent, self-service password reset that signs out other devices, a printable doctor summary, ended-early experiments recorded with their reason, multiple interventions per episode with effectiveness tracking, trigger capture (manual and AI-assisted), email-verified self-serve registration, and timezone-correct day handling.
 
-Current focus: backend groundwork ahead of the React rebuild — data-model cleanup and the remaining items from a pre-rebuild code review. The insurance-grade episode diary (days-per-month thresholds, step-therapy documentation) comes with the rebuild.
+Current focus: the React rebuild, starting with the backend groundwork it needs (a side-effect-free app factory, then the API's auth flows). The insurance-grade episode diary (days-per-month thresholds, step-therapy documentation) comes with the rebuild.
 
-Longer term: React frontend rebuild, native mobile, HealthKit integration, and stats-first pattern detection that turns "this might be a trigger" into a testable experiment.
+Longer term: native mobile, HealthKit integration, and stats-first pattern detection that turns "this might be a trigger" into a testable experiment.
 
 ---
 

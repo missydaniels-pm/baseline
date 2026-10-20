@@ -167,7 +167,7 @@ Two distinct failure modes — keep them separate. **Rule 1 is about *where stat
 
 ## Key Architectural Decisions
 
-**Monolith-first:** Flask serves HTML via Jinja2 templates. This was the right call for MVP speed. A React frontend rebuild is planned post-vacation (April/May 2026) once the product stabilizes at 20-30 users. The React rebuild is a deliberate learning project, not just a refactor.
+**Monolith-first:** Flask serves HTML via Jinja2 templates. This was the right call for MVP speed. A React frontend rebuild is **underway: the pre-rebuild phase closed 10/19/26** (owner decision; only absolute blockers get monolith work now — see BACKLOG's note at the top of "Now — Pre-Rebuild"). The React rebuild is a deliberate learning project, not just a refactor.
 
 **Database:** SQLite locally (no setup required), PostgreSQL in production. The DATABASE_URL environment variable controls which is used. The postgres:// → postgresql:// rewrite is handled in app.py, and the PostgreSQL engine sets `pool_pre_ping=True` (9/4/26 — Railway drops idle connections; without it the first request after an idle spell could 500 on a dead pooled connection).
 
