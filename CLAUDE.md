@@ -71,6 +71,7 @@ templates/
   offline.html          — PWA offline fallback
   [other templates]     — episodes, protocols, experiments, symptoms, settings, help
 Baseline Files/
+  START_HERE.md         — one-page engineer onboarding: what runs where, the import trap, how a change ships
   BACKLOG.md            — priorities, follow-ups, dated checks, Decision Log
   TECHNICAL_README.md   — internal engineering reference
   CONVENTIONS.md        — canonical patterns (Rule 3)
