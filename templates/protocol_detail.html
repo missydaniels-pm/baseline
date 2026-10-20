@@ -19,7 +19,7 @@
   <div class="form-group" style="margin-bottom:14px;">
     <label for="log_notes">Notes <span style="font-weight:400;text-transform:none;">(optional)</span></label>
     <input type="text" id="log_notes" name="notes" placeholder="e.g. took it late, with food…"
-           value="{{ default_notes or '' }}" style="max-width:400px;">
+           value="{{ default_notes or '' }}" maxlength="500" style="max-width:400px;">
   </div>
   <button type="submit" class="btn btn-primary btn-sm">Save</button>
 {% endmacro %}

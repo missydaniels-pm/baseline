@@ -267,6 +267,25 @@ def _resend_audience_configured():
     return os.environ['RESEND_AUDIENCE_ID']
 
 
+def _user_ref(email):
+    """Who a failed email/Resend call was about, for logs: the user id, never the
+    address (review F5 logging hygiene). Runs only on the error path."""
+    try:
+        u = User.query.filter(db.func.lower(User.email) == (email or '').lower()).first()
+    except Exception:
+        u = None
+    return f'user {u.id}' if u else 'unknown user'
+
+
+_EMAIL_LIKE = re.compile(r'[^\s@<>()"\']+@[^\s@<>()"\']+')
+
+
+def _redact_email(exc, email=None):
+    """The exception text with anything address-shaped masked — the SDK may echo
+    the recipient (or another address) in any case."""
+    return _EMAIL_LIKE.sub('<email>', str(exc))
+
+
 def resend_contact_upsert(email, unsubscribed=False):
     """Add or update a contact in the Resend audience."""
     audience_id = _resend_audience_configured()
@@ -294,8 +313,8 @@ def resend_contact_upsert(email, unsubscribed=False):
         except Exception as e2:
             if os.environ.get('DATABASE_URL'):
                 app.logger.warning(
-                    'resend_contact_upsert failed: %s: %s (email=%s)',
-                    type(e2).__name__, e2, email,
+                    'resend_contact_upsert failed: %s: %s (%s)',
+                    type(e2).__name__, _redact_email(e2, email), _user_ref(email),
                 )
 
 
@@ -309,8 +328,8 @@ def resend_contact_delete(email):
     except Exception as e:
         if os.environ.get('DATABASE_URL'):
             app.logger.warning(
-                'resend_contact_delete failed: %s: %s (email=%s)',
-                type(e).__name__, e, email,
+                'resend_contact_delete failed: %s: %s (%s)',
+                type(e).__name__, _redact_email(e, email), _user_ref(email),
             )
 
 
@@ -337,8 +356,8 @@ def _send_email(to_email, subject, html, text):
         # Log in prod only (DATABASE_URL is Railway-only). Local dev stays silent.
         if os.environ.get('DATABASE_URL'):
             app.logger.error(
-                '_send_email failed: %s: %s (to=%s, subject=%s)',
-                type(e).__name__, e, to_email, subject,
+                '_send_email failed: %s: %s (%s, subject=%s)',
+                type(e).__name__, _redact_email(e, to_email), _user_ref(to_email), subject,
             )
         return False
 
@@ -1147,48 +1166,81 @@ def _parse_nonneg_float(raw, label):
     return val, None
 
 
-def _validate_episode_form(form, symptoms):
-    """Every number and name on the episode form, checked before any write.
+SYMPTOM_INPUT_TYPES = ('scale', 'binary')
 
-    The sliders, selects and the trigger input can only send valid values, so
-    this only catches a forged or garbled POST — but it rejects with a message
-    instead of clamping, defaulting or silently dropping (review F8). Returns an
-    error string or None.
+
+def _clean_ai_text(val):
+    """Model-returned text, safe to store: stripped, NUL characters removed
+    (PostgreSQL rejects them, which would 500 the check-in — review F8 QA)."""
+    return str(val or '').replace('\x00', '').strip()
+
+
+def _parse_scale_int(raw):
+    """A 1-10 form value -> int, or None if it isn't exactly that. ASCII digits
+    only: str.isdigit() accepts '²', which int() then rejects (review)."""
+    raw = (raw or '').strip()
+    return int(raw) if re.fullmatch(r'[0-9]{1,2}', raw) and 1 <= int(raw) <= 10 else None
+
+
+def _validate_episode_form(form, symptoms):
+    """Every number and name on the episode form, parsed once before any write.
+
+    The sliders, selects and the trigger input can only send valid values, so a
+    failure here means a forged or garbled POST — rejected with a message instead
+    of clamped, defaulted or silently dropped (review F8). Returns
+    (parsed, error); the routes write `parsed` and never re-read those fields:
+      duration       float | None
+      scores         {symptom_id: int}      (rated scale symptoms with a value)
+      interventions  {row_index: (effectiveness | None, relief_hours | None)}
     """
-    _, err = _parse_nonneg_float(form.get('duration_hours'), 'Duration')
+    parsed = {'duration': None, 'scores': {}, 'interventions': {}}
+    parsed['duration'], err = _parse_nonneg_float(form.get('duration_hours'), 'Duration')
     if err:
-        return err
+        return None, err
     for sym in symptoms:
         if form.get(f'score_{sym.id}_rated') != '1':
             continue
         if sym.input_type == 'binary':
             if (form.get(f'binary_{sym.id}', '') or '').strip().lower() not in ('', 'yes', 'no'):
-                return f'"{sym.name}" must be Yes or No.'
+                return None, f'"{sym.name}" must be Yes or No.'
         else:
             raw = (form.get(f'score_{sym.id}', '') or '').strip()
-            if raw and not (raw.isdigit() and 1 <= int(raw) <= 10):
-                return f'"{sym.name}" must be a score from 1 to 10.'
+            if not raw:
+                continue
+            val = _parse_scale_int(raw)
+            if val is None:
+                return None, f'"{sym.name}" must be a score from 1 to 10.'
+            parsed['scores'][sym.id] = val
     for i in range(5):
         if not form.get(f'intervention_protocol_{i}', '').strip():
             continue
-        eff = form.get(f'intervention_effectiveness_{i}', '').strip()
-        if eff and not (eff.isdigit() and 1 <= int(eff) <= 10):
-            return 'Effectiveness must be from 1 to 10.'
-        _, err = _parse_nonneg_float(form.get(f'intervention_relief_{i}'), 'Time to relief')
+        eff_raw = form.get(f'intervention_effectiveness_{i}', '').strip()
+        eff = _parse_scale_int(eff_raw) if eff_raw else None
+        if eff_raw and eff is None:
+            return None, 'Effectiveness must be from 1 to 10.'
+        relief, err = _parse_nonneg_float(form.get(f'intervention_relief_{i}'), 'Time to relief')
         if err:
-            return err
+            return None, err
+        parsed['interventions'][i] = (eff, relief)
     for raw in form.getlist('new_trigger_names'):
         if len(_normalize_trigger_name(raw)) > 100:
-            return 'Trigger names must be 100 characters or fewer.'
-    return None
+            return None, 'Trigger names must be 100 characters or fewer.'
+    return parsed, None
 
 
 def get_user():
-    """Return the logged-in user from the session, or None."""
+    """Return the logged-in user from the session, or None.
+
+    require_auth() loads the user once per request and stashes it on `g`
+    (request-scoped, so Rule 1 holds); routes reuse it instead of re-querying
+    (review F15). Falls back to a lookup for public endpoints."""
     user_id = session.get('user_id')
-    if user_id:
-        return User.query.get(user_id)
-    return None
+    if not user_id:
+        return None
+    cached = getattr(g, 'user', None)
+    if cached is not None and cached.id == user_id:
+        return cached
+    return db.session.get(User, user_id)
 
 
 def get_active_experiment(user_id):
@@ -1845,24 +1897,36 @@ def onboarding_step1():
         row_err = None
         for i in range(1, 4):
             name = request.form.get(f'name_{i}', '').strip()
-            if name:
+            if name and not row_err:
                 desc = request.form.get(f'description_{i}', '').strip() or None
                 input_type = request.form.get(f'input_type_{i}', 'scale').strip()
                 if len(name) > 200:
                     row_err = 'Names must be 200 characters or fewer.'
                 elif desc and len(desc) > 500:
                     row_err = 'Descriptions must be 500 characters or fewer.'
-                elif input_type not in ('scale', 'binary'):
+                elif input_type not in SYMPTOM_INPUT_TYPES:
                     row_err = 'Choose Scale or Yes / No for each item.'
                 elif name.lower() in {n.lower() for n, _, _ in new_rows}:
                     row_err = f'"{name}" is listed twice.'
                 new_rows.append((name, desc, input_type))
+        # Kept symptoms (ones with scores survive the stale-delete below) count too,
+        # same as /symptoms/new's case-insensitive check.
+        if not row_err:
+            kept = {sym.name.lower(): sym for sym in Symptom.query.filter_by(user_id=user.id).all()
+                    if SymptomScore.query.filter_by(symptom_id=sym.id).first()}
+            for name, _, _ in new_rows:
+                match = kept.get(name.lower())
+                if match and match.name != name:
+                    row_err = f'"{match.name}" already exists.'
+                    break
+            # An exact match is the pre-filled kept row itself — keep it, don't re-add.
+            new_rows = [row for row in new_rows if row[0].lower() not in kept]
         if row_err:
             flash(row_err, 'error')
             symptoms = Symptom.query.filter_by(user_id=user.id).all()
             return render_template('onboarding_step1.html', symptoms=symptoms)
 
-        if not new_rows:
+        if not new_rows and not kept:
             flash('Add at least one thing to track.', 'error')
             symptoms = Symptom.query.filter_by(user_id=user.id).all()
             return render_template('onboarding_step1.html', symptoms=symptoms)
@@ -2129,6 +2193,11 @@ def admin_analytics():
 
     user = get_user()
     if not user or not user.is_admin:
+        # Same as /admin/users: an unauthorized attempt is logged, not silent (F15).
+        app.logger.warning(
+            'Unauthorized /admin/analytics access by user_id=%s',
+            user.id if user else None,
+        )
         return redirect(url_for('index'))
 
     is_sqlite = str(db.engine.url).startswith('sqlite')
@@ -2692,7 +2761,7 @@ def checkin():
                     functional_impairment=ep_data.get('functional_impairment') if ep_data.get('functional_impairment') in FUNCTIONAL_IMPAIRMENT_VALUES else None,
                     # AI path: cap-and-continue (F8). The user can't be asked to
                     # shorten a model's text; the form path rejects instead.
-                    notes=(str(ep_data.get('notes') or '').strip()[:500] or None),
+                    notes=(_clean_ai_text(ep_data.get('notes'))[:500] or None),
                 )
                 db.session.add(episode)
                 db.session.flush()
@@ -2756,7 +2825,7 @@ def checkin():
                 for intervention in interventions_list:
                     # Cap-and-continue (F8): an over-long AI name used to raise
                     # DataError on PostgreSQL (VARCHAR(200)) and lose the message.
-                    iname = str(intervention.get('name') or '').strip()[:200]
+                    iname = _clean_ai_text(intervention.get('name'))[:200]
                     if not iname:
                         continue
                     # Match to existing Protocol (type='rescue') for user
@@ -2916,8 +2985,9 @@ def new_symptom():
         name = request.form.get('name', '').strip()
         description = request.form.get('description', '').strip() or None
         input_type = request.form.get('input_type', 'scale').strip()
-        if input_type not in ('scale', 'binary'):
-            input_type = 'scale'
+        if input_type not in SYMPTOM_INPUT_TYPES:  # reject, don't substitute (F8)
+            flash('Choose Scale or Yes / No.', 'error')
+            return render_template('new_symptom.html', form_input_type='scale')
         if not name:
             flash('Give this a name.', 'error')
             return render_template('new_symptom.html', form_input_type=input_type)
@@ -2951,6 +3021,10 @@ def edit_symptom(symptom_id):
     if request.method == 'POST':
         name = request.form.get('name', '').strip()
         description = request.form.get('description', '').strip() or None
+        input_type = request.form.get('input_type', symptom.input_type).strip()
+        if not has_entries and input_type not in SYMPTOM_INPUT_TYPES:  # reject, don't ignore (F8)
+            flash('Choose Scale or Yes / No.', 'error')
+            return render_template('edit_symptom.html', symptom=symptom, has_entries=has_entries)
         if not name:
             flash('Give this a name.', 'error')
             return render_template('edit_symptom.html', symptom=symptom, has_entries=has_entries)
@@ -2972,9 +3046,7 @@ def edit_symptom(symptom_id):
         # Type can only change when no entries exist. Locked otherwise to keep
         # historical SymptomScore rows semantically valid.
         if not has_entries:
-            input_type = request.form.get('input_type', symptom.input_type).strip()
-            if input_type in ('scale', 'binary'):
-                symptom.input_type = input_type
+            symptom.input_type = input_type
         db.session.commit()
         flash('Updated.', 'success')
         return redirect(url_for('symptoms'))
@@ -3880,7 +3952,7 @@ def index():
 # Episodes
 # ---------------------------------------------------------------------------
 
-def _save_symptom_entries_from_form(episode_id, symptoms, form):
+def _save_symptom_entries_from_form(episode_id, symptoms, form, scores):
     """Persist SymptomScore rows for an episode from the logging form.
 
     Form contract per symptom s:
@@ -3899,11 +3971,9 @@ def _save_symptom_entries_from_form(episode_id, symptoms, form):
                 db.session.add(SymptomScore(episode_id=episode_id, symptom_id=s.id, value_bool=False))
             # rated=1 but no choice made -> skip (treated as unlogged for this episode)
         else:
-            score_str = (form.get(f'score_{s.id}', '') or '').strip()
-            if not score_str:
-                continue
-            # Validated 1-10 by _validate_episode_form before any write.
-            db.session.add(SymptomScore(episode_id=episode_id, symptom_id=s.id, score=int(score_str)))
+            # Parsed once (1-10) by _validate_episode_form before any write.
+            if s.id in scores:
+                db.session.add(SymptomScore(episode_id=episode_id, symptom_id=s.id, score=scores[s.id]))
 
 
 def _normalize_trigger_name(raw):
@@ -3939,6 +4009,8 @@ def _resolve_trigger(user_id, name):
     name = _normalize_trigger_name(name)
     if not name:
         return None
+    # Defense in depth only: the form path rejects >100 in _validate_episode_form
+    # (F8) and the AI path never creates triggers, so this cap never fires today.
     name = name[:100]
     lname = name.lower()
 
@@ -4111,8 +4183,9 @@ def new_episode():
             return render_template('new_episode.html', rescue_options=rescue_options, symptoms=symptoms, triggers=triggers, selected_trigger_ids=[])
 
         notes_val = request.form.get('notes', '').strip()
-        form_err = 'Notes must be 500 characters or fewer.' if len(notes_val) > 500 else \
-            _validate_episode_form(request.form, symptoms)
+        parsed, form_err = _validate_episode_form(request.form, symptoms)
+        if len(notes_val) > 500:
+            form_err = 'Notes must be 500 characters or fewer.'
         if form_err:
             flash(form_err, 'error')
             return render_template('new_episode.html', rescue_options=rescue_options, symptoms=symptoms, triggers=triggers, selected_trigger_ids=[])
@@ -4121,14 +4194,14 @@ def new_episode():
             user_id=user.id,
             onset=onset,
             peak_severity=None,
-            duration_hours=_parse_nonneg_float(request.form.get('duration_hours'), 'Duration')[0],
+            duration_hours=parsed['duration'],
             functional_impairment=impairment,
             notes=notes_val or None,
         )
         db.session.add(episode)
         db.session.flush()
 
-        _save_symptom_entries_from_form(episode.id, symptoms, request.form)
+        _save_symptom_entries_from_form(episode.id, symptoms, request.form, parsed['scores'])
 
         # Save interventions from repeatable form fields
         for i in range(5):
@@ -4143,11 +4216,7 @@ def new_episode():
             protocol = Protocol.query.filter_by(id=proto_id_int, user_id=user.id, type='rescue').first()
             if not protocol:
                 continue
-            eff_str = request.form.get(f'intervention_effectiveness_{i}', '').strip()
-            relief_str = request.form.get(f'intervention_relief_{i}', '').strip()
-            # Validated by _validate_episode_form before any write.
-            eff_val = int(eff_str) if eff_str else None
-            relief_val, _ = _parse_nonneg_float(relief_str, 'Time to relief')
+            eff_val, relief_val = parsed['interventions'][i]
             db.session.add(EpisodeIntervention(
                 episode_id=episode.id,
                 protocol_id=protocol.id,
@@ -4236,8 +4305,9 @@ def edit_episode(episode_id):
                                    suggested_trigger_names=suggested_trigger_names)
 
         notes_val = request.form.get('notes', '').strip()
-        form_err = 'Notes must be 500 characters or fewer.' if len(notes_val) > 500 else \
-            _validate_episode_form(request.form, symptoms)
+        parsed, form_err = _validate_episode_form(request.form, symptoms)
+        if len(notes_val) > 500:
+            form_err = 'Notes must be 500 characters or fewer.'
         if form_err:
             flash(form_err, 'error')
             existing_entries = {ss.symptom_id: ss for ss in episode.symptom_scores}
@@ -4247,7 +4317,7 @@ def edit_episode(episode_id):
                                    suggested_trigger_names=suggested_trigger_names)
 
         episode.onset = new_onset
-        episode.duration_hours = _parse_nonneg_float(request.form.get('duration_hours'), 'Duration')[0]
+        episode.duration_hours = parsed['duration']
         episode.functional_impairment = impairment
         episode.notes = notes_val or None
 
@@ -4256,7 +4326,7 @@ def edit_episode(episode_id):
             db.session.delete(ss)
         db.session.flush()
 
-        _save_symptom_entries_from_form(episode.id, symptoms, request.form)
+        _save_symptom_entries_from_form(episode.id, symptoms, request.form, parsed['scores'])
 
         # Replace interventions
         for ei in list(episode.interventions):
@@ -4275,11 +4345,7 @@ def edit_episode(episode_id):
             protocol = Protocol.query.filter_by(id=proto_id_int, user_id=user.id, type='rescue').first()
             if not protocol:
                 continue
-            eff_str = request.form.get(f'intervention_effectiveness_{i}', '').strip()
-            relief_str = request.form.get(f'intervention_relief_{i}', '').strip()
-            # Validated by _validate_episode_form before any write.
-            eff_val = int(eff_str) if eff_str else None
-            relief_val, _ = _parse_nonneg_float(relief_str, 'Time to relief')
+            eff_val, relief_val = parsed['interventions'][i]
             db.session.add(EpisodeIntervention(
                 episode_id=episode.id,
                 protocol_id=protocol.id,

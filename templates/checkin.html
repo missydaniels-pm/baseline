@@ -55,7 +55,6 @@
       <form method="POST" id="checkinForm">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="client_time" id="clientTime">
-        <input type="hidden" name="client_tz" id="clientTz">
         <div class="chat-input-row">
           <textarea id="messageInput" name="message" placeholder="How are you feeling today?" rows="1"></textarea>
           <button type="submit" class="btn btn-primary" id="sendBtn">Send</button>
@@ -82,14 +81,9 @@
            'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
   }
 
-  var clientTzInput = document.getElementById('clientTz');
-
-  // Seed client_time and timezone on load
+  // Seed client_time on load. (The zone comes from the baseline_tz cookie —
+  // a client_tz field used to be posted here that nothing read; review F15.)
   if (clientTimeInput) clientTimeInput.value = localISOString();
-  if (clientTzInput) {
-    try { clientTzInput.value = Intl.DateTimeFormat().resolvedOptions().timeZone; }
-    catch(e) { clientTzInput.value = ''; }
-  }
 
   // Auto-scroll to bottom on load
   if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;

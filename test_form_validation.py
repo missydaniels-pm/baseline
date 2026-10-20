@@ -27,7 +27,7 @@ os.environ.pop('RESEND_API_KEY', None)
 from datetime import datetime, date, timedelta
 
 from app import app
-from database import db, User, Episode, Protocol, ProtocolEvent, Experiment, Symptom, ProtocolCompliance, EpisodeIntervention, Trigger
+from database import db, User, Episode, Protocol, ProtocolEvent, Experiment, Symptom, SymptomScore, ProtocolCompliance, EpisodeIntervention, Trigger
 
 FAILS = []
 
@@ -218,6 +218,9 @@ def main():
             ('negative relief', {'intervention_protocol_0': str(rescue.id),
                                  'intervention_relief_0': '-1'}, b'Time to relief must be'),
             ('trigger name over 100', {'new_trigger_names': 'x' * 101}, b'100 characters'),
+            ('superscript score', {f'score_{sym.id}_rated': '1', f'score_{sym.id}': '\u00b2'}, b'score from 1 to 10'),
+            ('superscript effectiveness', {'intervention_protocol_0': str(rescue.id),
+                                           'intervention_effectiveness_0': '\u00b2'}, b'Effectiveness must be'),
             ('notes over 500', {'notes': 'n' * 501}, b'500 characters'),
         ]:
             before = episodes()
@@ -272,6 +275,43 @@ def main():
                                                 'name_2': 'pain', 'input_type_2': 'scale'})
         check(Symptom.query.filter_by(user_id=u2.id).count() == 0 and b'listed twice' in r.data,
               '[onboarding] duplicate names rejected')
+
+    # Onboarding duplicate against a kept (scored) symptom; resubmitting the
+    # pre-filled kept row must not duplicate it.
+    with app.app_context():
+        u3 = User(email='onb3@test.com', is_active=True, verified_at=datetime.utcnow(),
+                  onboarding_complete=False)
+        u3.password_hash = 'x'
+        db.session.add(u3)
+        db.session.flush()
+        kept = Symptom(user_id=u3.id, name='Pain', input_type='scale')
+        db.session.add(kept)
+        db.session.flush()
+        e3 = Episode(user_id=u3.id, onset=datetime.now() - timedelta(days=1))
+        db.session.add(e3)
+        db.session.flush()
+        db.session.add(SymptomScore(episode_id=e3.id, symptom_id=kept.id, score=5))
+        db.session.commit()
+        c4 = app.test_client()
+        with c4.session_transaction() as sess:
+            sess['user_id'] = u3.id
+        r = c4.post('/onboarding/step1', data={'name_1': 'pain', 'input_type_1': 'scale'})
+        check(Symptom.query.filter_by(user_id=u3.id).count() == 1 and b'already exists' in r.data,
+              '[onboarding] case-variant of a kept symptom rejected')
+        r = c4.post('/onboarding/step1', data={'name_1': 'Pain', 'input_type_1': 'scale',
+                                                'name_2': 'Fog', 'input_type_2': 'scale'})
+        names = sorted(x.name for x in Symptom.query.filter_by(user_id=u3.id).all())
+        check(r.status_code == 302 and names == ['Fog', 'Pain'],
+              '[onboarding] resubmitting the kept row does not duplicate it')
+
+    with app.app_context():
+        c3 = app.test_client()
+        with c3.session_transaction() as sess:
+            sess['user_id'] = uid
+        before = Symptom.query.filter_by(user_id=uid).count()
+        r = c3.post('/symptoms/new', data={'name': 'Brain fog', 'input_type': 'sliders'})
+        check(Symptom.query.filter_by(user_id=uid).count() == before and b'Scale or Yes' in r.data,
+              '[new symptom] off-list type rejected (was silently made a scale)')
 
     if FAILS:
         print(f'\n{len(FAILS)} FAILED')

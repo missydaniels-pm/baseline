@@ -77,14 +77,20 @@
 </div>
 
 <script>
-  var visibleRows = {{ [symptoms|length, 1]|max }};
+  // Reveal the first hidden row; hide the button once none are left. Counting
+  // from the DOM (not the saved-symptom count) keeps it right after a
+  // validation re-render shows rows the user had typed into.
   var addBtn = document.getElementById('add-row-btn');
-
+  function hiddenRows() {
+    return [1, 2, 3].map(function(i) { return document.getElementById('row-' + i); })
+                    .filter(function(r) { return r && r.style.display === 'none'; });
+  }
+  function syncAddBtn() { addBtn.style.display = hiddenRows().length ? '' : 'none'; }
   addBtn.addEventListener('click', function() {
-    visibleRows++;
-    var row = document.getElementById('row-' + visibleRows);
-    if (row) row.style.display = '';
-    if (visibleRows >= 3) addBtn.style.display = 'none';
+    var next = hiddenRows()[0];
+    if (next) next.style.display = '';
+    syncAddBtn();
   });
+  syncAddBtn();
 </script>
 {% endblock %}

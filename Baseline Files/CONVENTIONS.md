@@ -315,9 +315,18 @@ here in the same commit.
   records (8/8/26); the **edit** routes had the identical gap and were worse — a blank
   name overwrote a live record's name behind a success flash (8/12/26). Both fixed.
   If you add a named record, add the guard on **both** the create and the edit path.
-- Text caps: name ≤ 200, description/notes ≤ 500 (with a UI counter). Enforce on
-  **every** write path for the same field — form, AI check-in, and dashboard/JSON —
-  not just one.
+- Text caps: name ≤ 200, description/notes ≤ 500, trigger names ≤ 100 (with a UI
+  counter or `maxlength`). Enforce on **every** write path for the same field — form,
+  AI check-in, and dashboard/JSON — not just one. **How, by path (review F8, 10/19/26):**
+  forms and JSON **reject** with a message (never truncate, clamp or default); the
+  **AI check-in caps and continues** (`[:N]` after `_clean_ai_text()`, which also strips
+  NUL characters PostgreSQL rejects) — the user can't be asked to shorten a model's text.
+- **Parse once, then write the parsed value.** A form with many numeric fields gets one
+  validator that returns `(parsed, error)` — `_validate_episode_form()` is the exemplar —
+  and the save code consumes `parsed`, never re-reading `request.form`. Integer form
+  values go through a strict ASCII parser (`_parse_scale_int`): `str.isdigit()` accepts
+  `'²'`, which `int()` then rejects with a 500. Optional non-negative numbers:
+  `_parse_nonneg_float`.
 - **Enum-ish fields validate against one shared tuple** (`FUNCTIONAL_IMPAIRMENT_VALUES`,
   `PROTOCOL_STATUSES`, `EXPERIMENT_DECISIONS`) on **every** write path — form, AI
   check-in, `CHECKIN_SCHEMA`. A `<select>` is a convenience, like `required`. Adding an
@@ -326,7 +335,8 @@ here in the same commit.
   silently replaced with a default ("today", 3 weeks) or silently ignored. Blank may
   mean "use the default" when that's the field's documented meaning. Parse helpers
   return `(value, error)` — `_parse_date` (the one form-date parser), `_parse_onset`,
-  `_parse_impairment`, `_parse_stabilization_weeks`, and `_resolve_effective_date`
+  `_parse_impairment`, `_parse_stabilization_weeks`, `_parse_outcome_rating`,
+  `_parse_nonneg_float`, `_parse_scale_int`, and `_resolve_effective_date`
   (which builds on `_parse_date`). Exit-gate F8.
 - Validate everything before the DB write. JSON endpoints reject invalid input with
   `{ok: false, error}` + a 4xx **before** any partial write.
