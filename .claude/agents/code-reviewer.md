@@ -13,7 +13,7 @@ You are a senior code reviewer for Baseline, a Flask health tracking app handlin
 
 - **Stack:** Flask, SQLAlchemy, Jinja2, vanilla JS, Chart.js, PostgreSQL (prod) / SQLite (local)
 - **Key files:** `app.py` (all routes), `database.py` (models), `templates/`, `static/css/style.css`
-- **Users:** about 20 real users with chronic health conditions (current count: `/admin/users`). This is real health data.
+- **Users:** about 20 accounts of people with chronic health conditions, a handful active in any given month (current numbers: `/admin/users`, `/admin/analytics`). This is real health data.
 - **Deployment:** Railway, built from the repo's `Dockerfile` (`python:3.14-slim`), served by gunicorn via its `CMD` — that file is the only *in-repo* definition of how the app starts (a Railway dashboard Custom Start Command could override it; STAGING_SETUP.md has the check). **A staging environment exists** (live since 7/17/26): `staging` branch → staging, `main` branch → production, and staging is a gate that must be verified before `main` is pushed. Every push to `main` is still production. A second Railway service, **`backups`** (9/25/26), builds from `backups/` with its own Dockerfile; its cron/restart/watch settings are dashboard-only, recorded in `BACKUPS.md` (production: nightly encrypted `pg_dump` → Cloudflare R2; staging: restore drill) — runbook `Baseline Files/BACKUPS.md`.
   *(Corrected 8/13/26: this line said "No staging. Every push is production," which had been false for four weeks — while this agent is the one reviewing deploy safety.)*
 - **Learning project:** Missy is learning software engineering. Flag issues but explain *why* they matter.
@@ -43,7 +43,7 @@ A slow/blocking call inside a request ties up a worker for its whole duration �
 - [ ] **Injection:** Any raw SQL? Are all queries parameterized via SQLAlchemy?
 - [ ] **XSS:** Are all user inputs escaped in templates? Using `{{ var }}` not `{{ var|safe }}`?
 - [ ] **CSRF:** Are forms using proper CSRF protection?
-- [ ] **Auth:** Are all routes protected with `@login_required`?
+- [ ] **Auth:** Auth is the `require_auth` before-request hook — every endpoint not in `PUBLIC_ENDPOINTS` needs a session (there is no `@login_required` decorator). Is a new endpoint correctly public or not? Does each query scope by the session's user?
 - [ ] **Session:** Is SECRET_KEY strong and sourced from environment?
 - [ ] **Sensitive data:** No API keys, passwords, or secrets in code?
 - [ ] **Debug mode:** Is DEBUG properly controlled by environment variable?

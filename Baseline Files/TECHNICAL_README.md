@@ -134,7 +134,7 @@ Local `.env` file uses `load_dotenv(override=True)` to ensure `.env` always wins
 
 ## Foreign Keys / ON DELETE
 
-All 20 foreign keys carry DB-level `ON DELETE` directives, declared once in `database.EXPECTED_FK_ONDELETE` (16 `CASCADE`, 3 `SET NULL`). That dict is authoritative for the model `ondelete=` kwargs, the PostgreSQL migration (`migrate_fk_ondelete`), and `verify_fk_ondelete()`.
+All 20 foreign keys carry DB-level `ON DELETE` directives, declared once in `database.EXPECTED_FK_ONDELETE` (17 `CASCADE`, 3 `SET NULL`). That dict is authoritative for the model `ondelete=` kwargs, the PostgreSQL migration (`migrate_fk_ondelete`), and `verify_fk_ondelete()`.
 
 - **`SET NULL` is only** `checkins.episode_id`, `experiments.protocol_id`, `invite_codes.used_by_user_id` — the children that deliberately outlive their parent. Changing one to `CASCADE` destroys user history.
 - **Both increments shipped 8/8/26.** Inc 1 added the constraints (behaviour-preserving); Inc 2 removed the hand-ordered cleanup and added `passive_deletes=True` to 11 relationships, so a hard delete is now a single `db.session.delete(parent)` and the DB cascades. `dev_reset` is the one exception — it keeps the `User` row, so it still bulk-deletes each top-level owned table (order matters: `CheckIn` before `Episode`, or `SET NULL` detaches chat history instead of removing it).
@@ -188,60 +188,80 @@ Killing the dev server: `pkill -f "python3 app.py"` does **not** match it — th
 
 ## Routes
 
+Generated from `app.url_map` on 10/19/26 (59 routes) — regenerate rather than hand-edit:
+`python -c "from app import app; [print(r.rule, sorted(r.methods)) for r in app.url_map.iter_rules()]"`.
+Auth is the `require_auth` before-request hook (everything not in `PUBLIC_ENDPOINTS` needs a session, and an unfinished onboarding redirects to step 1) — there is no `@login_required` decorator.
+
 ### Public
 | Route | Method | Description |
 |---|---|---|
 | `/login` | GET, POST | Login (rate-limited 20/hour POST). Surfaces resend prompt for unverified accounts. |
+| `/offline` | GET | PWA offline fallback |
+| `/privacy` | GET | Privacy policy. |
 | `/register` | GET, POST | Self-serve registration (rate-limited 5/hour POST). Requires privacy policy acknowledgment. Creates inactive user and sends verification email. |
+| `/resend-verification` | GET, POST | Resend verification email (rate-limited 5/hour POST). Enumeration-safe. |
+| `/sw.js` | GET | Service worker (must be served from root scope) |
+| `/unsubscribe/<token>` | GET | One-click unsubscribe from app-update emails. Stateless HMAC-SHA256 token over SECRET_KEY (no expiry). Rate-limited 30/hour/IP. Sets `email_updates_enabled=False` and syncs Resend contact. Enumeration-safe — invalid token, tampered token, and unknown-email all return the same generic error. |
 | `/verify/<token>` | GET | Email verification callback. Signed itsdangerous token, 24h TTL, SHA-256 replay protection via `used_verify_tokens`. |
 | `/verify/sent` | GET | "Check your email" confirmation page. |
-| `/resend-verification` | GET, POST | Resend verification email (rate-limited 5/hour POST). Enumeration-safe. |
-| `/unsubscribe/<token>` | GET | One-click unsubscribe from app-update emails. Stateless HMAC-SHA256 token over SECRET_KEY (no expiry). Rate-limited 30/hour/IP. Sets `email_updates_enabled=False` and syncs Resend contact. Enumeration-safe — invalid token, tampered token, and unknown-email all return the same generic error. |
-| `/logout` | GET | Logout |
-| `/sw.js` | GET | Service worker (must be served from root scope) |
-| `/offline` | GET | PWA offline fallback |
 
 ### Authenticated
 | Route | Method | Description |
 |---|---|---|
 | `/` | GET | Dashboard with charts |
-| `/onboarding` | GET, POST | First-run onboarding wizard |
-| `/checkin` | GET, POST | AI daily check-in. Parses episodes/interventions/compliance and now triggers: matched triggers link (`source='ai'`) via `_apply_ai_triggers()`; unmatched names become session-held suggestions surfaced for confirmation on the episode form. |
-| `/episodes` | GET, POST | Episode log. New/edit episode forms include a trigger chip multi-select + inline "+ add" (match-and-link via `_resolve_trigger()` / `_save_episode_triggers_from_form()`). |
-| `/triggers` | GET | Manage Triggers (linked from Settings, not in nav): rename + pause/resume the user's own custom triggers; globals read-only. |
-| `/triggers/<id>/rename` | POST | Rename an own custom (rejects collision with a global or another own custom; 100-char cap). |
-| `/triggers/<id>/deactivate`, `/triggers/<id>/reactivate` | POST | Soft pause/resume an own custom (history preserved). |
-| `/symptoms` | GET, POST | Symptom management |
-| `/protocols` | GET, POST | Protocol management |
-| `/experiments` | GET, POST | Experiment tracking (supports inline protocol creation) |
-| `/experiments/<id>/assess` | GET, POST | Experiment assessment. For an **ended** trial the GET is a read-only "Experiment Results" page whose "during" window stops at `ended_on()`; POST is one-shot (refuses completed and abandoned trials) and rejects — never clamps — an off-scale rating (`_parse_outcome_rating`). Records `end_date`. |
-| `/experiments/<id>/abandon` | GET, POST | End early (10/19/26): form with required reason (`EXPERIMENT_STOP_REASON_VALUES`), optional note ≤500, last day (default today; not before the start, not after `max(today, start)`), optional 1–10 rating. One-shot: only an active trial; validated before any assignment. Does **not** change the protocol (the page says so and links to it). |
-| `/experiments/<id>/edit` | GET, POST | Name/hypothesis always editable. A running trial's protocol can switch to another own preventative but can't be blanked or set to an unknown id (review F9); an ended trial's protocol, start date and stabilization weeks are locked (they define its results window). |
-| `/reports/doctor-summary` | GET | Doctor summary (10/19/26, linked from Settings): `?start=&end=&notes=1`, local days inclusive, default last 90 days, max 3 years; a malformed/inverted/future range flashes and falls back to the default. Data from **`build_doctor_summary(user_id, start, end, include_notes)`** — request-context-free, returns a dict, the part the rebuild's API reuses. No AI, no third party, no PDF library: `@media print` CSS + browser Print. Notes off unless `notes=1`. |
-| `/settings` | GET, POST | User settings |
-| `/settings/password` | POST | Change password |
-| `/settings/email` | POST | Change email. Also updates Resend contact (delete old, upsert new with current `email_updates_enabled`). |
-| `/settings/email-preferences` | POST | Toggle `email_updates_enabled`. Mirrors the new state to Resend audience. |
-| `/settings/delete-account` | POST | Delete account and all data (MHMD compliance). Removes Resend contact before DB delete. |
-| `/help` | GET | Help and documentation |
 | `/admin/analytics` | GET | Admin-only usage analytics dashboard (signups, logins, DAU/WAU, feature usage, retention) |
 | `/admin/users` | GET | Admin-only read-only user directory: email, verified, joined, last login, email_updates_enabled, episode count. Unauthorized access logs a warning. Excluded from `SKIP_TRACKING` so admin browsing doesn't pollute analytics. |
-| `/protocols/log-day` | POST | JSON batch compliance save for the dashboard Today's Protocols card (confirm + 7-day backfill). Body `{date, entries: [{protocol_id, took, note}]}`. `took` is tri-state: `true`/`false` upsert the day's row, `null` un-logs it (deletes any existing row). Validates date within `[user_today−7, user_today+1]` (anchored on the user's local day via `user_today()` so it lines up with the browser-local date the card sends), ownership of every protocol id, `took ∈ {true,false,null}` (other types → 400), note ≤500 chars — all before touching the session, so an invalid entry can't partial-write. Single commit, returns `{ok, date, day_status}` where day_status ∈ hollow/amber/green. |
+| `/checkin` | GET, POST | AI daily check-in. Parses episodes/interventions/compliance and now triggers: matched triggers link (`source='ai'`) via `_apply_ai_triggers()`; unmatched names become session-held suggestions surfaced for confirmation on the episode form. |
+| `/episodes` | GET | Episode history (paginated: no — fine at today's size; review F15). |
 | `/episodes/<id>/delete` | POST | FK-safe (fixed 7/12/26): detaches AI check-in messages referencing the episode (`checkins.episode_id=NULL` — chat history survives) before deleting; SymptomScores/EpisodeInterventions removed by ORM cascade; IntegrityError → rollback + friendly flash. Previously 500'd in production for episodes logged via AI check-in. |
+| `/episodes/<id>/edit` | GET, POST | Edit an episode; replace-on-save for scores, interventions and trigger links (provenance kept). Pre-loads AI-suggested triggers from the session. Same validator as new. |
+| `/episodes/new` | GET, POST | Log an episode. Trigger chip multi-select + inline "+ add" (match-and-link via `_resolve_trigger()` / `_save_episode_triggers_from_form()`). Every number/name parsed once by `_validate_episode_form()` before any write (F8). |
+| `/experiments` | GET | Experiments list: active, completed, ended early (each with a results link). |
+| `/experiments/<id>/abandon` | GET, POST | End early (10/19/26): form with required reason (`EXPERIMENT_STOP_REASON_VALUES`), optional note ≤500, last day (default today; not before the start, not after `max(today, start)`), optional 1–10 rating. One-shot: only an active trial; validated before any assignment. Does **not** change the protocol (the page says so and links to it). |
+| `/experiments/<id>/assess` | GET, POST | Experiment assessment. For an **ended** trial the GET is a read-only "Experiment Results" page whose "during" window stops at `ended_on()`; POST is one-shot (refuses completed and abandoned trials) and rejects — never clamps — an off-scale rating (`_parse_outcome_rating`). Records `end_date`. |
+| `/experiments/<id>/edit` | GET, POST | Name/hypothesis always editable. A running trial's protocol can switch to another own preventative but can't be blanked or set to an unknown id (review F9); an ended trial's protocol, start date and stabilization weeks are locked (they define its results window). |
+| `/experiments/new` | GET, POST | Start an experiment (supports inline protocol creation; warns if one is already active). |
+| `/experiments/offer/<id>` | GET | After creating a protocol: "track it as an experiment?" |
+| `/help` | GET | User guide (single source of truth for help copy). |
+| `/logout` | GET | Logout. Passes the onboarding gate (fixed 10/19/26 — it was redirected to step 1). |
+| `/onboarding/step1` | GET, POST | Onboarding 1 — what to track (up to 3 rows; rejects over-long/duplicate/off-list — F8). |
+| `/onboarding/step2` | GET, POST | Onboarding 2 — baselines (bad days/month, per-item 1–10). |
+| `/onboarding/step3` | GET, POST | Onboarding 3 — AI logging choice; completes onboarding. |
+| `/protocols` | GET | Protocols + interventions list. |
+| `/protocols/<id>` | GET | Protocol detail: compliance + event timeline, "log today" form. |
 | `/protocols/<id>/delete` | POST | Hard delete is **one statement** as of FK cleanup Increment 2 (8/8/26): `db.session.delete(protocol)` and the DB cascades EpisodeIntervention / ProtocolCompliance / ProtocolEvent, and detaches Experiments via `ON DELETE SET NULL` (hypothesis/outcome history survives; templates guard with `{% if exp.protocol %}`). **Do not reintroduce hand-ordered child cleanup.** An active experiment testing the protocol is marked abandoned first (8/8/26), with `end_date = max(today, start_date)` (10/19/26) — that's product logic no FK directive can express. Rescue protocols with historical episode usage soft-delete (`status='removed'`) instead. Guarded by `deletion_blocked_response()` + `except IntegrityError`. |
+| `/protocols/<id>/edit` | GET, POST | Edit dose/status with a back-datable effective date (`_resolve_effective_date`); writes ProtocolEvents only on real transitions. |
+| `/protocols/<id>/log` | POST | "Log today" from the detail page — took yes/no required, note ≤500 (F8). |
+| `/protocols/log-day` | POST | JSON batch compliance save for the dashboard Today's Protocols card (confirm + 7-day backfill). Body `{date, entries: [{protocol_id, took, note}]}`. `took` is tri-state: `true`/`false` upsert the day's row, `null` un-logs it (deletes any existing row). Validates date within `[user_today−7, user_today+1]` (anchored on the user's local day via `user_today()` so it lines up with the browser-local date the card sends), ownership of every protocol id, `took ∈ {true,false,null}` (other types → 400), note ≤500 chars — all before touching the session, so an invalid entry can't partial-write. Single commit, returns `{ok, date, day_status}` where day_status ∈ hollow/amber/green. |
+| `/protocols/new` | GET, POST | Create a preventative (writes a `started` ProtocolEvent); offers an experiment after. |
+| `/reports/doctor-summary` | GET | Doctor summary (10/19/26, linked from Settings): `?start=&end=&notes=1`, local days inclusive, default last 90 days, max 3 years; a malformed/inverted/future range flashes and falls back to the default. Data from **`build_doctor_summary(user_id, start, end, include_notes)`** — request-context-free, returns a dict, the part the rebuild's API reuses. No AI, no third party, no PDF library: `@media print` CSS + browser Print. Notes off unless `notes=1`. |
+| `/rescue-options/<id>/edit` | GET, POST | Edit an intervention (not while removed). |
+| `/rescue-options/<id>/restore` | POST | Restore a soft-removed intervention. |
+| `/rescue-options/new` | GET, POST | Create an intervention (Protocol type=rescue). |
+| `/settings` | GET, POST | User settings |
+| `/settings/delete-account` | POST | Delete account and all data (MHMD compliance). Removes Resend contact before DB delete. |
+| `/settings/email` | POST | Change email. Also updates Resend contact (delete old, upsert new with current `email_updates_enabled`). |
+| `/settings/email-preferences` | POST | Toggle `email_updates_enabled`. Mirrors the new state to Resend audience. |
+| `/settings/password` | POST | Change password |
+| `/symptoms` | GET | What I Track — list. |
+| `/symptoms/<id>/deactivate` | POST | Pause a tracked item (history kept). |
+| `/symptoms/<id>/edit` | GET, POST | Rename/describe; type changeable only while no scores exist. |
+| `/symptoms/<id>/reactivate` | POST | Resume a tracked item. |
+| `/symptoms/new` | GET, POST | Create a tracked item (scale | binary; case-insensitive unique name). |
 | `/tour/complete` | POST | Mark welcome tour as seen (JSON response) |
 | `/tour/restart` | GET | Reset tour flag and redirect to dashboard |
+| `/triggers` | GET | Manage Triggers (linked from Settings, not in nav): rename + pause/resume the user's own custom triggers; globals read-only. |
+| `/triggers/<id>/deactivate` | POST | Soft pause/resume an own custom (history preserved). |
+| `/triggers/<id>/reactivate` | POST | Soft pause/resume an own custom (history preserved). |
+| `/triggers/<id>/rename` | POST | Rename an own custom (rejects collision with a global or another own custom; 100-char cap). |
 
-### Dev Only (DEBUG=true)
-
-All dev routes are grouped in a clearly marked section at the bottom of `app.py`. Every route has an explicit `if not app.debug: return 403` guard so they are automatically blocked in production (Railway, DEBUG=false).
-
-| Route | Description |
-|---|---|
-| `/dev/reset` | Clear all user data, reset onboarding for testing |
-| `/dev/seed` | Populate 12 weeks of realistic test data (only if <20 episodes) |
-| `/dev/create-invite` | Generate a new invite code |
-| `/dev/bootstrap` | Create admin account on fresh empty database (random password, shown once — no fixed credential in the repo) |
+### Dev only (`app.debug`; `/dev/bootstrap` is public but 403s outside debug)
+| Route | Method | Description |
+|---|---|---|
+| `/dev/bootstrap` | GET | Creates the first account on an empty DB with a random password shown once. The account is **not** an admin (`is_admin=False`; admin comes from `ADMIN_EMAIL` at startup). Returns 403 unless `app.debug`. |
+| `/dev/create-invite` | GET | Generate a legacy invite code. |
+| `/dev/reset` | GET, POST | Clear all of the current user's data, reset onboarding. |
+| `/dev/seed` | GET, POST | 12 weeks of test data (only if <20 episodes). |
 
 ---
 
@@ -307,8 +327,7 @@ public-domain **target port** still pointed at the previous deployment's port, s
   just makes the guarantee explicit and fails safe if a second command is ever appended. PID 1 in the
   real container: **verified 9/4/26** — both the staging and production boot logs show the gunicorn
   master logging as `[1]` (`Listening at … (1)`), so gunicorn is PID 1 and receives SIGTERM directly.
-  *(The Dockerfile's own comment still says "NOT verified" — retire it in the next commit that touches
-  the Dockerfile; a comment-only change there rebuilds the image, so it wasn't bundled into a docs commit.)*
+  (The Dockerfile comment was updated to match on 10/19/26.)
   *(Corrected 8/13/26: this line read "gunicorn, Python 3.13" — gunicorn was not actually running
   at all before 8/12/26, and the version became 3.10 when the build moved to the Dockerfile; 3.14 since 10/4/26.)*
 - **Postgres** — PostgreSQL **17.11** (production, checked 9/25/26) with persistent volume. Free tier: Railway itself takes no scheduled backups we control — ours come from the `backups` service below.

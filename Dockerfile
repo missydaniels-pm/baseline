@@ -79,8 +79,8 @@ EXPOSE 8080
 # silently reintroduce the real hazard. The `sh -c` wrapper keeps ${PORT}
 # expansion, which a bare JSON array would lose.
 #
-# NOT verified: PID 1 inside the actual Railway container. `railway ssh` +
-# `cat /proc/1/comm` would settle it and needs an SSH key generated first.
+# Verified 9/4/26: gunicorn IS PID 1 in the real Railway container — the
+# staging and production boot logs show the master as `[1]` (`Listening at … (1)`).
 #
 # One worker, matching the previous single-process behaviour: adding workers
 # would make the startup migrations run concurrently, which is a separate change

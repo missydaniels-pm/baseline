@@ -1,6 +1,6 @@
 # Baseline — Claude Code Context Document
 
-Last updated: July 18, 2026
+Last updated: October 19, 2026
 
 This file gives Claude Code persistent context about the Baseline project. Read it at the start of every session before making any changes.
 
@@ -188,7 +188,7 @@ Two distinct failure modes — keep them separate. **Rule 1 is about *where stat
 - `/dev/reset` — clears all user data, resets onboarding
 - `/dev/seed` — populates 12 weeks of test data (only if <20 episodes exist)
 - `/dev/create-invite` — generates a new invite code
-- `/dev/bootstrap` — creates admin account on empty database (safe: checks for zero users first)
+- `/dev/bootstrap` — creates the first account on an empty database with a random password shown once (safe: checks for zero users first). **Not an admin** — `is_admin` comes from `ADMIN_EMAIL` at startup
 
 ---
 

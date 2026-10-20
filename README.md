@@ -100,7 +100,7 @@ cd baseline
 
 ./run.sh
 # Open http://localhost:5001
-# Use /dev/bootstrap to create the first admin account
+# Use /dev/bootstrap to create the first account (not an admin — set ADMIN_EMAIL for that)
 ```
 
 ---
