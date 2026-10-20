@@ -29,7 +29,7 @@ os.environ['WTF_CSRF_ENABLED'] = 'false'
 os.environ.setdefault('SECRET_KEY', 'test-secret')
 os.environ.pop('RESEND_API_KEY', None)
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app import app, seed_test_data, generate_unsubscribe_token
 from database import (db, User, Episode, Protocol, Symptom, SymptomScore, Experiment, Trigger)
@@ -107,6 +107,15 @@ def main():
         a_protocol = Protocol.query.filter_by(user_id=uid, type='preventative', status='active').first().name.encode()
         check(r.status_code == 200 and a_symptom in r.data and a_protocol in r.data,
               '[smoke] dashboard renders the seeded data (a tracked item and a preventative)')
+
+        # The seed's trial history renders where users look for it.
+        r = c.get('/experiments')
+        check(b'Topiramate trial' in r.data and b'It made my symptoms worse' in r.data
+              and b'Magnesium trial' in r.data, '[seed] ended-early and completed trials listed')
+        year_ago = (datetime.now().date() - timedelta(days=365)).isoformat()
+        r = c.get(f'/reports/doctor-summary?start={year_ago}')
+        check(r.status_code == 200 and b'Topiramate trial' in r.data,
+              '[seed] the doctor summary lists the ended-early trial')
 
         # Admin pages: admin renders, others redirect.
         for url in ('/admin/analytics', '/admin/users'):

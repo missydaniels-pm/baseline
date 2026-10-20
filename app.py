@@ -5414,6 +5414,47 @@ def seed_test_data(user):
     seed_compliance(prev1, prev1.start_date)
     seed_compliance(prev2, prev2.start_date)
 
+    # ── Trial history: a stopped preventative and every experiment outcome ──
+    # So /dev/seed and staging exercise the ended-early flow, the results page,
+    # the doctor summary and the episode-diary stop columns (seed rows 8/13/26).
+    tried_start = base_date + timedelta(weeks=2)
+    tried_end = tried_start + timedelta(weeks=3)
+    tried = Protocol(
+        user_id=user.id, name='Topiramate 25mg', type='preventative',
+        start_date=tried_start, dose_frequency='25mg at night', status='stopped',
+        med_class='anticonvulsant',
+    )
+    db.session.add(tried)
+    db.session.flush()
+    db.session.add_all([
+        ProtocolEvent(protocol_id=tried.id, user_id=user.id, event_type='started', date=tried_start),
+        ProtocolEvent(protocol_id=tried.id, user_id=user.id, event_type='stopped', date=tried_end,
+                      stop_reason='side_effects', stop_reason_note='Word-finding trouble and tingling.'),
+        Experiment(
+            user_id=user.id, name='Topiramate trial', protocol_id=tried.id,
+            hypothesis='Fewer migraine days within a month.', start_date=tried_start,
+            stabilization_weeks=6, status='abandoned', end_date=tried_end,
+            stop_reason='made_worse', stop_reason_note='More episodes in week 2, plus side effects.',
+            outcome_rating=2,
+        ),
+        Experiment(
+            user_id=user.id, name='Magnesium trial', protocol_id=prev1.id,
+            hypothesis='Fewer bad days within 6 weeks.', start_date=base_date,
+            stabilization_weeks=6, status='completed', end_date=base_date + timedelta(weeks=6),
+            outcome_rating=7, outcome_notes='Bad days dropped noticeably.', decision='continue',
+        ),
+    ])
+
+    # ── Check-in history linked to an episode (exercises checkins.episode_id SET NULL) ──
+    last_ep = Episode.query.filter_by(user_id=user.id).order_by(Episode.onset.desc()).first()
+    if last_ep:
+        db.session.add_all([
+            CheckIn(user_id=user.id, role='user', episode_id=last_ep.id,
+                    content='Migraine this afternoon, about a 6, took a sumatriptan.'),
+            CheckIn(user_id=user.id, role='assistant', episode_id=last_ep.id,
+                    content='Logged — 6/10, sumatriptan.'),
+        ])
+
     db.session.commit()
 
 
