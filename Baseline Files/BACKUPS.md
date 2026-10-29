@@ -41,7 +41,7 @@ environment's variables is as sensitive as access to production data. Keep the R
 single-owner, and never paste staging variables anywhere.
 
 The script **never deletes anything**. Old copies expire through the lifecycle rule. The R2 API token
-(`baseline-backup-writer`) is scoped to **Object Read & Write on this one bucket**, so it cannot
+(`baseline-backup-writer-2026-10`, created 10/26/26, **expires 2027-01-24**; BACKLOG has the dated rotation row) is scoped to **Object Read & Write on this one bucket**, so it cannot
 touch any other bucket or change account settings.
 
 **The passphrase is the one thing that must not be lost.** Without it every backup is unreadable,
@@ -183,10 +183,16 @@ reason.
 - **Postgres upgraded past 17:** `pg_dump` refuses to dump a server newer than itself. Bump
   `FROM postgres:17` in `backups/Dockerfile` **first**. Production was 17.11 on 9/25/26.
 - **Changing the passphrase:** old backups still need the **old** passphrase. Keep it in the password
-  manager, labelled with the date it was retired, for 30 days (until those files expire). The drill
+  manager, labelled with the date it was retired, for 30 days (until those files expire). (Current
+  instance: two retired values from 10/26–27/26, delete on **2026-11-27**, dated row in BACKLOG.) The drill
   uses the current one, so run a drill after the next nightly backup.
 - **Rotating the R2 token:** update both services' (`backups`, `backup-drill`) `R2_ACCESS_KEY_ID` /
   `R2_SECRET_ACCESS_KEY`, then redeploy staging to confirm with a drill.
+- **Any variable change (both services):** Railway holds it until you click **Deploy**. A change that
+  was saved but not deployed looks done and isn't (10/27/26: a passphrase change sat undeployed). After
+  changing the passphrase, a drill run before the next nightly backup *should* fail with "could not
+  decrypt"; a pass means the new value isn't live. A mis-pasted R2 secret fails with
+  `SignatureDoesNotMatch`.
 - **Deleting the lifecycle rule:** backups would pile up without limit. The free tier is 10 GB. The
   database was 9 MB on 9/25/26, so this would take years, but it is not intended.
 - **Rule 1:** this is a separate service, not part of the app. The temporary files it writes live in

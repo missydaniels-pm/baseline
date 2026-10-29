@@ -60,7 +60,7 @@ Set these **on the staging environment only**. Leave production untouched.
 | `SECRET_KEY` | a **new** random secret — `python -c "import secrets; print(secrets.token_hex(32))"` | Don't share prod's session/CSRF secret with staging. |
 | `APP_URL` | the staging URL (e.g. `https://baseline-staging-1ba4.up.railway.app`) | Email/link building. Grab it from the service's public domain after the first deploy. |
 | `ADMIN_EMAIL` | `staging@baseline.test` | Makes the seeded staging user an admin (so `/admin/*` is reachable on staging). |
-| `ANTHROPIC_API_KEY` | reuse prod's key, or a separate key | AI check-in won't work without it. Separate key = cleaner cost attribution; reuse is fine. |
+| `ANTHROPIC_API_KEY` | **its own key** (since 10/26/26; expires 2027-01-24) | AI check-in won't work without it. Separate from production so a staging leak doesn't expose production, and costs attribute cleanly. |
 | `RESEND_API_KEY` | **leave UNSET** | Email off on staging — verification/welcome sends fail silently (the code's built-in behavior when unset). Zero risk of emailing a real person. |
 | `RESEND_AUDIENCE_ID` | **leave UNSET** | No Resend contact-list sync from staging. |
 | `BACKFILL_RESEND_CONTACTS` | **never set** | One-shot prod-only backfill; must never run on staging. |
