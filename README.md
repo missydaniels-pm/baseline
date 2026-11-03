@@ -115,4 +115,4 @@ The code quality reflects Claude Code's output. The product decisions reflect mi
 
 ---
 
-*Built by [Missy Daniels](https://linkedin.com/in/missydaniels) —  
+*Built by [Missy Daniels](https://www.linkedin.com/in/danielsmissy/) —  
