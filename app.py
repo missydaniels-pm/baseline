@@ -1778,7 +1778,9 @@ def require_auth():
 # worker script and the offline page, which sw.js pre-caches). Everything else
 # Flask renders is a page or JSON that can carry health data.
 CACHEABLE_ENDPOINTS = {'static', 'serve_sw', 'offline'}
-HSTS_VALUE = 'max-age=86400'
+# One year (raised 11/19/26 after a month at one day). No includeSubDomains/preload
+# without a separate decision.
+HSTS_VALUE = 'max-age=31536000'
 
 
 @app.after_request
@@ -1790,10 +1792,10 @@ def set_security_headers(resp):
     Cache-Control keeps it. CSP is frame-ancestors only for now: a script CSP
     needs the inline scripts and handlers moved out, which the React rebuild
     does anyway (BACKLOG). HSTS has no includeSubDomains/preload — those are
-    hard to undo and cover hosts this app doesn't serve — and starts at one day:
-    a browser that has seen it refuses plain http for the whole max-age, so a
-    TLS or Cloudflare misconfiguration would lock users out that long. Raised
-    to a year on a dated BACKLOG check once a day-long value has held.
+    hard to undo and cover hosts this app doesn't serve. It shipped at one day
+    and was raised to a year on 11/19/26 after the day-long value had held: a
+    browser that has seen it refuses plain http for the whole max-age, so a TLS
+    or Cloudflare misconfiguration would lock users out that long.
     """
     if request.endpoint not in CACHEABLE_ENDPOINTS:
         resp.headers.setdefault('Cache-Control', 'no-store')

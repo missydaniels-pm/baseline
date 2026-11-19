@@ -59,6 +59,10 @@ def check_headers(r, label, cacheable=False):
 
 
 def main():
+    # The value itself is pinned, not just "whatever HSTS_VALUE says": one year,
+    # with no includeSubDomains/preload (each needs its own decision).
+    check(HSTS_VALUE == 'max-age=31536000',
+          f'HSTS is one year with no extra directives (got {HSTS_VALUE!r})')
     with app.app_context():
         u = User(privacy_policy_version=PRIVACY_POLICY_VERSION, name='T', email='headers@test.com', is_active=True, verified_at=datetime.utcnow(),
                  onboarding_complete=True, has_seen_tour=True)

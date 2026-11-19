@@ -78,7 +78,7 @@ here in the same commit.
   there), and a page registering a different URL swaps that worker in.
 - Also on every response: `nosniff`, `X-Frame-Options: DENY` + CSP `frame-ancestors 'none'`
   (a script CSP waits for the React rebuild), `Referrer-Policy: same-origin`, HSTS (not under
-  DEBUG; value `HSTS_VALUE`, being ramped — BACKLOG). Logout sends `Clear-Site-Data: "cache"`
+  DEBUG; value `HSTS_VALUE`, one year). Logout sends `Clear-Site-Data: "cache"`
   (best-effort, not Safari). `test_security_headers.py` pins all of this.
 
 ## Privacy policy changes (consent is recorded — 10/19/26)
