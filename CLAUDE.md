@@ -80,6 +80,7 @@ Baseline Files/
   BACKUPS.md            — backup service runbook
   EOL.md                — end-of-life register
   SPEC-episode-diary.md — episode-diary spec (React rebuild)
+  SPEC-tracked-values.md — flexible What I Track spec: value types, daily entries (React rebuild)
   FABLE-EXIT-GATE-PROMPT.md — reusable pre-rebuild review prompt
   baseline-vision-roadmap.docx — owner's roadmap (Missy edits; not Claude)
   EXIT-GATE-REVIEW-*.md — review reports: git-ignored SYMLINKS into the private repo (see "Security-sensitive items")
