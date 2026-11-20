@@ -16,7 +16,7 @@ bcrypt==5.0.0
     # via flask-bcrypt
 blinker==1.9.0
     # via flask
-certifi==2026.7.22
+certifi==2026.10.23
     # via requests
 charset-normalizer==3.5.2
     # via requests
@@ -77,8 +77,6 @@ ordered-set==4.1.0
     # via flask-limiter
 packaging==26.3
     # via limits
-pillow==12.3.0
-    # via -r requirements.in
 psycopg2-binary==2.9.13
     # via -r requirements.in
 pydantic==2.13.5

@@ -1,6 +1,7 @@
 """One-time script to generate PWA icons for Baseline.
 
-Run once:  python generate_icons.py
+Run once:  .venv/bin/pip install Pillow && .venv/bin/python generate_icons.py
+           (Pillow is dev-only, deliberately not in requirements.in.)
 Produces:  static/icons/icon-192.png, icon-512.png, apple-touch-icon.png
 """
 

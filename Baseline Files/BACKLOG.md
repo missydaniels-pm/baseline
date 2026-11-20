@@ -197,6 +197,9 @@ Condensed record of completed work; full detail in the Decision Log where marked
 
 ## Decision Log
 
+### Dependency alerts: certifi bumped, Pillow out of production (11/20/26)
+GitHub showed 44 open Dependabot alerts. One (critical) was **certifi**, the certificate list `requests` uses for https — i.e. the Resend email calls (the Anthropic client uses `httpx2` + `truststore`, the system's certificate store, not certifi): bumped `2026.7.22` → `2026.10.23` (only that package re-pinned). The other 43 were **Pillow**, used only by `generate_icons.py`, a by-hand script; the app never imports it. **Decision:** remove Pillow from `requirements.in` rather than bump it, so the production image no longer carries an unused package — install it just for an icon run (TECHNICAL_README). All 24 suites pass in a fresh environment without Pillow. Still open separately: Dependabot PR (dateparser 1.5.0 + resend) fails CI — dateparser 1.5.0 has breaking changes and backs the check-in onset resolver; needs its own look.
+
 ### HSTS raised to one year (11/19/26)
 HSTS shipped 10/19/26 at one day so a TLS or Cloudflare mistake couldn't lock browsers out for long; the raise was due 10/27 but never happened (production still sent `max-age=86400` on 11/19). After a month with no https problems, `HSTS_VALUE` is now `max-age=31536000`. No `includeSubDomains` or preload — each needs its own decision. Trade-off accepted: a future https breakage would lock out browsers that have seen the header for up to a year, and lowering the value later only reaches browsers that visit again.
 

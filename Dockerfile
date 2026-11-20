@@ -27,7 +27,7 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # Dependencies first so a code-only change reuses this layer.
-# No apt packages needed: psycopg2-binary, Pillow and bcrypt all ship manylinux
+# No apt packages needed: psycopg2-binary and bcrypt both ship manylinux
 # wheels. If a dependency ever needs compiling, add build-essential here rather
 # than switching off -slim.
 COPY requirements.txt .
