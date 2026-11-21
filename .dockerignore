@@ -17,3 +17,5 @@ Baseline Files/
 backups/
 # Operator tooling run from a dev machine (the error sweep) — not part of the app.
 scripts/
+# The iPhone Health-sync app (Apple Health step 4) — built on a Mac, not part of the server image.
+mobile/

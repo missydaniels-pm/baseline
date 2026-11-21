@@ -12,7 +12,7 @@ You are a UX reviewer for Baseline, a health tracking PWA used primarily on mobi
 ## Project Context
 
 - **Users:** People managing chronic conditions (migraines, chronic pain). They may be logging data while symptomatic — UI must be clear, fast, and low-friction.
-- **Primary device:** Mobile (iOS Safari, Android Chrome) as a PWA home screen app
+- **Primary device:** Mobile (iOS Safari, Android Chrome) as a PWA home screen app; plus an invite-only iPhone Health-sync app in `mobile/App.tsx` (React Native — apply the same dark palette, accessibility and copy rules; VoiceOver instead of screen-reader HTML semantics)
 - **Theme:** Dark theme only (`static/css/style.css`), designed to be easy on the eyes during migraines
 - **Templates:** Jinja2 templates in `templates/`, base template is `base.html`
 - **CSS:** Single stylesheet `static/css/style.css`, no CSS framework

@@ -19,6 +19,10 @@ Covered, through real requests into a real database:
  12. Dead tokens are pruned by init-db's prune task; live ones are kept.
  13. API errors are JSON (404, 405, 429); web 404 is unchanged.
  14. Web login still works after moving to the shared check_credentials().
+ 15. The phone's time zone at sign-in (Apple Health step 4): stored when
+     valid, changed when different, junk ignored (sign-in still succeeds),
+     a non-text value refused, nothing written on a failed sign-in, and the
+     upload's local_date follows the stored zone.
 
 Isolated temp DB. Run: python test_api_auth.py
 """
@@ -342,6 +346,57 @@ def main():
     web_views = {ep for ep in app.view_functions if ep not in API_ENDPOINTS}
     check(not any(app.view_functions[ep].__name__ in exempt for ep in web_views),
           '[csrf] no web view shares a name with an exempt API view')
+
+    # ── 15. The phone's time zone at sign-in ──
+    with app.app_context():
+        tz_user = make_user('tz@example.test')
+        tz_id = tz_user.id
+        check(tz_user.timezone is None, '[tz] a fresh account has no stored zone')
+
+    def stored_tz():
+        with app.app_context():
+            return db.session.get(User, tz_id).timezone
+
+    r = c.post('/api/v1/auth/token', json={'email': 'tz@example.test', 'password': 'nope',
+                                           'timezone': 'Asia/Tokyo'})
+    check(r.status_code == 401 and stored_tz() is None, '[tz] a failed sign-in stores nothing')
+    r = c.post('/api/v1/auth/token', json={'email': 'tz@example.test', 'password': PW,
+                                           'timezone': 'America/Los_Angeles'})
+    check(r.status_code == 200 and stored_tz() == 'America/Los_Angeles',
+          f'[tz] a valid zone is stored at sign-in ({stored_tz()})')
+    r = c.post('/api/v1/auth/token', json={'email': 'tz@example.test', 'password': PW,
+                                           'timezone': 'Europe/London'})
+    check(r.status_code == 200 and stored_tz() == 'Europe/London', '[tz] a different zone replaces it (last known)')
+    for junk in ('Mars/Olympus', '../../etc/passwd', '/etc/localtime', 'a\x00b', 'X' * 200, '',
+                 'posixrules', 'Factory', 'EUROPE/LONDON', 'europe/paris'):
+        r = c.post('/api/v1/auth/token', json={'email': 'tz@example.test', 'password': PW, 'timezone': junk})
+        check(r.status_code == 200 and stored_tz() == 'Europe/London',
+              f'[tz] junk zone {junk[:20]!r} is ignored and sign-in still succeeds ({r.status_code})')
+    r = c.post('/api/v1/auth/token', json={'email': 'tz@example.test', 'password': PW})
+    check(r.status_code == 200 and stored_tz() == 'Europe/London', '[tz] no zone sent leaves it unchanged')
+    r = c.post('/api/v1/auth/token', json={'email': 'tz@example.test', 'password': PW, 'timezone': 9})
+    j = r.get_json()
+    check(r.status_code == 400 and j['code'] == 'bad_request', '[tz] a non-text zone -> 400')
+    # The zone that sign-in stored decides the reading's day on upload.
+    with app.app_context():
+        u = db.session.get(User, tz_id)
+        u.health_sync_enabled = True
+        db.session.commit()
+    r = c.post('/api/v1/auth/token', json={'email': 'tz@example.test', 'password': PW,
+                                           'timezone': 'Pacific/Auckland'})
+    tz_token = r.get_json()['token']
+    r = c.get('/api/v1/health/consent', headers=bearer(tz_token))
+    c.post('/api/v1/health/consent', json={'version': r.get_json()['version']}, headers=bearer(tz_token))
+    # 2026-03-01 20:00 UTC is already 2 March in Auckland (UTC+13).
+    r = c.post('/api/v1/health/samples', headers=bearer(tz_token), json={
+        'kind': 'hrv_sdnn', 'samples': [{'id': '11111111-2222-3333-4444-555555555555',
+                                         'start': '2026-03-01T20:00:00Z', 'end': '2026-03-01T20:00:00Z',
+                                         'value': 42.0}]})
+    with app.app_context():
+        from database import HealthSample
+        hs = HealthSample.query.filter_by(user_id=tz_id).one_or_none()
+        check(r.status_code == 200 and hs is not None and str(hs.local_date) == '2026-03-02',
+              f'[tz] the upload uses the zone sign-in stored ({r.status_code}, {hs and hs.local_date})')
 
     # ── 14. Web login still works (shared check_credentials) ──
     wl = app.test_client()

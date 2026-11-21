@@ -81,9 +81,9 @@ The planned next chapter is a React frontend rebuild with an API-first Flask bac
 
 Recently shipped: an updated privacy policy with recorded consent, self-service password reset that signs out other devices, a printable doctor summary, ended-early experiments recorded with their reason, multiple interventions per episode with effectiveness tracking, trigger capture (manual and AI-assisted), email-verified self-serve registration, and timezone-correct day handling.
 
-Current focus: the React rebuild, starting with the backend groundwork it needs (a side-effect-free app factory, then the API's auth flows). The insurance-grade episode diary (days-per-month thresholds, step-therapy documentation) comes with the rebuild.
+Current focus: Apple Health. The backend now has a versioned JSON API with phone sign-in, storage for synced readings, and a separate Health-data consent. A small invite-only iPhone app (React Native with Expo, in [`mobile/`](mobile/)) syncs heart rate variability and blood glucose to it, and goes to a small group through TestFlight next. Then comes the React web rebuild; the insurance-grade episode diary (days-per-month thresholds, step-therapy documentation) comes with it.
 
-Longer term: native mobile, HealthKit integration, and stats-first pattern detection that turns "this might be a trigger" into a testable experiment.
+Longer term: correlating HRV and glucose with episodes, a full-featured mobile app, and stats-first pattern detection that turns "this might be a trigger" into a testable experiment.
 
 ---
 

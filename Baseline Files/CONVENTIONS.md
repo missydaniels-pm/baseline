@@ -29,6 +29,10 @@ here in the same commit.
   one place a `db.session.commit()` runs inside a `before_request` — it's before any
   route touches the session, writes only on change, logs on failure, never blocks).
   Don't add other before-request commits without the same care.
+- **Two writers of `User.timezone`, one validator:** the web cookie sync above and the
+  iPhone app's sign-in (`timezone` on `POST /api/v1/auth/token`, 11/21/26). Both go
+  through `valid_tz_name()` (≤64 chars, no NUL, loads in `ZoneInfo`) and both follow
+  "last known zone wins" — a junk value is ignored, never an error the user sees.
 - **"Now" in the user's zone (a moment they're logging):** `user_now()` — the
   time-of-day sibling of `user_today()`. Returns the user's local wall-clock as a
   **naive** datetime, matching `Episode.onset`'s browser-local-naive storage. Use

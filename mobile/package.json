@@ -1,0 +1,28 @@
+{
+  "name": "baseline-health-sync",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "dependencies": {
+    "@kingstinct/react-native-healthkit": "^16.2.0",
+    "expo": "~58.0.26",
+    "expo-dev-client": "~58.0.21",
+    "expo-device": "~58.0.5",
+    "expo-localization": "~58.0.5",
+    "expo-secure-store": "~58.0.3",
+    "expo-status-bar": "~58.0.5",
+    "react": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-nitro-modules": "^0.37.2"
+  },
+  "devDependencies": {
+    "@types/react": "~19.3.0",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start --dev-client",
+    "ios": "expo run:ios",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test src/*.test.ts"
+  },
+  "private": true
+}

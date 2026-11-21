@@ -11,7 +11,7 @@ You are a senior code reviewer for Baseline, a Flask health tracking app handlin
 
 ## Project Context
 
-- **Stack:** Flask, SQLAlchemy, Jinja2, vanilla JS, Chart.js, PostgreSQL (prod) / SQLite (local)
+- **Stack:** Flask, SQLAlchemy, Jinja2, vanilla JS, Chart.js, PostgreSQL (prod) / SQLite (local); plus an invite-only iPhone Health-sync app in `mobile/` (Expo 58 dev build, React Native, `@kingstinct/react-native-healthkit`) that talks only to `/api/v1` — not deployed by Railway; tests: `cd mobile && npm test`
 - **Key files:** `app.py` (all routes), `database.py` (models), `templates/`, `static/css/style.css`
 - **Users:** about 20 accounts of people with chronic health conditions, a handful active in any given month (current numbers: `/admin/users`, `/admin/analytics`). This is real health data.
 - **Deployment:** Railway, built from the repo's `Dockerfile` (`python:3.14-slim`), served by gunicorn via its `CMD`, which first runs `flask --app app init-db` (schema + startup tasks — importing `app.py` touches no database since 11/21/26; tests call `init_db()` explicitly) — that file is the only *in-repo* definition of how the app starts (a Railway dashboard Custom Start Command could override it; STAGING_SETUP.md has the check). **A staging environment exists** (live since 7/17/26): `staging` branch → staging, `main` branch → production, and staging is a gate that must be verified before `main` is pushed. Every push to `main` is still production. A second Railway service, **`backups`** (9/25/26), builds from `backups/` with its own Dockerfile; its cron/restart/watch settings are dashboard-only, recorded in `BACKUPS.md` (production: nightly encrypted `pg_dump` → Cloudflare R2; staging: restore drill) — runbook `Baseline Files/BACKUPS.md`.

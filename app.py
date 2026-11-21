@@ -23,6 +23,7 @@ from collections import defaultdict
 from functools import wraps
 from werkzeug.exceptions import HTTPException
 from datetime import datetime, date, timedelta
+import zoneinfo
 from zoneinfo import ZoneInfo
 from urllib.parse import unquote, urlparse
 from dotenv import load_dotenv
@@ -1492,6 +1493,29 @@ def user_tz_name(user=None):
     return None
 
 
+# The IANA names this server knows, exactly as spelled (computed once — a
+# read-only constant, not per-request state). Membership, not just "ZoneInfo
+# loads it": on a case-insensitive disk ZoneInfo accepts 'AMERICA/NEW_YORK',
+# and it loads non-zones like 'posixrules' / 'Factory' (code review 11/21/26).
+_KNOWN_TZ_NAMES = frozenset(zoneinfo.available_timezones()) - {'Factory', 'posixrules', 'localtime'}
+
+
+def valid_tz_name(name):
+    """`name` if it is a known IANA zone name, else None. The one check every
+    writer of User.timezone goes through (web cookie sync, phone sign-in)."""
+    if not isinstance(name, str) or not name or len(name) > 64 or '\x00' in name:
+        return None
+    # Guard: an image with no zone list at all must not silently stop every
+    # zone write — fall back to the ZoneInfo check alone.
+    if _KNOWN_TZ_NAMES and name not in _KNOWN_TZ_NAMES:
+        return None
+    try:
+        ZoneInfo(name)
+    except Exception:
+        return None
+    return name
+
+
 def sync_user_timezone(user):
     """Persist the browser-detected zone (baseline_tz cookie) onto User.timezone
     as a durable "last-known zone" fallback for cookie-less contexts (background
@@ -1505,9 +1529,7 @@ def sync_user_timezone(user):
     name = unquote(raw)
     if name == user.timezone:
         return
-    try:
-        ZoneInfo(name)  # reject junk before writing (expected miss — stay quiet)
-    except Exception:
+    if valid_tz_name(name) is None:  # reject junk before writing (expected miss — stay quiet)
         return
     try:
         user.timezone = name
@@ -2947,7 +2969,7 @@ def _api_user_json(user):
 @api_route('/api/v1/auth/token', methods=('POST',), public=True)
 @limiter.limit('20 per hour')
 def api_token_create():
-    """Sign in from the app: {email, password, device_name?} -> a bearer token."""
+    """Sign in from the app: {email, password, device_name?, timezone?} -> a bearer token."""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return _api_error(400, 'bad_request', 'Send email and password as JSON.')
@@ -2957,6 +2979,13 @@ def api_token_create():
     device_name = data.get('device_name')
     if device_name is not None and not isinstance(device_name, str):
         return _api_error(400, 'bad_request', 'device_name must be text.')
+    # The phone's IANA zone (Apple Health step 4): a phone-first account must
+    # not fall back to UTC days. Same "last-known zone" rule as the web's
+    # sync_user_timezone — stored when valid, a junk value is ignored (never a
+    # failed sign-in). Travel updates wait for step 7 (BACKLOG).
+    timezone_name = data.get('timezone')
+    if timezone_name is not None and not isinstance(timezone_name, str):
+        return _api_error(400, 'bad_request', 'timezone must be text.')
     # PostgreSQL rejects NUL in text (a 500 there, silently accepted by SQLite).
     if any('\x00' in v for v in (email, password, device_name or '')):
         return _api_error(400, 'bad_request', 'Email, password and device name cannot contain a NUL character.')
@@ -2970,6 +2999,9 @@ def api_token_create():
     if problem is not None:
         return _api_error(401, 'invalid_credentials', 'Invalid email or password.')
 
+    zone = valid_tz_name(timezone_name)
+    if zone is not None and zone != user.timezone:
+        user.timezone = zone
     token, row = issue_api_token(user, device_name)
     db.session.commit()
     log_activity('login', detail='api', user_id=user.id)
