@@ -1183,13 +1183,28 @@ def migrate_fk_ondelete(conn, inspector, is_sqlite):
     return executed
 
 
-# Populated once at startup by check_fk_ondelete(). Empty == schema is correct.
+# Filled by check_fk_ondelete(). None == not checked yet in this process;
+# [] == schema is correct.
+#
+# Since 11/21/26 the startup tasks run in a separate `flask init-db` process,
+# so the serving process can no longer rely on them having filled this — it
+# checks for itself on first use (_fk_schema_problems below). Without that the
+# delete gate would silently read "no problems" in production.
 #
 # Rule 1 note: this is NOT per-server state in the sense the rule forbids. It is
-# a constant derived at boot from the shared database, so every instance
-# computes the same value from the same source — the same category as
-# CSS_VERSION. No instance knows anything another doesn't.
-FK_SCHEMA_PROBLEMS = []
+# a constant derived from the shared database, so every instance computes the
+# same value from the same source — the same category as CSS_VERSION. No
+# instance knows anything another doesn't.
+FK_SCHEMA_PROBLEMS = None
+
+
+def _fk_schema_problems():
+    """The FK schema mismatches, checking once per process (read-only)."""
+    if FK_SCHEMA_PROBLEMS is None:
+        check_fk_ondelete()
+    # Reflection failing leaves it None: treat as no problems (as before — a
+    # diagnostic, not a gate on everything) and try again next time.
+    return FK_SCHEMA_PROBLEMS or []
 
 
 def deletion_blocked_response(redirect_endpoint, **kwargs):
@@ -1212,10 +1227,11 @@ def deletion_blocked_response(redirect_endpoint, **kwargs):
 
     Returns a redirect response to send back, or None when it's safe to proceed.
     """
-    if not FK_SCHEMA_PROBLEMS:
+    problems = _fk_schema_problems()
+    if not problems:
         return None
     app.logger.error('Delete refused — FK schema mismatch (%d): %s',
-                     len(FK_SCHEMA_PROBLEMS), '; '.join(FK_SCHEMA_PROBLEMS))
+                     len(problems), '; '.join(problems))
     flash("Deleting is temporarily unavailable while a database issue is sorted out. "
           "Nothing was changed — please try again later.", 'error')
     return redirect(url_for(redirect_endpoint, **kwargs))
@@ -5823,14 +5839,36 @@ def dev_create_invite():
     )
 
 
-with app.app_context():
-    db.create_all()
-    run_migrations()
-    backfill_verified_existing_users()
-    cleanup_stale_unverified_users()
-    ensure_admin_user()
-    backfill_resend_contacts()
-    check_fk_ondelete()
+def init_db():
+    """Create/migrate the schema and run the startup tasks, against DATABASE_URL.
+
+    Until 11/21/26 this block ran at module level, so merely importing app.py
+    (a test suite, a script, a REPL) wrote to whatever DATABASE_URL was set —
+    including production, if that URL was exported in the shell (review F7).
+    Now nothing runs at import; callers opt in explicitly:
+      - production/staging: `flask --app app init-db` in the Dockerfile CMD,
+        once per container start, before gunicorn binds;
+      - local dev: `python app.py` (the __main__ block below);
+      - test suites and scripts: call init_db() after setting DATABASE_URL.
+    Idempotent: every step checks before it writes, so running it on every
+    deploy (as the import did) is safe.
+    """
+    with app.app_context():
+        db.create_all()
+        run_migrations()
+        backfill_verified_existing_users()
+        cleanup_stale_unverified_users()
+        ensure_admin_user()
+        backfill_resend_contacts()
+        check_fk_ondelete()
+
+
+@app.cli.command('init-db')
+def init_db_command():
+    """Create/migrate the schema and run the startup tasks."""
+    init_db()
+    print('init-db: done')
+
 
 if __name__ == '__main__':
     # NEVER hardcode debug=True here. With no Procfile and no Railway start
@@ -5845,4 +5883,7 @@ if __name__ == '__main__':
     # hardcoded True is exactly what caused this.
     debug_mode = os.environ.get('DEBUG', '').strip().lower() == 'true'
     port = int(os.environ.get('PORT', 5001))
+    # Running the dev server is an explicit act (unlike an import), so it sets
+    # up the database itself — run.sh needs no extra step.
+    init_db()
     app.run(host='0.0.0.0', port=port, debug=debug_mode)

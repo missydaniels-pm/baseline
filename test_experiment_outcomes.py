@@ -1,7 +1,7 @@
 """Every trial stays visible, whatever the outcome (10/19/26).
 
-Runs against an ISOLATED temp SQLite DB (set before importing app, which
-bootstraps create_all + run_migrations at import) so the local dev database is
+Runs against an ISOLATED temp SQLite DB (set before importing app; init_db()
+builds the schema — importing app itself no longer touches a database) so the local dev database is
 never touched.
 
 Owner report 10/4/26: a medication made migraines worse, and abandoning the
@@ -39,6 +39,8 @@ from sqlalchemy.exc import IntegrityError
 
 from app import app, user_today
 from app import PRIVACY_POLICY_VERSION  # fixtures are consented users (consent gate)
+from app import init_db  # noqa: E402
+init_db()  # schema + startup tasks; importing app no longer runs them (11/21/26)
 from database import db, User, Protocol, Experiment, Episode
 
 failures = []

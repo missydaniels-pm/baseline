@@ -1,7 +1,7 @@
 """Doctor summary printout (interim, pre-rebuild) — 10/19/26.
 
-Runs against an ISOLATED temp SQLite DB (set before importing app, which
-bootstraps create_all + run_migrations at import) so the local dev database is
+Runs against an ISOLATED temp SQLite DB (set before importing app; init_db()
+builds the schema — importing app itself no longer touches a database) so the local dev database is
 never touched.
 
 Covers `build_doctor_summary()` (the request-context-free helper the React API
@@ -34,6 +34,8 @@ from datetime import date, datetime, timedelta
 
 from app import app, build_doctor_summary, user_today
 from app import PRIVACY_POLICY_VERSION  # fixtures are consented users (consent gate)
+from app import init_db  # noqa: E402
+init_db()  # schema + startup tasks; importing app no longer runs them (11/21/26)
 from database import (db, User, Episode, Symptom, SymptomScore, Protocol, ProtocolEvent,
                       ProtocolCompliance, Experiment, EpisodeIntervention, Trigger, EpisodeTrigger)
 

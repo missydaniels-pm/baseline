@@ -35,6 +35,8 @@ from datetime import datetime
 import app as app_module
 from app import (app, bcrypt, limiter, _pw, generate_reset_token, load_reset_token,
                  PRIVACY_POLICY_VERSION)
+from app import init_db  # noqa: E402
+init_db()  # schema + startup tasks; importing app no longer runs them (11/21/26)
 from database import db, User
 
 FAILS = []

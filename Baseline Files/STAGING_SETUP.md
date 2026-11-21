@@ -17,8 +17,9 @@ real user's data.
 > is set. On staging, verify what doesn't need the email: the pages render, a bad link gets the
 > 400 page, the schema change landed. Verify delivery **on production with the owner's own
 > account** after deploying (a reset changes that password and signs out its other devices).
-> Don't mint links by importing `app.py` against staging's database — importing the app runs
-> startup jobs against whatever `DATABASE_URL` is set (BACKLOG "Side-effect-free import").
+> Don't mint links against staging's database from your machine — `init_db()` (and the seed script)
+> runs the startup jobs against whatever `DATABASE_URL` is set. (Plain `import app` no longer
+> touches the database since 11/21/26.)
 
 > The app is already staging-ready in code — all config is env-var driven (`DATABASE_URL`,
 > `APP_URL`, `SECRET_KEY`). Nothing here requires a code change beyond the `seed_staging.py` script
@@ -171,6 +172,10 @@ curl -s "$URL/login" | grep -o "sw.js?v=[0-9a-f]*" && curl -s "$URL/sw.js?v=$(cu
   behavioural `curl` checks above prove `DEBUG` is unset but would pass identically whether gunicorn
   or a bare `python app.py` is serving, so they can't catch a stray start-command override. Check it
   on both environments; this is the one "how the app starts" input that lives outside the repo.
+- **Confirm init-db ran (since 11/21/26).** The deploy log (`railway logs -d --lines 50`) must show
+  `init-db: done` *before* gunicorn's `Listening at` line. Importing the app no longer sets up the
+  database, so a start-command override that skips the Dockerfile `CMD` would serve on an
+  unmigrated schema with no error — this line is the proof the new `CMD` is what ran.
 - **"Deployed" and "reachable" are different things.** A deployment can be ACTIVE and healthy in
   the logs while Railway's public-domain **target port** still points at the previous deployment's
   port, 502-ing every request. Hitting the real URL is what catches this; the dashboard won't.

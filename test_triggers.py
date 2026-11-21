@@ -1,7 +1,7 @@
 """Data-model pass verification for structured triggers.
 
-Runs against an ISOLATED temp SQLite DB (set before importing app, which
-bootstraps create_all + run_migrations at import) so the local dev database is
+Runs against an ISOLATED temp SQLite DB (set before importing app; init_db()
+builds the schema — importing app itself no longer touches a database) so the local dev database is
 never touched. Exercises seed correctness/idempotency, the two partial unique
 indexes, the (episode, trigger) uniqueness, and FK-safe deletion under
 PRAGMA foreign_keys=ON (the same enforcement production PostgreSQL has).
@@ -23,6 +23,8 @@ from sqlalchemy.exc import IntegrityError
 
 from app import app, run_migrations, SEED_TRIGGERS
 from app import PRIVACY_POLICY_VERSION  # fixtures are consented users (consent gate)
+from app import init_db  # noqa: E402
+init_db()  # schema + startup tasks; importing app no longer runs them (11/21/26)
 from database import db, User, Episode, Trigger, EpisodeTrigger
 
 

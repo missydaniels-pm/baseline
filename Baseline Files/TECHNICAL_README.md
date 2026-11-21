@@ -140,7 +140,7 @@ All 20 foreign keys carry DB-level `ON DELETE` directives, declared once in `dat
 - **`SET NULL` is only** `checkins.episode_id`, `experiments.protocol_id`, `invite_codes.used_by_user_id` — the children that deliberately outlive their parent. Changing one to `CASCADE` destroys user history.
 - **Both increments shipped 8/8/26.** Inc 1 added the constraints (behaviour-preserving); Inc 2 removed the hand-ordered cleanup and added `passive_deletes=True` to 11 relationships, so a hard delete is now a single `db.session.delete(parent)` and the DB cascades. `dev_reset` is the one exception — it keeps the `User` row, so it still bulk-deletes each top-level owned table (order matters: `CheckIn` before `Episode`, or `SET NULL` detaches chat history instead of removing it).
 - **The constraints are load-bearing now** — there is no app-level fallback. Every hard-delete route keeps an `except IntegrityError` guard, because `run_migrations()` and `check_fk_ondelete()` are both deliberately non-fatal, so a mis-migrated environment surfaces there.
-- **`check_fk_ondelete()`** runs at startup, warn-only, and reports any live-schema mismatch. On local SQLite the fix is to delete `instance/migraine_tracker.db` and restart — SQLite cannot alter constraints in place.
+- **`check_fk_ondelete()`** runs in `flask init-db` (and lazily in the serving process the first time a delete route is hit), warn-only, and reports any live-schema mismatch. On local SQLite the fix is to delete `instance/migraine_tracker.db` and restart — SQLite cannot alter constraints in place.
 - **`check_fk_orphans.py`** is a read-only pre-flight to run against staging and production *before* the migration: `ADD CONSTRAINT` validates existing rows, and one orphan leaves that FK on its old behaviour while the rest migrate.
 
 ```bash
@@ -315,17 +315,19 @@ public-domain **target port** still pointed at the previous deployment's port, s
 - **baseline** — Flask app on **Python 3.14** (from the `python:3.14-slim` base image), served by
   **gunicorn** via the Dockerfile `CMD`: one worker, **`--threads 4`** (gthread worker class),
   `--timeout 120`, bound to `$PORT` (8080).
-  One worker matches the historical single-process behaviour — more workers would run the startup
-  migrations concurrently (a guarded migration step is the prerequisite for that, rebuild-era).
+  One worker matches the historical single-process behaviour. Since 11/21/26 the startup work runs
+  once per container start via `flask --app app init-db && exec gunicorn …` (not at import), so more
+  workers in one container is now its own change; more than one *replica* would still run init-db
+  concurrently (a guarded step — advisory lock or release phase — is the prerequisite).
   **`--threads 4` (9/4/26, exit-gate F1)** is what lets the app serve more than one request at a
   time: before it a single *sync* worker served exactly one request at a time, so any one user's
   in-request Anthropic or Resend call stalled every other user's every request for up to 120s
   (measured locally: a `/login` behind one 6s request took 5.5s; 0.01s with threads). Threads
   are Rule 1 clean (signed-cookie sessions, thread-local DB session, pooled `log_activity`
-  connections) and don't re-run the import-time migrations. **Under gthread, `--timeout` is a
+  connections). **Under gthread, `--timeout` is a
   worker-liveness heartbeat, not a per-request cap** (verified: a 6s request completes under
   `--timeout 3`); the per-call bound on the check-in is the Anthropic client's own
-  `timeout`/`max_retries` in `parse_checkin()`. `CMD` uses `sh -c "exec gunicorn …"`; the explicit `exec`
+  `timeout`/`max_retries` in `parse_checkin()`. `CMD` uses `sh -c "flask --app app init-db && exec gunicorn …"` (init-db added 11/21/26 — while it runs, `sh` is PID 1 and a stop waits for the kill timeout; once serving, gunicorn is PID 1 as below); the explicit `exec`
   is **hardening, not a fix** — the familiar "shell form leaves `sh` as PID 1 and swallows SIGTERM"
   story was tested 8/13/26 and did not reproduce (`sh -c '<single command>'` implicit-execs), so it
   just makes the guarantee explicit and fails safe if a second command is ever appended. PID 1 in the
@@ -341,7 +343,7 @@ public-domain **target port** still pointed at the previous deployment's port, s
 - Production: `DATABASE_URL` environment variable (Railway reference). Engine options set `pool_pre_ping=True` (9/4/26): Railway's Postgres drops idle connections and a dead pooled connection was being handed to the next request — seen on staging as a `/login` 500 with `SSL SYSCALL error: EOF detected`. pre_ping checks the connection on checkout and replaces it transparently; added with `--threads 4` because more request threads means more idle pooled connections.
 - Local: SQLite at default path
 - `postgres://` URLs are rewritten to `postgresql://` for SQLAlchemy compatibility
-- `db.create_all()` runs outside `__name__ == '__main__'` block so gunicorn triggers table creation on first deploy
+- **Schema setup is explicit (11/21/26, review F7):** `init_db()` (`create_all`, `run_migrations`, the startup tasks, the FK check) runs only via `flask --app app init-db` — the Dockerfile `CMD` runs it before gunicorn — or `python app.py` for local dev, or an explicit call in tests/scripts. **Importing `app.py` touches no database.** The delete routes' FK safety gate (`FK_SCHEMA_PROBLEMS`) is computed lazily in the serving process on first use (`_fk_schema_problems()`), since init-db runs in a separate process. `test_init_db.py` covers all of this.
 - Boolean column migrations must use `DEFAULT TRUE` / `DEFAULT FALSE` (not `0`/`1`) for PostgreSQL compatibility
 
 ---

@@ -39,6 +39,8 @@ from itertools import count
 
 from app import app, bcrypt, _pw, generate_verify_token, load_verify_token
 from app import PRIVACY_POLICY_VERSION  # fixtures are consented users (consent gate)
+from app import init_db  # noqa: E402
+init_db()  # schema + startup tasks; importing app no longer runs them (11/21/26)
 from database import db, User, Episode, UsedVerifyToken
 
 FAILS = []

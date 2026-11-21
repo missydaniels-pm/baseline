@@ -18,6 +18,8 @@ os.environ.setdefault('SECRET_KEY', 'test-secret')
 from datetime import datetime, timedelta
 
 from app import resolve_onset
+from app import init_db  # noqa: E402
+init_db()  # schema + startup tasks; importing app no longer runs them (11/21/26)
 
 ANCHOR = datetime(2026, 7, 17, 14, 30)  # Fri 2:30pm — fixed so tests are deterministic
 

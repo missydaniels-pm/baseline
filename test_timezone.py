@@ -20,6 +20,8 @@ from flask import g
 
 from app import app, user_today, user_now, user_tz_name, sync_user_timezone, db
 from app import PRIVACY_POLICY_VERSION  # fixtures are consented users (consent gate)
+from app import init_db  # noqa: E402
+init_db()  # schema + startup tasks; importing app no longer runs them (11/21/26)
 from database import User
 
 LA = 'America/Los_Angeles'

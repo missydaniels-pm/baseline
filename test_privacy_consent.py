@@ -30,6 +30,8 @@ os.environ.pop('RESEND_API_KEY', None)
 from datetime import datetime
 
 from app import app, PRIVACY_POLICY_VERSION
+from app import init_db  # noqa: E402
+init_db()  # schema + startup tasks; importing app no longer runs them (11/21/26)
 from database import db, User
 
 FAILS = []

@@ -29,6 +29,10 @@ from database import db, User, Protocol, Symptom, Experiment
 # app's load_dotenv(override=True) would let a DATABASE_URL in .env win over the
 # throwaway DB above — refuse to seed a real database.
 assert 'eval.db' in str(app.config['SQLALCHEMY_DATABASE_URI']), 'eval must run on its throwaway DB'
+# Set up the schema only after the check above (importing app no longer does it,
+# so a real database is never touched first — 11/21/26).
+from app import init_db  # noqa: E402
+init_db()
 
 # The eval user's setup. Covers every symptom/protocol the help.html example
 # messages mention, so those examples can be checked as written.

@@ -34,16 +34,23 @@ data — both only work with `DEBUG=true`.
 Tests: `WTF_CSRF_ENABLED=false .venv/bin/python test_<name>.py` (each suite builds its own temp
 DB). A pass on any Python other than 3.14 says nothing about production.
 
-## The one trap to know on day one: importing `app.py` changes the database
+## Setting up the database is an explicit step (`init_db()` / `flask init-db`)
 
-`import app` (which every test, script and `flask` command does) runs `create_all`, the migrations,
-the stale-unverified-user purge, the admin flag, the optional Resend backfill and the FK check —
-**against whatever `DATABASE_URL` is set in your shell**. So:
+Until 11/21/26, `import app` ran `create_all`, the migrations, the stale-unverified-user purge, the
+admin flag, the optional Resend backfill and the FK check against whatever `DATABASE_URL` was set.
+**Importing the app no longer touches a database.** That work is `init_db()` in `app.py`, run by:
 
-- Never `export DATABASE_URL=<production>` in a shell you'll also import the app from. If a runbook
-  tells you to point a script at production (e.g. `check_fk_orphans.py`), set the variable for
-  **that one command only**: `DATABASE_URL='postgresql://…' python3 check_fk_orphans.py`.
-- Fixing this (an app factory + an explicit init step) is BACKLOG "Side-effect-free import".
+- **production/staging:** `flask --app app init-db` in the Dockerfile `CMD`, before gunicorn starts
+  (a failed init-db stops the container rather than serving on an unmigrated schema);
+- **local dev:** `python app.py` / `run.sh` (the `__main__` block calls it). Starting it any other
+  way (`flask run`, `gunicorn` by hand) on a fresh checkout gives 500s with missing tables until
+  you run `flask --app app init-db` once;
+- **tests and scripts:** an explicit `init_db()` after `DATABASE_URL` is set — copy the line from any
+  `test_*.py` when you add a suite.
+
+Still: `init_db()` and `flask init-db` write to whatever `DATABASE_URL` is set, so never
+`export DATABASE_URL=<production>` in a working shell. If a runbook points a script at production
+(e.g. `check_fk_orphans.py`), set the variable for **that one command only**.
 
 ## How a change ships
 
@@ -65,7 +72,7 @@ the stale-unverified-user purge, the admin flag, the optional Resend backfill an
   (`PUBLIC_ENDPOINTS` lists the exceptions) — there is no `@login_required`.
 - "Today" for a user is `user_today()`, never the server date.
 - Foreign keys cascade in the database (`EXPECTED_FK_ONDELETE`) — never hand-order child deletes.
-- Schema changes are additive, run at startup from `run_migrations()`; redeploying an old image does
+- Schema changes are additive, run by `flask init-db` (container start) from `run_migrations()`; redeploying an old image does
   not undo them.
 - Public repo: security findings go to the private repo; BACKLOG carries only neutral "review Fn" rows.
 

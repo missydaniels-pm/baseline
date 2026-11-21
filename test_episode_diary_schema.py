@@ -24,6 +24,8 @@ os.environ.setdefault('WTF_CSRF_ENABLED', 'false')
 
 from sqlalchemy import inspect, text  # noqa: E402
 from app import app, db, run_migrations  # noqa: E402
+from app import init_db  # noqa: E402
+init_db()  # schema + startup tasks; importing app no longer runs them (11/21/26)
 from database import STOP_REASON_VALUES, STOP_REASON_EVENT_TYPES  # noqa: E402
 
 DIARY_COLUMNS = {

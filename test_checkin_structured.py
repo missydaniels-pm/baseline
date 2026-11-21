@@ -31,6 +31,8 @@ from datetime import datetime
 
 from app import app, CHECKIN_SCHEMA, CHECKIN_UNREADABLE_MSG
 from app import PRIVACY_POLICY_VERSION  # fixtures are consented users (consent gate)
+from app import init_db  # noqa: E402
+init_db()  # schema + startup tasks; importing app no longer runs them (11/21/26)
 from database import db, User, Episode, CheckIn, Symptom, SymptomScore, EpisodeIntervention, Protocol
 
 FAILS = []

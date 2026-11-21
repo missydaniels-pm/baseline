@@ -252,7 +252,7 @@ here in the same commit.
   is load-bearing and must survive Increment 2's cleanup removal.
 - **SQLite is dev-only and cannot alter a constraint in place.** A fresh local DB
   gets correct constraints from `create_all()`; a stale one is caught loudly by
-  `check_fk_ondelete()` at startup (warn-only, never fatal). Fix by deleting
+  `check_fk_ondelete()` in `flask init-db` (warn-only, never fatal). Fix by deleting
   `instance/migraine_tracker.db` and restarting — never by hand-editing.
 - **Before migrating a real PostgreSQL database, run `check_fk_orphans.py`
   against it.** `ADD CONSTRAINT` validates existing rows; one orphan makes that FK
@@ -283,7 +283,9 @@ here in the same commit.
   dead code: `run_migrations()` and `check_fk_ondelete()` are both deliberately
   non-fatal, so an environment whose constraints never applied fails *here*.
 - **Every hard-delete route starts with `deletion_blocked_response(...)`.** The
-  startup schema check records any mismatch in `FK_SCHEMA_PROBLEMS`; if it is
+  schema check — run lazily in the serving process on the first delete
+  (`_fk_schema_problems()`, since init-db runs in another process) — records any
+  mismatch in `FK_SCHEMA_PROBLEMS`; if it is
   non-empty the delete routes refuse and flash rather than run. This exists for
   the *silent* failure mode — a `SET NULL` column that is actually `CASCADE`
   destroys an experiment or chat history with no error at all. Only the delete
@@ -376,6 +378,14 @@ here in the same commit.
   repeat it.
 
 ## Migrations
+- **Where they run (11/21/26):** `init_db()` in `app.py` — `create_all`, `run_migrations()`, the
+  startup tasks, the FK check. It runs only when asked: `flask --app app init-db` (Dockerfile `CMD`,
+  before gunicorn), `python app.py` (local dev), or an explicit call. **Nothing touches the database
+  at import** — don't add module-level DB work back. A new startup task goes inside `init_db()`; state
+  the serving process needs (like the delete gate's `FK_SCHEMA_PROBLEMS`) must be computed in that
+  process, lazily on first use, because init-db runs in a different one. **A new test suite or script**
+  sets `DATABASE_URL` first, then `from app import init_db` + `init_db()` (scripts: after any safety
+  guard on the target), as every `test_*.py` does.
 - Additive columns via `run_migrations()` ALTER, gated by a column-exists check.
   PostgreSQL-safe booleans: `DEFAULT TRUE/FALSE`, never `1/0`.
 - Seed/index idempotently: `CREATE ... IF NOT EXISTS`, `INSERT ... WHERE NOT EXISTS`.
@@ -399,7 +409,7 @@ here in the same commit.
     existing row has the new column NULL, so the NULL branch is what makes the PG `ADD CONSTRAINT`
     valid against a populated table. Drop it and the migration fails on every existing row.
   - **Do NOT try/except-wrap** a column/CHECK migration (unlike seed/index): a failure to enforce a
-    data invariant should surface loudly at startup. This makes **staging-Postgres verification
+    data invariant should surface loudly at startup (`flask init-db` exits non-zero and the container does not start). This makes **staging-Postgres verification
     load-bearing** — the `ADD CONSTRAINT` DDL never runs on SQLite, so prove it on the staging gate,
     never infer it from the local SQLite result.
   - **Only constrain a settled vocabulary.** If the allowed values aren't ratified yet (or are

@@ -40,10 +40,12 @@ def main():
             'Aborting to protect real user data.'
         )
 
-    # Import only after the guards pass — importing app runs migrations against
+    # Set up the database only after the guards pass. Importing app no longer
+    # touches the database (11/21/26); init_db() is the explicit step, against
     # whatever DATABASE_URL is set, so we confirm the target first.
     from datetime import datetime
-    from app import app, db, bcrypt, seed_test_data, _pw
+    from app import app, db, bcrypt, seed_test_data, _pw, init_db
+    init_db()
     from database import User, Episode
 
     email = os.environ.get('STAGING_SEED_EMAIL', 'staging@baseline.test')

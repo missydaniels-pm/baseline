@@ -22,6 +22,8 @@ os.environ.setdefault('SECRET_KEY', 'test-secret')
 os.environ.pop('DEBUG', None)
 
 from app import app, limiter
+from app import init_db  # noqa: E402
+init_db()  # schema + startup tasks; importing app no longer runs them (11/21/26)
 
 FAILS = []
 
