@@ -173,7 +173,9 @@ curl -s "$URL/login" | grep -o "sw.js?v=[0-9a-f]*" && curl -s "$URL/sw.js?v=$(cu
   or a bare `python app.py` is serving, so they can't catch a stray start-command override. Check it
   on both environments; this is the one "how the app starts" input that lives outside the repo.
 - **Confirm init-db ran (since 11/21/26).** The deploy log (`railway logs -d --lines 50`) must show
-  `init-db: done` *before* gunicorn's `Listening at` line. Importing the app no longer sets up the
+  `init-db: done` alongside gunicorn's `Listening at … (1)` line. (Railway may list the two in either
+  order: they go to different output streams. The `&&` in the `CMD` is what guarantees init-db
+  finished first; the log line proves it ran.) Importing the app no longer sets up the
   database, so a start-command override that skips the Dockerfile `CMD` would serve on an
   unmigrated schema with no error — this line is the proof the new `CMD` is what ran.
 - **"Deployed" and "reachable" are different things.** A deployment can be ACTIVE and healthy in
