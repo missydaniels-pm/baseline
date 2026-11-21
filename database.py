@@ -74,6 +74,7 @@ EXPECTED_FK_ONDELETE = {
     ('protocol_events', 'protocol_id'): 'CASCADE',
     ('user_activity', 'user_id'): 'CASCADE',         # account delete removes analytics (privacy-first)
     ('invite_codes', 'used_by_user_id'): 'SET NULL',
+    ('api_tokens', 'user_id'): 'CASCADE',            # account delete signs out every phone
 }
 
 
@@ -153,6 +154,12 @@ class User(db.Model):
     # sign-in (session['sv']); bumped by a password change or reset, so every other
     # device's cookie stops matching and is signed out on its next request.
     session_version = db.Column(db.Integer, default=0, server_default='0', nullable=False)
+    # Apple Health sync (11/21/26): the iOS app is invite-only. An admin turns this
+    # on per account (/admin/users); every Health API endpoint checks it. Off by
+    # default — open web registration never grants it.
+    # server_default matches the migration's DEFAULT FALSE, so a fresh create_all()
+    # database and a migrated one are the same (as session_version does).
+    health_sync_enabled = db.Column(db.Boolean, default=False, server_default=db.false(), nullable=False)
 
     episodes = db.relationship('Episode', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)
     protocols = db.relationship('Protocol', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)
@@ -168,6 +175,7 @@ class User(db.Model):
     # delete. `dev_reset` still needs its own bulk delete: it keeps the User row,
     # so there's no parent deletion to cascade from.
     triggers = db.relationship('Trigger', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)
+    api_tokens = db.relationship('ApiToken', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)
 
     def __repr__(self):
         return f'<User {self.name}>'
@@ -562,6 +570,30 @@ class UsedVerifyToken(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     token_hash = db.Column(db.String(64), unique=True, nullable=False)
     used_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ApiToken(db.Model):
+    """A native-app sign-in (11/21/26, Apple Health plan step 1).
+
+    The phone holds a random bearer token; only its SHA-256 is stored, the
+    same way UsedVerifyToken stores verification tokens, so a database leak
+    doesn't hand out working sign-ins. Lives in the shared database, so any
+    server can check any token (Rule 1). A token stops working when it is
+    revoked (sign-out), expires (sliding window, extended on use), or the
+    user's session_version moves on (a password change or reset signs the
+    phone out exactly like every browser).
+    """
+    __tablename__ = 'api_tokens'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    token_hash = db.Column(db.String(64), unique=True, nullable=False)
+    device_name = db.Column(db.String(100), nullable=True)
+    session_version = db.Column(db.Integer, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    last_used_at = db.Column(db.DateTime, nullable=True)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    revoked_at = db.Column(db.DateTime, nullable=True)
 
 
 class InviteCode(db.Model):

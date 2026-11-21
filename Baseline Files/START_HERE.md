@@ -69,7 +69,9 @@ Still: `init_db()` and `flask init-db` write to whatever `DATABASE_URL` is set, 
 - **Stateless backend** (Rule 1), **slow work off the request** (Rule 2), **converge, don't diverge**
   (Rule 3) — CLAUDE.md. Patterns live in `CONVENTIONS.md`; read it before building.
 - Every query is scoped to the session's user. Auth is the `require_auth` before-request hook
-  (`PUBLIC_ENDPOINTS` lists the exceptions) — there is no `@login_required`.
+  (`PUBLIC_ENDPOINTS` lists the exceptions) — there is no `@login_required`. The `/api/v1` routes
+  for the iOS app are separate: bearer tokens (stored hashed in the shared DB), `g.api_user`, never
+  the session (CONVENTIONS "API routes").
 - "Today" for a user is `user_today()`, never the server date.
 - Foreign keys cascade in the database (`EXPECTED_FK_ONDELETE`) — never hand-order child deletes.
 - Schema changes are additive, run by `flask init-db` (container start) from `run_migrations()`; redeploying an old image does

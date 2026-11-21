@@ -15,8 +15,10 @@ from flask_wtf.csrf import CSRFProtect, CSRFError, generate_csrf
 from flask_limiter.util import get_remote_address
 from sqlalchemy import text, or_
 from sqlalchemy.exc import IntegrityError
-from database import db, User, Episode, Protocol, Symptom, SymptomScore, EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode, UsedVerifyToken, UserActivity, Trigger, EpisodeTrigger, EXPECTED_FK_ONDELETE, verify_fk_ondelete, STOP_REASON_CHECK_SQL, EXPERIMENT_STOP_REASON_VALUES, EXPERIMENT_STOP_REASON_CHECK_SQL, normalize_database_url
+from database import db, User, Episode, Protocol, Symptom, SymptomScore, EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode, UsedVerifyToken, UserActivity, Trigger, ApiToken, EpisodeTrigger, EXPECTED_FK_ONDELETE, verify_fk_ondelete, STOP_REASON_CHECK_SQL, EXPERIMENT_STOP_REASON_VALUES, EXPERIMENT_STOP_REASON_CHECK_SQL, normalize_database_url
 from collections import defaultdict
+from functools import wraps
+from werkzeug.exceptions import HTTPException
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 from urllib.parse import unquote, urlparse
@@ -750,6 +752,8 @@ def run_migrations():
         ('users',                 'privacy_policy_version',    'ALTER TABLE users ADD COLUMN privacy_policy_version VARCHAR(20)'),
         # Session revocation on password change/reset (10/19/26).
         ('users',                 'session_version',           'ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0'),
+        # Apple Health sync gate (11/21/26) — off for everyone until an admin turns it on.
+        ('users',                 'health_sync_enabled',       'ALTER TABLE users ADD COLUMN health_sync_enabled BOOLEAN NOT NULL DEFAULT FALSE'),
     ]
 
     # Widen symptoms.name from varchar(100) to varchar(200) on PostgreSQL
@@ -1380,6 +1384,40 @@ def set_password(user, password):
     user.session_version = User.session_version + 1
 
 
+def check_credentials(email, password):
+    """Email + password check shared by every sign-in path (web login, API token).
+
+    Returns (user, problem); problem is None on success, else 'unverified',
+    'deactivated' or 'invalid'. An unverified account is reported before the
+    password is checked, so that answer says nothing about the password."""
+    user = User.query.filter_by(email=email).first()
+    if user and user.verified_at is None and not user.is_active:
+        return user, 'unverified'
+    if user and user.password_hash:
+        ok = bcrypt.check_password_hash(user.password_hash, _pw(password))
+    else:
+        # Same bcrypt cost when there is no such account, so the response time
+        # doesn't reveal whether an email is registered (QA 11/21/26: ~220ms vs
+        # ~1ms before). The dummy hash is a constant, not per-server state.
+        bcrypt.check_password_hash(_dummy_password_hash(), _pw(password))
+        ok = False
+    if ok:
+        if not user.is_active:
+            return user, 'deactivated'
+        return user, None
+    return None, 'invalid'
+
+
+_DUMMY_PW_HASH = None
+
+
+def _dummy_password_hash():
+    global _DUMMY_PW_HASH
+    if _DUMMY_PW_HASH is None:
+        _DUMMY_PW_HASH = bcrypt.generate_password_hash(secrets.token_hex(16)).decode('utf-8')
+    return _DUMMY_PW_HASH
+
+
 def sign_in(user, remember=False):
     """Start a session for `user` — every sign-in path goes through here."""
     session.clear()
@@ -1744,6 +1782,12 @@ SKIP_TRACKING = {'static', 'serve_sw', 'admin_analytics', 'admin_users', 'offlin
 def require_auth():
     if request.endpoint in (None,) or request.endpoint in PUBLIC_ENDPOINTS:
         return
+    # /api/v1 routes authenticate by bearer token in api_route() and never by
+    # the session cookie — no redirects, no flashes, no page gates. Only routes
+    # registered through api_route() are in API_ENDPOINTS, and api_route()
+    # always enforces the token (see "API (native client)").
+    if request.endpoint in API_ENDPOINTS:
+        return
     user = get_user()
     if not user:
         stale_id = session.get('user_id')
@@ -1911,17 +1955,13 @@ def login():
         password = request.form.get('password', '')
         remember = 'remember' in request.form
 
-        user = User.query.filter_by(email=email).first()
-
-        # Surface unverified state before doing a password check, so we don't
-        # leak password validity via the unverified-vs-generic-error response.
-        if user and user.verified_at is None and not user.is_active:
+        user, problem = check_credentials(email, password)
+        if problem == 'unverified':
             return render_template('login.html', email=email, unverified=True)
-
-        if user and user.password_hash and bcrypt.check_password_hash(user.password_hash, _pw(password)):
-            if not user.is_active:
-                flash('Your account has been deactivated.', 'error')
-                return render_template('login.html')
+        if problem == 'deactivated':
+            flash('Your account has been deactivated.', 'error')
+            return render_template('login.html')
+        if problem is None:
             sign_in(user, remember=remember)
             log_activity('login', user_id=user.id)
             if not user.onboarding_complete:
@@ -2647,9 +2687,258 @@ def admin_users():
         'last_login': last_login_by_user.get(u.id),
         'email_updates_enabled': u.email_updates_enabled,
         'episode_count': episode_count_by_user.get(u.id, 0),
+        'id': u.id,
+        'health_sync_enabled': u.health_sync_enabled,
     } for u in users]
 
     return render_template('admin_users.html', rows=rows, now=datetime.utcnow())
+
+
+@app.route('/admin/users/<int:user_id>/health-sync', methods=['POST'])
+def admin_set_health_sync(user_id):
+    """Turn Apple Health sync on or off for one account (the iOS app is
+    invite-only — this flag is the server-side gate). Admin only."""
+    admin = get_user()
+    if not admin or not admin.is_admin:
+        app.logger.warning('Unauthorized health-sync change by user_id=%s',
+                           admin.id if admin else None)
+        return redirect(url_for('index'))
+    target = db.session.get(User, user_id)
+    if target is None:
+        flash('That account no longer exists.', 'error')
+        return redirect(url_for('admin_users'))
+    enabled = request.form.get('enabled') == '1'
+    target.health_sync_enabled = enabled
+    db.session.commit()
+    app.logger.info('Health sync %s for user_id=%s by admin user_id=%s',
+                    'enabled' if enabled else 'disabled', target.id, admin.id)
+    flash(f"Health sync turned {'on' if enabled else 'off'} for {target.email or 'that account'}.", 'success')
+    return redirect(url_for('admin_users'))
+
+
+# ---------------------------------------------------------------------------
+# API (native client) — /api/v1 (11/21/26, Apple Health plan step 1)
+# ---------------------------------------------------------------------------
+# The invite-only iOS app signs in with email + password and gets a bearer
+# token (ApiToken). Rules every API route follows (CONVENTIONS "API routes"):
+#   - registered with api_route(): CSRF-exempt (no cookie is ever read, so
+#     there is nothing for a forged cross-site request to ride on), skipped by
+#     the page gates in require_auth(), and token-checked unless public=True;
+#   - JSON in, JSON out, in the app's {ok, error} shape plus a machine-readable
+#     `code` the app can branch on;
+#   - user-scoped through g.api_user, never session['user_id'].
+
+API_ENDPOINTS = set()
+API_TOKEN_TTL = timedelta(days=90)       # sliding: each use pushes expiry out
+API_TOKEN_TOUCH_EVERY = timedelta(hours=1)  # at most one last-used write per hour
+API_TOKEN_PREFIX = 'blt_'                # recognisable to secret scanners
+
+
+def _api_error(status, code, message):
+    return {'ok': False, 'code': code, 'error': message}, status
+
+
+def _api_token_hash(token):
+    return hashlib.sha256(token.encode('utf-8')).hexdigest()
+
+
+def _iso_utc(dt):
+    return dt.replace(microsecond=0).isoformat() + 'Z' if dt else None
+
+
+def issue_api_token(user, device_name=None):
+    """Create a token for `user`; returns (plaintext, ApiToken). The caller commits.
+    The plaintext is returned once and never stored."""
+    token = API_TOKEN_PREFIX + secrets.token_urlsafe(32)
+    now = datetime.utcnow()
+    row = ApiToken(user_id=user.id, token_hash=_api_token_hash(token),
+                   device_name=(device_name or '').strip()[:100] or None,
+                   session_version=user.session_version, created_at=now,
+                   last_used_at=now, expires_at=now + API_TOKEN_TTL)
+    db.session.add(row)
+    return token, row
+
+
+def _authenticate_bearer():
+    """The (user, ApiToken) for this request's Authorization header, or (None, None)."""
+    header = request.headers.get('Authorization', '')
+    scheme, _, token = header.partition(' ')
+    if scheme.lower() != 'bearer' or not token.strip().startswith(API_TOKEN_PREFIX):
+        return None, None
+    row = ApiToken.query.filter_by(token_hash=_api_token_hash(token.strip())).first()
+    now = datetime.utcnow()
+    if row is None or row.revoked_at is not None or row.expires_at <= now:
+        return None, None
+    user = db.session.get(User, row.user_id)
+    if user is None or not user.is_active or row.session_version != user.session_version:
+        return None, None
+    if row.last_used_at is None or now - row.last_used_at >= API_TOKEN_TOUCH_EVERY:
+        row.last_used_at = now
+        row.expires_at = now + API_TOKEN_TTL
+        db.session.commit()
+    return user, row
+
+
+def api_route(rule, methods=('GET',), public=False):
+    """Register a JSON API route. Token-checked unless public=True; the signed-in
+    user is g.api_user and the token row g.api_token."""
+    def decorator(view):
+        # The function name is the endpoint AND the key Flask-WTF exempts from
+        # CSRF ("app.<name>"), so it must be unmistakably an API view — a web
+        # view that shared the name would silently lose CSRF protection.
+        assert view.__name__.startswith('api_'), 'API view functions are named api_*'
+
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            if not public:
+                user, row = _authenticate_bearer()
+                if user is None:
+                    return _api_error(401, 'unauthorized',
+                                      'You are signed out. Sign in again.')
+                g.api_user, g.api_token = user, row
+                # Request-scoped helpers (user_tz_name / user_today) read g.user;
+                # with no tz cookie they fall back to the stored zone — never
+                # silently to server UTC (the 7/14 bug shape).
+                g.user = user
+            return view(*args, **kwargs)
+        endpoint = view.__name__
+        API_ENDPOINTS.add(endpoint)
+        app.add_url_rule(rule, endpoint=endpoint, view_func=csrf.exempt(wrapped),
+                         methods=list(methods))
+        return wrapped
+    return decorator
+
+
+def health_sync_required(view):
+    """Gate for every Health endpoint (stack under @api_route): the account must
+    have Health sync turned on by an admin and have consented to the current
+    privacy policy. (The separate Health-data consent joins this check in
+    step 3 of the Apple Health plan.)"""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        user = g.api_user
+        if user.privacy_policy_version != PRIVACY_POLICY_VERSION:
+            return _api_error(403, 'consent_required',
+                              'Baseline\'s privacy policy has changed. Sign in on the website to review it.')
+        if not user.health_sync_enabled:
+            return _api_error(403, 'health_sync_not_enabled',
+                              'Health sync isn\'t turned on for this account.')
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def _api_user_json(user):
+    return {
+        'id': user.id,
+        'email': user.email,
+        'name': user.name,
+        'health_sync_enabled': bool(user.health_sync_enabled),
+        'consent_current': user.privacy_policy_version == PRIVACY_POLICY_VERSION,
+    }
+
+
+@api_route('/api/v1/auth/token', methods=('POST',), public=True)
+@limiter.limit('20 per hour')
+def api_token_create():
+    """Sign in from the app: {email, password, device_name?} -> a bearer token."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _api_error(400, 'bad_request', 'Send email and password as JSON.')
+    email, password = data.get('email'), data.get('password')
+    if not isinstance(email, str) or not isinstance(password, str) or not email.strip() or not password:
+        return _api_error(400, 'bad_request', 'Email and password are required.')
+    device_name = data.get('device_name')
+    if device_name is not None and not isinstance(device_name, str):
+        return _api_error(400, 'bad_request', 'device_name must be text.')
+    # PostgreSQL rejects NUL in text (a 500 there, silently accepted by SQLite).
+    if any('\x00' in v for v in (email, password, device_name or '')):
+        return _api_error(400, 'bad_request', 'Email, password and device name cannot contain a NUL character.')
+
+    user, problem = check_credentials(email.strip().lower(), password)
+    if problem == 'unverified':
+        return _api_error(403, 'unverified',
+                          'Confirm your email first: use the link we sent, then sign in.')
+    if problem == 'deactivated':
+        return _api_error(403, 'deactivated', 'Your account has been deactivated.')
+    if problem is not None:
+        return _api_error(401, 'invalid_credentials', 'Invalid email or password.')
+
+    token, row = issue_api_token(user, device_name)
+    db.session.commit()
+    log_activity('login', detail='api', user_id=user.id)
+    return {'ok': True, 'token': token, 'expires_at': _iso_utc(row.expires_at),
+            'user': _api_user_json(user)}
+
+
+@api_route('/api/v1/auth/token', methods=('DELETE',))
+def api_token_revoke():
+    """Sign out this phone: revokes the token that made the request."""
+    g.api_token.revoked_at = datetime.utcnow()
+    db.session.commit()
+    return {'ok': True}
+
+
+@api_route('/api/v1/me')
+def api_me():
+    """Who is signed in, and whether Health sync is on for them."""
+    return {'ok': True, 'user': _api_user_json(g.api_user)}
+
+
+@api_route('/api/v1/health/sync-status')
+@health_sync_required
+def api_health_sync_status():
+    """Health-sync gate check for the app's status screen. Step 2 of the Apple
+    Health plan adds the upload endpoint and fills in last_synced_at."""
+    return {'ok': True, 'enabled': True, 'last_synced_at': None}
+
+
+def _wants_api_json():
+    return request.path.startswith('/api/')
+
+
+_API_ERROR_MESSAGES = {
+    404: ('not_found', 'Not found.'),
+    405: ('method_not_allowed', 'Method not allowed.'),
+    429: ('rate_limited', 'Too many attempts. Try again later.'),
+}
+
+
+@app.errorhandler(HTTPException)
+def handle_http_error(e):
+    """Every HTTP error under /api/ is JSON in the {ok, code, error} shape, so
+    the app never has to parse an HTML page. Web paths are untouched: returning
+    the exception renders Flask's stock page exactly as before. (CSRFError has
+    its own, more specific handler; API routes are CSRF-exempt anyway.)"""
+    if not _wants_api_json():
+        return e
+    code, message = _API_ERROR_MESSAGES.get(
+        e.code, ((e.name or 'error').lower().replace(' ', '_'), e.name or 'Error'))
+    return _api_error(e.code or 500, code, message)
+
+
+@app.errorhandler(500)
+def handle_500(e):
+    """An unhandled exception under /api/ is a JSON 500 with nothing of the
+    exception in it (it is still logged by Flask). Web paths unchanged."""
+    if _wants_api_json():
+        return _api_error(500, 'server_error', 'Something went wrong. Please try again.')
+    return e
+
+
+def prune_api_tokens():
+    """Delete tokens that can never work again (revoked or expired over 30 days
+    ago). Run by init_db(); the tokens are dead already, this just keeps the
+    table small. Log-and-continue like the other startup tasks."""
+    try:
+        cutoff = datetime.utcnow() - timedelta(days=30)
+        n = ApiToken.query.filter(or_(ApiToken.revoked_at < cutoff,
+                                      ApiToken.expires_at < cutoff)).delete(synchronize_session=False)
+        db.session.commit()
+        if n:
+            app.logger.info('Pruned %d dead API tokens', n)
+    except Exception:
+        db.session.rollback()
+        app.logger.warning('API token prune failed', exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -5860,6 +6149,7 @@ def init_db():
         cleanup_stale_unverified_users()
         ensure_admin_user()
         backfill_resend_contacts()
+        prune_api_tokens()
         check_fk_ondelete()
 
 

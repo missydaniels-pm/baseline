@@ -98,6 +98,7 @@ templates/privacy.html          — in-app privacy policy (single source of trut
 | User | email, password_hash, invite_code_used (legacy), is_active, verified_at, onboarding_complete, baseline data, ai_logging_enabled, has_seen_tour, is_admin, email_updates_enabled, `timezone` (nullable IANA string; auto-detected from the `baseline_tz` cookie and persisted by `sync_user_timezone()` in `require_auth`. Resolved **cookie-first → stored fallback → server UTC** by `user_tz_name()`, which backs `user_today()`. Both cookie and stored values are `ZoneInfo`-validated), plus **episode-diary Layer A** `diary_mode_enabled` (bool, default False) + `diary_span_counts_both_days` (bool, default True). Both unwritten in the monolith — schema pre-staged for React. `session_version` (int, default 0 — see Security Notes, session revocation). `privacy_consent_at` + `privacy_policy_version` (nullable; written at signup and by `/privacy/consent` via `record_privacy_consent()`; NULL = account from before consent was recorded). |
 | InviteCode | code, created_at, used_at, used_by_user_id (legacy — admin use only) |
 | UsedVerifyToken | token_hash (SHA-256), used_at — prevents email-verification token replay |
+| ApiToken (11/21/26) | Native-app sign-in (`api_tokens`): user_id (CASCADE), token_hash (SHA-256 — the bearer token itself is never stored), device_name, session_version (snapshot at issue), created_at, last_used_at, expires_at (sliding 90 days), revoked_at. Dead rows (revoked/expired > 30 days) pruned by `init-db`. |
 | Symptom | user-defined trackable items (name, description, is_active, input_type). Displayed as "What I Track" in UI. No hard post-onboarding limit. `input_type` is `'scale'` (1-10 slider) or `'binary'` (Yes/No), enforced by a DB CHECK constraint (`symptoms_input_type_check`). Type is locked once any SymptomScore for that symptom exists. |
 | Episode | onset timestamp, duration, functional_impairment, notes |
 | SymptomScore | One row per (episode, symptom). For scale symptoms `score` (1-10) is set and `value_bool` is null. For binary symptoms `value_bool` is set and `score` is null. The `Symptom.input_type` discriminator decides which column to read. Aggregations should filter `score IS NOT NULL` (scale) or `value_bool IS NOT NULL` (binary) so the two types never mix. |
@@ -135,7 +136,7 @@ Local `.env` file uses `load_dotenv(override=True)` to ensure `.env` always wins
 
 ## Foreign Keys / ON DELETE
 
-All 20 foreign keys carry DB-level `ON DELETE` directives, declared once in `database.EXPECTED_FK_ONDELETE` (17 `CASCADE`, 3 `SET NULL`). That dict is authoritative for the model `ondelete=` kwargs, the PostgreSQL migration (`migrate_fk_ondelete`), and `verify_fk_ondelete()`.
+All 21 foreign keys carry DB-level `ON DELETE` directives, declared once in `database.EXPECTED_FK_ONDELETE` (18 `CASCADE`, 3 `SET NULL` — `api_tokens.user_id` added 11/21/26). That dict is authoritative for the model `ondelete=` kwargs, the PostgreSQL migration (`migrate_fk_ondelete`), and `verify_fk_ondelete()`.
 
 - **`SET NULL` is only** `checkins.episode_id`, `experiments.protocol_id`, `invite_codes.used_by_user_id` — the children that deliberately outlive their parent. Changing one to `CASCADE` destroys user history.
 - **Both increments shipped 8/8/26.** Inc 1 added the constraints (behaviour-preserving); Inc 2 removed the hand-ordered cleanup and added `passive_deletes=True` to 11 relationships, so a hard delete is now a single `db.session.delete(parent)` and the DB cascades. `dev_reset` is the one exception — it keeps the `User` row, so it still bulk-deletes each top-level owned table (order matters: `CheckIn` before `Episode`, or `SET NULL` detaches chat history instead of removing it).
@@ -191,7 +192,7 @@ Killing the dev server: `pkill -f "python3 app.py"` does **not** match it — th
 
 Generated from `app.url_map` on 10/19/26 (59 routes) — regenerate rather than hand-edit:
 `python -c "from app import app; [print(r.rule, sorted(r.methods)) for r in app.url_map.iter_rules()]"`.
-Auth is the `require_auth` before-request hook (everything not in `PUBLIC_ENDPOINTS` needs a session, and an unfinished onboarding redirects to step 1) — there is no `@login_required` decorator.
+Auth is the `require_auth` before-request hook (everything not in `PUBLIC_ENDPOINTS` needs a session, and an unfinished onboarding redirects to step 1) — there is no `@login_required` decorator. The `/api/v1` routes are the exception: bearer-token auth in `api_route()` (see "API" below).
 
 ### Public
 | Route | Method | Description |
@@ -258,6 +259,18 @@ Auth is the `require_auth` before-request hook (everything not in `PUBLIC_ENDPOI
 | `/triggers/<id>/deactivate` | POST | Soft pause/resume an own custom (history preserved). |
 | `/triggers/<id>/reactivate` | POST | Soft pause/resume an own custom (history preserved). |
 | `/triggers/<id>/rename` | POST | Rename an own custom (rejects collision with a global or another own custom; 100-char cap). |
+
+| `/admin/users/<id>/health-sync` | POST | Admin only: turn Apple Health sync on/off for one account (`enabled=1/0`, form + CSRF). Logs who changed it. |
+
+### API (`/api/v1`, native app — 11/21/26)
+Registered with `api_route()`: CSRF-exempt, skipped by `require_auth`'s page gates, bearer-token auth (`Authorization: Bearer blt_…`) — the session cookie never authenticates these. JSON `{ok, code, error}` errors; 404/405/429 under `/api/` are JSON too. Covered by `test_api_auth.py`.
+
+| Route | Method | Description |
+|---|---|---|
+| `/api/v1/auth/token` | POST | Public. `{email, password, device_name?}` → `{ok, token, expires_at, user}`. Same checks as web login (`check_credentials()`): 401 `invalid_credentials`, 403 `unverified` / `deactivated`, 400 `bad_request`. 20/hour per address. |
+| `/api/v1/auth/token` | DELETE | Signs this phone out (revokes the calling token). |
+| `/api/v1/me` | GET | `{id, email, name, health_sync_enabled, consent_current}`. Answers even with outdated consent, so the app can explain. |
+| `/api/v1/health/sync-status` | GET | Behind `health_sync_required`: 403 `consent_required` (privacy policy not accepted) / `health_sync_not_enabled` (admin flag off); else `{enabled: true, last_synced_at}`. Step 2 adds the upload endpoint. |
 
 ### Dev only (`app.debug`; `/dev/bootstrap` is public but 403s outside debug)
 | Route | Method | Description |
@@ -369,6 +382,9 @@ Icons are generated by `generate_icons.py` using Pillow. Purple background (#7c3
 - **Password rules (`password_problem()`, 10/19/26):** one rule set wherever a password is *set* (register, Settings change, reset): 8+ characters, an uppercase letter, a number, at most 72 UTF-8 bytes (bcrypt's limit — refused rather than silently truncated). Never applied at login, so legacy passwords keep working.
 - **Password reset (review F1, 10/19/26):** signed itsdangerous token (salt `baseline-password-reset-v1`, 1 hour) carrying the user id and a 16-hex digest of the current password hash + email, so the link dies once the password or the email changes (single-use, no table). Same response body for any address, but not timing-safe while the email send is in-request (BACKLOG, email queue). Email sent in-request via Resend (same Rule 2 deviation as verification).
 - **Session revocation (10/19/26):** `users.session_version` is copied into the signed session cookie (`session['sv']`) by `sign_in()` — the only place a session starts (login, verify, reset). `set_password()` (Settings change and reset) bumps it, so every other cookie stops matching: `get_user()` returns None and `require_auth` clears the cookie with "Please sign in again." The device that changed the password is re-signed-in. Cookies from before this have no `sv` and read as 0.
+- **Native-app tokens (11/21/26):** `POST /api/v1/auth/token` issues `blt_` + 32 random bytes; only its SHA-256 is stored (`api_tokens`). A token works while not revoked, not expired (90 days, extended on use, `last_used_at` written at most hourly), the user is active, and its `session_version` matches the user's — so a password change or reset signs phones out exactly like browsers, and account deletion cascades the rows. API routes read only the `Authorization` header, which is why they can be CSRF-exempt: no cookie, nothing for a cross-site request to ride on.
+- **Sign-in timing (11/21/26):** `check_credentials()` (web login and API) runs a bcrypt check against a dummy hash when the email isn't registered, so an unknown email and a wrong password take the same time. (An *unverified* account is still named before the password check — deliberate, unchanged.) API sign-in also rejects NUL characters with a 400 (PostgreSQL can't store them). An email change does not bump `session_version`, so phones and browsers stay signed in across one — same as before for browsers.
+- **Health sync flag:** `users.health_sync_enabled`, default off, set only by an admin on `/admin/users`; every Health endpoint checks it (and current privacy consent) through `health_sync_required`.
 - Sessions encrypted with SECRET_KEY
 - All production traffic over HTTPS (Railway provides SSL)
 - **Response headers (10/19/26, `set_security_headers` after_request):** `Cache-Control: no-store` on every response except `CACHEABLE_ENDPOINTS` (`static`, `serve_sw`, `offline`), so pages with health data aren't kept in the browser cache or back/forward cache (Back re-fetches the page); `X-Content-Type-Options: nosniff`; `X-Frame-Options: DENY` + `Content-Security-Policy: frame-ancestors 'none'` (a script CSP is deferred to the React rebuild — the templates use inline scripts/handlers); `Referrer-Policy: same-origin`; `Strict-Transport-Security` (`HSTS_VALUE` = one year since 11/19/26, after a month at one day; no includeSubDomains/preload, omitted under DEBUG). `/logout` adds `Clear-Site-Data: "cache"` (best-effort: Chromium/Firefox, not Safari). Cloudflare and Railway add none of these today; if Cloudflare's own HSTS setting is ever turned on, it overrides the origin value. `test_security_headers.py`.

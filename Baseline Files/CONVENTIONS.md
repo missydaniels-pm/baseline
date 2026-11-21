@@ -305,6 +305,29 @@ here in the same commit.
   session, so a stale reference to a cascaded-away child raises
   `ObjectDeletedError` on next attribute access rather than returning `None`.
 
+## API routes (`/api/v1`, native app — 11/21/26)
+- **Register with `@api_route(rule, methods=..., public=False)`**, never `@app.route`. It CSRF-exempts
+  the view, adds it to `API_ENDPOINTS` (so `require_auth()`'s page gates — redirects, flashes,
+  consent/onboarding — are skipped) and enforces the bearer token. **Name the function `api_<name>`**
+  (asserted): the function name is the endpoint and the key Flask-WTF exempts from CSRF, so a web view
+  sharing it would silently lose CSRF protection (`test_api_auth.py` checks the exempt set).
+  Only the token-issuing route is `public=True`.
+- **Never read `session` or call `get_user()` in an API route.** The signed-in user is `g.api_user`
+  (token row `g.api_token`); `api_route()` also sets `g.user`, so `user_today()` / `user_tz_name()`
+  use the account's stored zone (no tz cookie on a phone). The CSRF exemption is safe *only because*
+  the session cookie never authenticates an API route.
+- **Responses:** success `{'ok': True, ...}`; errors through `_api_error(status, code, message)` →
+  `{'ok': False, 'code': <snake_case for the app to branch on>, 'error': <plain sentence>}` (the
+  existing `{ok, error}` JSON shape plus `code`). Every HTTP error and any crash under `/api/` is
+  JSON automatically (`handle_http_error`, `handle_500`); web paths keep Flask's pages.
+- **Input:** `request.get_json(silent=True)`; check it's a dict and every field's type before use.
+- **Health endpoints** stack `@health_sync_required` under `@api_route` (admin flag + current privacy
+  consent; the separate Health consent joins it in step 3).
+- **Sign-in checks** go through `check_credentials()` (shared with web `/login`) — one place decides
+  unverified / deactivated / invalid. Tokens: `issue_api_token()`; never store the plaintext.
+- **Tests:** a route-level suite like `test_api_auth.py` (real requests with `Authorization: Bearer`).
+  `test_pages_and_crud.py` skips `API_ENDPOINTS` automatically.
+
 ## CSRF (every state-changing POST)
 - Flask-WTF `CSRFProtect` is global/opt-out — a new POST route is protected
   automatically. **Every `<form method="POST">` must include**

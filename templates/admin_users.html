@@ -3,6 +3,11 @@
 
 {% block head_extra %}
 <style>
+  /* .main is a flex child with min-width:auto, so a table wider than the
+     screen stretched the whole page instead of scrolling inside .admin-users-wrap
+     (found 11/21/26 when the Health sync column made it 7 columns). Scoped to
+     this page; the site-wide fix is BACKLOG "Main column can grow past the screen". */
+  .main { min-width:0; }
   .admin-users-wrap { overflow-x:auto; }
   .admin-users-table { width:100%; font-size:13px; border-collapse:collapse; }
   .admin-users-table th, .admin-users-table td { padding:10px 12px; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap; }
@@ -13,6 +18,7 @@
   .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; line-height:1.5; }
   .pill-on { background:rgba(52, 211, 153, 0.15); color:var(--low); }
   .pill-off { background:rgba(148, 163, 184, 0.15); color:var(--text-muted); }
+  .health-sync-form { display:flex; align-items:center; gap:8px; margin:0; }
   .pill-warn { background:rgba(251, 191, 36, 0.15); color:var(--mid); }
 </style>
 {% endblock %}
@@ -21,7 +27,7 @@
 <div class="page-header">
   <h1 class="page-title">Users</h1>
   <p style="color:var(--text-muted); font-size:13px; margin-top:4px;">
-    {{ rows|length }} total &middot; read-only admin view
+    {{ rows|length }} total
   </p>
 </div>
 
@@ -32,6 +38,7 @@
       <thead>
         <tr>
           <th scope="col">Email</th>
+          <th scope="col">Health sync</th>
           <th scope="col">Verified</th>
           <th scope="col">Joined</th>
           <th scope="col">Last login</th>
@@ -43,6 +50,20 @@
         {% for r in rows %}
         <tr>
           <td class="email" title="{{ r.email }}">{{ r.email }}</td>
+          <td>
+            <form method="POST" action="{{ url_for('admin_set_health_sync', user_id=r.id) }}" class="health-sync-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              {% if r.health_sync_enabled %}
+                <span class="pill pill-on">On</span>
+                <input type="hidden" name="enabled" value="0">
+                <button type="submit" class="btn btn-secondary btn-sm" aria-label="Turn off Health sync for {{ r.email }}">Turn off</button>
+              {% else %}
+                <span class="pill pill-off">Off</span>
+                <input type="hidden" name="enabled" value="1">
+                <button type="submit" class="btn btn-secondary btn-sm" aria-label="Turn on Health sync for {{ r.email }}">Turn on</button>
+              {% endif %}
+            </form>
+          </td>
           <td>
             {% if r.verified %}
               <span class="pill pill-on">Verified</span>

@@ -75,7 +75,7 @@ A slow/blocking in-request call ties up a worker → latency and timeouts under 
 - [ ] Are Chart.js visualizations unaffected?
 
 ### 6. Auth & Session
-- [ ] Is each new route correctly in or out of `PUBLIC_ENDPOINTS`? (Auth is the `require_auth` before-request hook — there is no `@login_required` decorator.) Does it scope every query to the session's user?
+- [ ] Is each new route correctly in or out of `PUBLIC_ENDPOINTS`? (Auth is the `require_auth` before-request hook — there is no `@login_required` decorator.) Does it scope every query to the session's user? **API routes (`/api/v1`, 11/21/26) are the exception:** registered with `api_route()`, bearer-token auth, CSRF-exempt by design, user is `g.api_user` — they must never read the session (CONVENTIONS "API routes").
 - [ ] Can an unauthenticated user access any new endpoints?
 - [ ] Does the session handle edge cases (expired session, concurrent logins)?
 

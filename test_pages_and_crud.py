@@ -42,6 +42,10 @@ FAILS = []
 # Routes that aren't pages a signed-in user browses to with GET.
 SKIP = {'static', 'logout', 'serve_sw', 'tour_restart', 'dev_reset', 'dev_seed',
         'dev_bootstrap', 'dev_create_invite', 'verify_sent'}
+# /api/v1 routes take a bearer token, never the session cookie this smoke test
+# signs in with (401 is correct here) — test_api_auth.py covers them.
+from app import API_ENDPOINTS  # noqa: E402
+SKIP |= API_ENDPOINTS
 
 
 # GET endpoints that legitimately redirect a signed-in, onboarded user.

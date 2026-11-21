@@ -43,7 +43,7 @@ A slow/blocking call inside a request ties up a worker for its whole duration �
 - [ ] **Injection:** Any raw SQL? Are all queries parameterized via SQLAlchemy?
 - [ ] **XSS:** Are all user inputs escaped in templates? Using `{{ var }}` not `{{ var|safe }}`?
 - [ ] **CSRF:** Are forms using proper CSRF protection?
-- [ ] **Auth:** Auth is the `require_auth` before-request hook — every endpoint not in `PUBLIC_ENDPOINTS` needs a session (there is no `@login_required` decorator). Is a new endpoint correctly public or not? Does each query scope by the session's user?
+- [ ] **Auth:** Auth is the `require_auth` before-request hook — every endpoint not in `PUBLIC_ENDPOINTS` needs a session (there is no `@login_required` decorator). Is a new endpoint correctly public or not? Does each query scope by the session's user? **API routes (`/api/v1`, 11/21/26) are the exception:** registered with `api_route()`, bearer-token auth, CSRF-exempt by design, user is `g.api_user` — they must never read the session (CONVENTIONS "API routes").
 - [ ] **Session:** Is SECRET_KEY strong and sourced from environment?
 - [ ] **Sensitive data:** No API keys, passwords, or secrets in code?
 - [ ] **Debug mode:** Is DEBUG properly controlled by environment variable?
