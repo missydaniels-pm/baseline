@@ -3,7 +3,12 @@
 Run once:  .venv/bin/pip install Pillow && .venv/bin/python generate_icons.py
            (Pillow is dev-only, deliberately not in requirements.in.)
 Produces:  static/icons/icon-192.png, icon-512.png, apple-touch-icon.png
+           mobile/assets/icon.png (1024px, the iPhone "Baseline Sync" app: the same
+           pulse plus a sync badge, so it can't be mistaken for the web app's
+           Home Screen icon — owner decision 11/21/26)
 """
+
+import math
 
 from PIL import Image, ImageDraw
 
@@ -49,6 +54,33 @@ def draw_baseline_icon(size):
     return img
 
 
+def draw_sync_icon(size):
+    """The Baseline icon with a white sync badge (two circular arrows) in the
+    lower right, kept inside iOS's rounded-corner mask."""
+    img = draw_baseline_icon(size)
+    draw = ImageDraw.Draw(img)
+    cx, cy, r = size * 0.75, size * 0.76, size * 0.15
+    draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=LINE)
+
+    ar = r * 0.55                 # arrow ring radius
+    w = max(4, int(size * 0.032))  # arrow stroke
+    box = [cx - ar, cy - ar, cx + ar, cy + ar]
+    for start in (200, 20):        # two arcs, each with a head at its clockwise end
+        end = start + 115
+        draw.arc(box, start, end, fill=BG, width=w)
+        a = math.radians(end)
+        rc = ar - w / 2               # PIL draws a thick arc inward from its box
+        px, py = cx + rc * math.cos(a), cy + rc * math.sin(a)
+        tx, ty = -math.sin(a), math.cos(a)          # clockwise tangent
+        nx, ny = math.cos(a), math.sin(a)           # outward normal
+        length, half = w * 1.5, w * 1.15
+        tip = (px + tx * length, py + ty * length)
+        b1 = (px + nx * half, py + ny * half)
+        b2 = (px - nx * half, py - ny * half)
+        draw.polygon([tip, b1, b2], fill=BG)
+    return img
+
+
 if __name__ == "__main__":
     sizes = {
         "static/icons/icon-512.png": 512,
@@ -59,4 +91,6 @@ if __name__ == "__main__":
         img = draw_baseline_icon(sz)
         img.save(path, "PNG")
         print(f"  {path}  ({sz}x{sz})")
+    draw_sync_icon(1024).save("mobile/assets/icon.png", "PNG")
+    print("  mobile/assets/icon.png  (1024x1024, sync badge)")
     print("Done.")

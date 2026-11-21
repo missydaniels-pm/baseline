@@ -362,10 +362,11 @@ export default function App() {
       body = (
         <>
           <Text style={s.title} accessibilityRole="header">
-            Baseline
+            Baseline Sync
           </Text>
           <Text style={s.p}>
-            Sign in with your Baseline account to sync Apple Health. Health sync is by invitation.
+            Sign in with your Baseline account to sync Apple Health. Health sync is by invitation. Everything
+            else — your dashboard, episodes and check-ins — stays on the Baseline website.
           </Text>
           <TextInput
             style={s.input}
@@ -529,6 +530,13 @@ export default function App() {
             )}
           </View>
           <Button label="Sync now" onPress={() => token && runSync(token)} disabled={syncing} busy={syncing} />
+          <Text style={s.p}>Your episodes, check-ins and trends are on the Baseline website.</Text>
+          <Button
+            label="Open the Baseline website"
+            kind="secondary"
+            hint="Opens in Safari. If you use the Baseline icon on your Home Screen, open that instead."
+            onPress={() => openWeb('/')}
+          />
           <Text style={s.small}>
             For now the app syncs while it’s open. Baseline only reads what you allowed in Apple Health; to change
             that, use {SETTINGS_PATH}.

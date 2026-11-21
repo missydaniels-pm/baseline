@@ -1,4 +1,9 @@
-# Baseline Health sync (iPhone)
+# Baseline Sync (iPhone)
+
+Shown on the Home Screen as **Baseline Sync**, with a sync badge on the Baseline icon, so testers who also
+have the web app on their Home Screen can tell the two apart (owner decision 11/21/26). Rename it to
+"Baseline" when it becomes the full app (`CFBundleDisplayName` in `app.json`; the bundle ID doesn't change).
+Icon: `generate_icons.py` (`draw_sync_icon`).
 
 Apple Health plan **step 4**: a minimal iPhone app whose only job is syncing Apple Health readings —
 heart rate variability (SDNN) and blood glucose — to Baseline's `/api/v1` API. Invite-only (TestFlight
@@ -44,9 +49,19 @@ Background sync (HealthKit background delivery) is **step 5** — it can only be
 
 ## Run it in the iOS Simulator
 
-Needs **Xcode** (Mac App Store) — run it once to install the iOS platform, then
-`sudo xcode-select -s /Applications/Xcode.app`. Node 24. No Apple Developer account is needed for the
-Simulator.
+Needs **Xcode** (Mac App Store) and its iOS Simulator (`xcodebuild -downloadPlatform iOS`, or Xcode ›
+Settings › Components), then `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`. Node 24.
+No Apple Developer account is needed for the Simulator.
+
+**CocoaPods** (the build fetches the HealthKit library's native code with it). On this Intel Mac Homebrew
+has no ready-made build and compiles LLVM from source for hours, so it's installed as a Ruby gem with
+Homebrew's bundled Ruby instead (11/21/26) — and that Ruby must come first on `PATH` when building:
+
+```bash
+RUBY_BIN=/usr/local/Homebrew/Library/Homebrew/vendor/portable-ruby/current/bin
+$RUBY_BIN/gem install cocoapods --user-install --no-document     # once; again after a big Homebrew update
+export PATH="$RUBY_BIN:$HOME/.local/share/gem/ruby/4.0.0/bin:$PATH" LANG=en_US.UTF-8
+```
 
 ```bash
 cd mobile
@@ -59,7 +74,14 @@ EXPO_PUBLIC_API_URL=http://localhost:5001 npx expo run:ios   # against ./run.sh 
 flag on (`/admin/users` on that server).
 
 **Health data in the Simulator:** open the Health app → Browse → Heart → Heart Rate Variability (or
-Other Data → Blood Glucose) → Add Data. Then come back to Baseline and tap Sync now.
+Other Data → Blood Glucose) → Add Data. Then come back to Baseline and tap Sync now. *Known issue
+(11/21/26): on this Intel Mac the iOS 26.5 Simulator's Health app opens to a black screen, so no readings
+could be added there — reading real Health data is first checked on a real iPhone (step 5).*
+
+**If the app opens on Expo's launcher instead of Baseline:** start the dev server
+(`EXPO_PUBLIC_API_URL=… npx expo start --dev-client`) and choose it, or "Enter URL manually" →
+`http://localhost:8081`. `expo run:ios` may end with an `osascript` error about the Simulator window on this
+Mac — the app is installed anyway.
 
 ## Tests
 

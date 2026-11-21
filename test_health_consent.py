@@ -193,7 +193,7 @@ def main():
     check('id="apple-health"' in page and 'Connect it from Baseline' in page and 'Withdraw and delete' not in page,
           '[web] sync on, no consent: explains to connect from the app, no withdraw button')
     page = web_for(b).get('/settings').get_data(as_text=True)
-    check('Connected through the iPhone app since' in page and '2 stored readings' in page
+    check('Connected through the Baseline Sync iPhone app since' in page and '2 stored readings' in page
           and 'Withdraw and delete my Health data' in page and 'health-consent/withdraw' in page,
           '[web] consented: date, reading count, withdraw behind a reveal')
     r = web_for(b).post('/settings/health-consent/withdraw', follow_redirects=True)

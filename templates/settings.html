@@ -93,7 +93,7 @@
   <h2 class="section-title" style="margin-bottom:12px;">Apple Health</h2>
   {% if health_consent_ok %}
     <div class="settings-row-desc" style="margin-bottom:16px;">
-      Connected through the iPhone app since {{ user.health_consent_at.strftime('%B %-d, %Y') }}.
+      Connected through the Baseline Sync iPhone app since {{ user.health_consent_at.strftime('%B %-d, %Y') }}.
       Baseline has {{ health_readings }} stored reading{{ '' if health_readings == 1 else 's' }}
       (heart rate variability and blood glucose).
     </div>
@@ -120,7 +120,7 @@
     </details>
   {% else %}
     <div class="settings-row-desc">
-      Apple Health sync is available for your account. Connect it from Baseline's iPhone app — it
+      Apple Health sync is available for your account. Connect it from Baseline's iPhone app, <strong>Baseline Sync</strong> — it
       asks for your consent before reading anything.
       {% if health_readings %}
         Baseline still has {{ health_readings }} reading{{ '' if health_readings == 1 else 's' }} from
