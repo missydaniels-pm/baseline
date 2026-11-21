@@ -4,6 +4,8 @@ import re
 import random
 import secrets
 import hashlib
+import math
+import uuid
 import hmac
 import base64
 import resend
@@ -14,8 +16,8 @@ from flask_limiter import Limiter
 from flask_wtf.csrf import CSRFProtect, CSRFError, generate_csrf
 from flask_limiter.util import get_remote_address
 from sqlalchemy import text, or_
-from sqlalchemy.exc import IntegrityError
-from database import db, User, Episode, Protocol, Symptom, SymptomScore, EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode, UsedVerifyToken, UserActivity, Trigger, ApiToken, EpisodeTrigger, EXPECTED_FK_ONDELETE, verify_fk_ondelete, STOP_REASON_CHECK_SQL, EXPERIMENT_STOP_REASON_VALUES, EXPERIMENT_STOP_REASON_CHECK_SQL, normalize_database_url
+from sqlalchemy.exc import IntegrityError, OperationalError
+from database import db, User, Episode, Protocol, Symptom, SymptomScore, EpisodeIntervention, Experiment, CheckIn, ProtocolCompliance, ProtocolEvent, InviteCode, UsedVerifyToken, UserActivity, Trigger, ApiToken, HealthSample, HEALTH_SAMPLE_KINDS, EpisodeTrigger, EXPECTED_FK_ONDELETE, verify_fk_ondelete, STOP_REASON_CHECK_SQL, EXPERIMENT_STOP_REASON_VALUES, EXPERIMENT_STOP_REASON_CHECK_SQL, normalize_database_url
 from collections import defaultdict
 from functools import wraps
 from werkzeug.exceptions import HTTPException
@@ -66,6 +68,10 @@ app.config['WTF_CSRF_ENABLED'] = os.environ.get('WTF_CSRF_ENABLED', 'true').lowe
 # The default 1h limit would silently discard a slow episode/check-in form on
 # submit — real risk for users who take a while — with no security gain here.
 app.config['WTF_CSRF_TIME_LIMIT'] = None
+# Request-size cap (11/21/26, Apple Health step 2). Nothing on the website comes
+# close (no file uploads); the Health upload's 500-reading batch is ~100 KB. A
+# bigger body gets a 413 before any view runs — JSON under /api/.
+app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024
 
 db.init_app(app)
 bcrypt = Bcrypt(app)
@@ -2887,9 +2893,199 @@ def api_me():
 @api_route('/api/v1/health/sync-status')
 @health_sync_required
 def api_health_sync_status():
-    """Health-sync gate check for the app's status screen. Step 2 of the Apple
-    Health plan adds the upload endpoint and fills in last_synced_at."""
-    return {'ok': True, 'enabled': True, 'last_synced_at': None}
+    """The app's status screen: sync is allowed, and when a reading last arrived."""
+    last = (db.session.query(db.func.max(HealthSample.created_at))
+            .filter(HealthSample.user_id == g.api_user.id).scalar())
+    return {'ok': True, 'enabled': True, 'last_synced_at': _iso_utc(last)}
+
+
+HEALTH_BATCH_MAX = 500          # readings, and separately deleted ids, per request
+HEALTH_FUTURE_SLACK = timedelta(minutes=10)   # phone clocks drift a little
+HEALTH_EARLIEST = datetime(2000, 1, 1)        # nothing in Health plausibly predates this
+
+
+def _health_upload_key():
+    """Rate-limit bucket per phone token. The limit is checked after api_route's
+    token check and health_sync_required (decorator order), so a bad token or a
+    gated-off account never spends a real phone's bucket; the key is a hash of
+    the header itself."""
+    # The token alone, so spacing/case variants of the header share one bucket.
+    token = request.headers.get('Authorization', '').partition(' ')[2].strip()
+    return 'tok:' + hashlib.sha256(token.encode('utf-8', 'replace')).hexdigest()[:24]
+
+
+def _parse_hk_time(raw):
+    """ISO 8601 with a UTC offset ('Z' or +hh:mm) -> naive UTC, else None.
+    A time without an offset is refused: we can't know which zone it meant."""
+    if not isinstance(raw, str) or len(raw) > 40:
+        return None
+    try:
+        dt = datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            return None
+        return dt.astimezone(ZoneInfo('UTC')).replace(tzinfo=None)
+    except (ValueError, OverflowError):   # year 1 / 9999 overflow on conversion
+        return None
+
+
+def _clean_hk_uuid(raw):
+    """Apple's sample id, normalised to upper-case canonical form, or None."""
+    if not isinstance(raw, str) or len(raw) != 36:
+        return None
+    try:
+        return str(uuid.UUID(raw)).upper()
+    except ValueError:
+        return None
+
+
+def _validate_health_sample(item, kind_rules, now_utc, zone):
+    """One reading from the upload -> (row fields, None) or (None, reason).
+    Every failure is a per-reading rejection, never an exception: one bad
+    reading must not lose (or endlessly re-send) the rest of the batch."""
+    if not isinstance(item, dict):
+        return None, 'not_an_object'
+    hk_id = _clean_hk_uuid(item.get('id'))
+    if hk_id is None:
+        return None, 'bad_id'
+    start, end = _parse_hk_time(item.get('start')), _parse_hk_time(item.get('end'))
+    if start is None or end is None:
+        return None, 'bad_time'
+    if end < start:
+        return None, 'end_before_start'
+    if start > now_utc + HEALTH_FUTURE_SLACK:
+        return None, 'in_future'
+    if start < HEALTH_EARLIEST:
+        return None, 'too_old'
+    try:
+        local_date = start.replace(tzinfo=ZoneInfo('UTC')).astimezone(zone).date()
+    except OverflowError:
+        return None, 'bad_time'
+    value = item.get('value')
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None, 'bad_value'
+    try:
+        value = float(value)          # a 400-digit integer overflows here
+    except OverflowError:
+        return None, 'out_of_range'
+    if not math.isfinite(value):
+        return None, 'bad_value'
+    if not (kind_rules['min'] <= value <= kind_rules['max']):
+        return None, 'out_of_range'
+    source = item.get('source')
+    if source is not None:
+        if not isinstance(source, str) or '\x00' in source:
+            return None, 'bad_source'
+        try:
+            source.encode('utf-8')        # a lone surrogate can't be stored
+        except UnicodeEncodeError:
+            return None, 'bad_source'
+        source = source.strip()[:100] or None
+    return {'hk_uuid': hk_id, 'start_at': start, 'end_at': end, 'local_date': local_date,
+            'value': value, 'source_name': source}, None
+
+
+@api_route('/api/v1/health/samples', methods=('POST',))
+@health_sync_required
+@limiter.limit('600 per hour', key_func=_health_upload_key)
+def api_health_samples():
+    """Store a batch of Apple Health readings (SPEC-health-data.md H5).
+
+    {kind, samples: [{id, start, end, value, source?}], deleted: [id]}.
+    Re-sending a reading is harmless (stored once, counted in already_had);
+    deleted ids are removed after the batch's readings are stored, so a
+    reading both added and deleted in one batch ends up deleted. Bad readings
+    are reported in `rejected` and skipped; the rest are stored.
+    """
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _api_error(400, 'bad_request', 'Send the readings as a JSON object.')
+    kind = data.get('kind')
+    if not isinstance(kind, str) or kind not in HEALTH_SAMPLE_KINDS:
+        return _api_error(400, 'bad_kind', 'Unknown kind of reading.')
+    samples = data.get('samples', [])
+    deleted = data.get('deleted', [])
+    if not isinstance(samples, list) or not isinstance(deleted, list):
+        return _api_error(400, 'bad_request', 'samples and deleted must be lists.')
+    if len(samples) > HEALTH_BATCH_MAX or len(deleted) > HEALTH_BATCH_MAX:
+        return _api_error(400, 'batch_too_large',
+                          f'Send at most {HEALTH_BATCH_MAX} readings and {HEALTH_BATCH_MAX} deletions at a time.')
+
+    user = g.api_user
+    rules = HEALTH_SAMPLE_KINDS[kind]
+    now_utc = datetime.utcnow()
+    # The account's STORED zone, not user_tz_name(): that helper is cookie-first
+    # (a browser's own zone), and the API ignores cookies entirely — a cookie on
+    # an API request is never this phone's zone. No stored zone -> UTC (users
+    # register on the web, which stores it on their first page).
+    try:
+        zone = ZoneInfo(user.timezone) if user.timezone else ZoneInfo('UTC')
+    except Exception:
+        zone = ZoneInfo('UTC')
+
+    rows, rejected, seen = {}, [], set()
+    duplicates_in_batch = 0
+    for item in samples:
+        try:
+            fields, reason = _validate_health_sample(item, rules, now_utc, zone)
+        except Exception as exc:
+            # Safety net: one unforeseen bad reading is rejected, never a 500
+            # that loses (and makes the phone endlessly re-send) the batch.
+            # Log the type only — never the reading (logging hygiene, review F5).
+            app.logger.warning('Health reading failed validation unexpectedly: %s', type(exc).__name__)
+            fields, reason = None, 'invalid'
+        if reason:
+            raw_id = item.get('id') if isinstance(item, dict) else None
+            rejected.append({'id': raw_id[:64] if isinstance(raw_id, str) else None, 'reason': reason})
+            continue
+        if fields['hk_uuid'] in seen:
+            duplicates_in_batch += 1
+            continue
+        seen.add(fields['hk_uuid'])
+        rows[fields['hk_uuid']] = dict(fields, user_id=user.id, kind=kind)
+
+    delete_ids = set()
+    for raw in deleted:
+        hk_id = _clean_hk_uuid(raw)
+        if hk_id is None:
+            rejected.append({'id': raw[:64] if isinstance(raw, str) else None, 'reason': 'bad_deleted_id'})
+        else:
+            delete_ids.add(hk_id)
+
+    def _store():
+        existing = set()
+        if rows:
+            existing = {u for (u,) in db.session.query(HealthSample.hk_uuid).filter(
+                HealthSample.user_id == user.id, HealthSample.hk_uuid.in_(list(rows)))}
+        # Sorted by id: two concurrent uploads then take row locks in the same
+        # order, so they can't deadlock each other on PostgreSQL.
+        new = [HealthSample(**rows[u]) for u in sorted(rows) if u not in existing]
+        db.session.add_all(new)
+        n_deleted = 0
+        if delete_ids:
+            n_deleted = HealthSample.query.filter(
+                HealthSample.user_id == user.id, HealthSample.kind == kind,
+                HealthSample.hk_uuid.in_(list(delete_ids))).delete(synchronize_session=False)
+        db.session.commit()
+        return len(new), len(existing), n_deleted
+
+    try:
+        stored, already, n_deleted = _store()
+    except (IntegrityError, OperationalError):
+        # Two uploads of the same readings raced (background sync + app open),
+        # or PostgreSQL broke a lock wait. Start over once: the other request's
+        # rows now count as already had.
+        db.session.rollback()
+        try:
+            stored, already, n_deleted = _store()
+        except (IntegrityError, OperationalError) as exc:
+            db.session.rollback()
+            # Type only: the exception text carries the SQL parameters, i.e.
+            # health readings, which must not reach the logs (review F5).
+            app.logger.warning('Health upload failed twice: %s', type(exc).__name__)
+            return _api_error(409, 'conflict', 'Another sync is running. Try again.')
+
+    return {'ok': True, 'stored': stored, 'already_had': already + duplicates_in_batch,
+            'deleted': n_deleted, 'rejected': rejected}
 
 
 def _wants_api_json():
@@ -2898,6 +3094,7 @@ def _wants_api_json():
 
 _API_ERROR_MESSAGES = {
     404: ('not_found', 'Not found.'),
+    413: ('too_large', 'That upload is too large. Send fewer readings at a time.'),
     405: ('method_not_allowed', 'Method not allowed.'),
     429: ('rate_limited', 'Too many attempts. Try again later.'),
 }
@@ -5811,6 +6008,7 @@ def dev_reset():
         Experiment.query.filter_by(user_id=user.id).delete()
         Symptom.query.filter_by(user_id=user.id).delete()
         Trigger.query.filter_by(user_id=user.id).delete()
+        HealthSample.query.filter_by(user_id=user.id).delete()  # synced Apple Health readings (11/21/26)
         user.onboarding_complete = False
         user.ai_logging_enabled = False
         user.baseline_episodes_per_month = None

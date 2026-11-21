@@ -128,6 +128,9 @@ few months otherwise. **A backup is only trusted once a drill has passed.**
    - creates a throwaway database `restore_drill_<time>` on **staging's** Postgres server,
    - restores into it with `pg_restore --exit-on-error`,
    - compares every table's row count with the counts recorded at backup time,
+     (every table it finds — no list to maintain. Since 11/21/26 that is **17**: `api_tokens` and
+     `health_samples` were added for the iOS app. `health_samples` holds raw Apple Health readings, so
+     backups now carry them too; the drill's throwaway database is still dropped either way.)
    - **drops the throwaway database, pass or fail**, so real health data does not stay on staging.
 3. Success ends with `RESTORE DRILL PASSED`. Any `FAIL` line names the table and the two counts.
 

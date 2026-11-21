@@ -75,6 +75,7 @@ EXPECTED_FK_ONDELETE = {
     ('user_activity', 'user_id'): 'CASCADE',         # account delete removes analytics (privacy-first)
     ('invite_codes', 'used_by_user_id'): 'SET NULL',
     ('api_tokens', 'user_id'): 'CASCADE',            # account delete signs out every phone
+    ('health_samples', 'user_id'): 'CASCADE',        # account delete removes synced Health readings
 }
 
 
@@ -176,6 +177,7 @@ class User(db.Model):
     # so there's no parent deletion to cascade from.
     triggers = db.relationship('Trigger', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)
     api_tokens = db.relationship('ApiToken', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)
+    health_samples = db.relationship('HealthSample', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)
 
     def __repr__(self):
         return f'<User {self.name}>'
@@ -411,6 +413,19 @@ def _sql_str_in(values):
 # what makes the PostgreSQL ADD CONSTRAINT valid against the populated prod table —
 # every existing row has stop_reason = NULL and passes the NULL branch. Drop it and
 # the migration fails on every existing protocol_events row. See SPEC G1.
+# Apple Health readings (SPEC-health-data.md, 11/21/26). One canonical unit per
+# kind — the phone asks Health for it and the server rejects anything else — and
+# a plausible range, enforced in the app (out of range is rejected and reported,
+# never clamped). Adding a kind = a vocabulary entry here + the app asking for it
+# + a migration that drops and re-adds `health_samples_kind_check` on existing
+# databases (create_all never alters a constraint) — the stop_reason precedent.
+# Until it runs, inserts of the new kind fail the CHECK.
+HEALTH_SAMPLE_KINDS = {
+    'hrv_sdnn': {'unit': 'ms', 'min': 1.0, 'max': 300.0},
+    'blood_glucose': {'unit': 'mg/dL', 'min': 10.0, 'max': 1000.0},
+}
+HEALTH_SAMPLE_KIND_CHECK_SQL = 'kind IN %s' % _sql_str_in(sorted(HEALTH_SAMPLE_KINDS))
+
 STOP_REASON_CHECK_SQL = (
     "stop_reason IS NULL OR (event_type IN %s AND stop_reason IN %s)"
     % (_sql_str_in(STOP_REASON_EVENT_TYPES), _sql_str_in(STOP_REASON_VALUES))
@@ -594,6 +609,39 @@ class ApiToken(db.Model):
     last_used_at = db.Column(db.DateTime, nullable=True)
     expires_at = db.Column(db.DateTime, nullable=False)
     revoked_at = db.Column(db.DateTime, nullable=True)
+
+
+class HealthSample(db.Model):
+    """One reading synced from Apple Health (11/21/26, SPEC-health-data.md H1–H6).
+
+    Raw readings are the source of truth: daily values for "What I Track" and
+    the precursor windows of step 7 are computed from them, never stored
+    instead of them. `hk_uuid` is Apple's sample id, unique per user, so an
+    upload is an upsert (a re-sent reading is stored once). Readings deleted in
+    Health are hard-deleted here. Uniqueness is (user, hk_uuid), not per kind:
+    Apple's sample UUIDs are globally unique; a future kind with ids that repeat
+    across types would need the kind in the key. `value` is in the kind's canonical unit
+    (HEALTH_SAMPLE_KINDS); `local_date` is the day in the account's zone at
+    write time, so a later zone change never moves it.
+    """
+    __tablename__ = 'health_samples'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    kind = db.Column(db.String(30), nullable=False)
+    hk_uuid = db.Column(db.String(36), nullable=False)
+    value = db.Column(db.Float, nullable=False)
+    start_at = db.Column(db.DateTime, nullable=False)
+    end_at = db.Column(db.DateTime, nullable=False)
+    local_date = db.Column(db.Date, nullable=False)
+    source_name = db.Column(db.String(100), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'hk_uuid', name='ux_health_samples_user_uuid'),
+        db.Index('ix_health_samples_user_kind_start', 'user_id', 'kind', 'start_at'),
+        db.CheckConstraint(HEALTH_SAMPLE_KIND_CHECK_SQL, name='health_samples_kind_check'),
+    )
 
 
 class InviteCode(db.Model):

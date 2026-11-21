@@ -323,6 +323,16 @@ here in the same commit.
 - **Input:** `request.get_json(silent=True)`; check it's a dict and every field's type before use.
 - **Health endpoints** stack `@health_sync_required` under `@api_route` (admin flag + current privacy
   consent; the separate Health consent joins it in step 3).
+- **Batch uploads** (the Health samples precedent): a hard batch cap, per-item validation that
+  reports `rejected: [{id, reason}]` and stores the rest (never clamps a value), idempotency from the
+  client's own ids (UNIQUE per user → upsert, no keys table), deletes scoped to the user, and a
+  per-token rate limit (`key_func` on the Authorization header — the limiter runs before the token
+  is resolved). **Races:** when the whole request is one transaction (the Health upsert), roll back
+  and retry once, then answer 409 `conflict`; a single insert inside a larger form transaction uses
+  a `begin_nested` savepoint (`_resolve_trigger`). Insert a batch in a fixed order (sorted by id) so
+  concurrent batches can't deadlock.
+- **API routes ignore cookies entirely**, including `baseline_tz`: a day boundary in an API route uses
+  the account's stored `User.timezone`, not the cookie-first `user_tz_name()`.
 - **Sign-in checks** go through `check_credentials()` (shared with web `/login`) — one place decides
   unverified / deactivated / invalid. Tokens: `issue_api_token()`; never store the plaintext.
 - **Tests:** a route-level suite like `test_api_auth.py` (real requests with `Authorization: Bearer`).
