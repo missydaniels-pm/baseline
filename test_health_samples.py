@@ -31,7 +31,7 @@ import json  # noqa: E402
 import uuid  # noqa: E402
 from datetime import date, datetime, timedelta  # noqa: E402
 
-from app import app, bcrypt, limiter, _pw, PRIVACY_POLICY_VERSION  # noqa: E402
+from app import app, bcrypt, limiter, _pw, PRIVACY_POLICY_VERSION, HEALTH_CONSENT_VERSION  # noqa: E402
 from app import init_db  # noqa: E402
 init_db()  # schema + startup tasks; importing app no longer runs them (11/21/26)
 from database import db, User, HealthSample  # noqa: E402
@@ -50,7 +50,8 @@ def check(cond, msg):
 def make_user(email, **kw):
     fields = dict(name='T', email=email, is_active=True, verified_at=datetime.utcnow(),
                   onboarding_complete=True, has_seen_tour=True, health_sync_enabled=True,
-                  privacy_policy_version=PRIVACY_POLICY_VERSION, timezone='America/Los_Angeles')
+                  privacy_policy_version=PRIVACY_POLICY_VERSION, timezone='America/Los_Angeles',
+                  health_consent_at=datetime.utcnow(), health_consent_version=HEALTH_CONSENT_VERSION)
     fields.update(kw)
     u = User(**fields)
     u.password_hash = bcrypt.generate_password_hash(_pw(PW)).decode('utf-8')

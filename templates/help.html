@@ -18,6 +18,7 @@
   <a href="#managing-tracking">Managing What You Track</a>
   <a href="#account">Your Account</a>
   <a href="#install">Install as an App</a>
+  <a href="#apple-health">Apple Health (iPhone app)</a>
   <a href="#early-version">A note on this early version</a>
 </nav>
 
@@ -256,6 +257,18 @@
     <li><strong>Desktop:</strong> In Chrome or Edge, look for the install icon in the address bar, or check the browser menu for <strong>Install Baseline</strong></li>
   </ul>
   <p>You may also see an "Install Baseline" prompt at the bottom of the screen when you first visit — just tap it to install.</p>
+</section>
+
+<hr class="divider">
+
+<section class="help-section" id="apple-health">
+  <h2 class="help-heading">Apple Health (iPhone app, by invitation)</h2>
+  <p>A small group is testing Baseline's iPhone app, which can sync heart rate variability (HRV) and blood glucose readings from Apple Health so you can later compare them with your episodes. It's invitation-only for now, and you sign in with the same email and password you use here.</p>
+  <ul class="help-list">
+    <li><strong>Your consent comes first.</strong> The app asks for your separate consent before it reads anything, and Apple Health then lets you choose which readings to share.</li>
+    <li><strong>Kept private.</strong> Health readings are never sold, used for ads, sent to AI services or shared with anyone other than the service providers that host Baseline — the check-in doesn't use them.</li>
+    <li><strong>Stopping.</strong> Withdraw your consent in the app or{% if current_user and (current_user.health_sync_enabled or current_user.health_consent_at) %} in <a href="{{ url_for('settings') }}#apple-health">Settings → Apple Health</a>{% else %}, for invited accounts, in Settings → Apple Health{% endif %}; every stored reading is deleted right away. Turning off Baseline in iPhone Settings → Health only stops new readings.</li>
+  </ul>
 </section>
 
 <hr class="divider">

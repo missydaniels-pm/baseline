@@ -161,6 +161,11 @@ class User(db.Model):
     # server_default matches the migration's DEFAULT FALSE, so a fresh create_all()
     # database and a migrated one are the same (as session_version does).
     health_sync_enabled = db.Column(db.Boolean, default=False, server_default=db.false(), nullable=False)
+    # Separate Apple Health consent (11/21/26, SPEC-health-data.md §8, C2): given in
+    # the iPhone app, mirroring privacy_consent_at/_version. Withdrawal clears both
+    # and deletes every health_samples row for the user.
+    health_consent_at = db.Column(db.DateTime, nullable=True)
+    health_consent_version = db.Column(db.String(20), nullable=True)
 
     episodes = db.relationship('Episode', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)
     protocols = db.relationship('Protocol', backref='user', lazy=True, cascade='all, delete-orphan', passive_deletes=True)

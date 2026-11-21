@@ -4,6 +4,7 @@ import re
 import random
 import secrets
 import hashlib
+import logging
 import math
 import uuid
 import hmac
@@ -29,6 +30,11 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 app = Flask(__name__)
+# INFO, not Python's WARNING default (11/21/26): without this every
+# app.logger.info line was silently dropped outside debug mode — including the
+# audit lines for Health sync changes and Health consent. Info lines carry ids
+# and counts only, never emails or health data (logging hygiene, review F5).
+app.logger.setLevel(logging.INFO)
 
 database_url = os.environ.get('DATABASE_URL')
 if database_url:
@@ -760,6 +766,9 @@ def run_migrations():
         ('users',                 'session_version',           'ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0'),
         # Apple Health sync gate (11/21/26) — off for everyone until an admin turns it on.
         ('users',                 'health_sync_enabled',       'ALTER TABLE users ADD COLUMN health_sync_enabled BOOLEAN NOT NULL DEFAULT FALSE'),
+        # Separate Apple Health consent (11/21/26). Nullable: nobody has given it yet.
+        ('users',                 'health_consent_at',         'ALTER TABLE users ADD COLUMN health_consent_at TIMESTAMP'),
+        ('users',                 'health_consent_version',    'ALTER TABLE users ADD COLUMN health_consent_version VARCHAR(20)'),
     ]
 
     # Widen symptoms.name from varchar(100) to varchar(200) on PostgreSQL
@@ -1756,17 +1765,69 @@ def _missed_message_for(protocol, hypothesis=None):
 # The privacy policy users consent to. Bump it (and the "Effective" date in
 # privacy.html — test_privacy_consent.py checks they match) on a material policy
 # change: every signed-in user is then asked to consent again (require_auth).
-PRIVACY_POLICY_VERSION = '2026-10-19'
+PRIVACY_POLICY_VERSION = '2026-11-21'
 
 # Reachable while a signed-in user still owes consent to the current policy:
 # the consent page, and the two ways out (log out, delete the account).
-CONSENT_GATE_EXEMPT = {'privacy_consent', 'logout', 'delete_account'}
+# withdraw_health_consent_web (11/21/26): withdrawing Health consent must never
+# require accepting a new policy first, so it's reachable from the consent page.
+CONSENT_GATE_EXEMPT = {'privacy_consent', 'logout', 'delete_account', 'withdraw_health_consent_web'}
 
 
 def record_privacy_consent(user):
     """Record that `user` consented to the current policy (caller commits)."""
     user.privacy_consent_at = datetime.utcnow()
     user.privacy_policy_version = PRIVACY_POLICY_VERSION
+
+
+# Separate Apple Health consent (11/21/26, owner-approved wording — SPEC-health-data.md
+# §8). Given in the iPhone app, which shows this text from GET /api/v1/health/consent,
+# so the wording lives only here. Changing the wording materially = new version (the
+# app then asks again, and uploads are refused until it does). Owner approval required.
+HEALTH_CONSENT_VERSION = '2026-11-21'
+HEALTH_CONSENT_TEXT = {
+    'title': 'Connect Apple Health to Baseline',
+    'body': ('Baseline will read your heart rate variability and blood glucose readings from '
+             'Apple Health — each reading\'s value, its time, and the app or device that recorded '
+             'it — and store them in your Baseline account so you can compare them with your episodes.'),
+    'points': [
+        'Used only to show you your own data and patterns.',
+        ('Never sold, never used for advertising, never shared with anyone other than the service '
+         'providers that host Baseline, and never sent to AI services.'),
+        'Apple Health asks you next which readings to share; you can change that any time in iPhone Settings.',
+        ('You can withdraw this consent any time, here or in Baseline Settings on the web. When you do, '
+         'every Health reading Baseline has stored is deleted immediately (encrypted backups expire '
+         'within about 30 days).'),
+    ],
+    'agree_label': 'I agree to let Baseline collect and store my Apple Health data as described.',
+}
+
+
+def health_consent_current(user):
+    return user.health_consent_version == HEALTH_CONSENT_VERSION
+
+
+def record_health_consent(user):
+    """Record the separate Apple Health consent (caller commits)."""
+    user.health_consent_at = datetime.utcnow()
+    user.health_consent_version = HEALTH_CONSENT_VERSION
+
+
+def withdraw_health_consent(user):
+    """Withdraw Apple Health consent: clear it and delete every stored reading,
+    in the caller's transaction (caller commits). Returns how many readings were
+    deleted. Shared by the app (DELETE /api/v1/health/consent) and web Settings.
+
+    Locks the user's row first; the upload does the same and re-checks consent
+    under that lock, so an upload in flight can't land readings after a
+    withdrawal (PostgreSQL row lock; SQLite serialises writes anyway)."""
+    # FOR NO KEY UPDATE: serialises against the upload without blocking
+    # unrelated inserts that reference the users row (FK checks).
+    db.session.query(User.id).filter(User.id == user.id).with_for_update(key_share=True).one()
+    n = HealthSample.query.filter_by(user_id=user.id).delete(synchronize_session=False)
+    user.health_consent_at = None
+    user.health_consent_version = None
+    return n
 
 
 PUBLIC_ENDPOINTS = {'login', 'register', 'forgot_password', 'reset_password', 'static', 'dev_bootstrap', 'serve_sw', 'offline', 'privacy', 'verify_email', 'resend_verification', 'verify_sent', 'unsubscribe'}
@@ -2354,12 +2415,18 @@ def privacy_consent():
         if 'privacy_ack' not in request.form:
             flash('Please turn on the consent switch to continue, or use the options at the '
                   'bottom to log out or delete your account.', 'error')
-            return render_template('privacy_consent.html', show_exits=True), 400
+            return render_template('privacy_consent.html', show_exits=True,
+                                   health_data=_has_health_data(user)), 400
         record_privacy_consent(user)
         db.session.commit()
         flash('Thanks — your consent is recorded.', 'success')
         return redirect(url_for('index'))
-    return render_template('privacy_consent.html')
+    return render_template('privacy_consent.html', health_data=_has_health_data(user))
+
+
+def _has_health_data(user):
+    """Whether to offer Health withdrawal: a consent on record or stored readings."""
+    return bool(user.health_consent_at) or HealthSample.query.filter_by(user_id=user.id).first() is not None
 
 
 @app.route('/settings', methods=['GET', 'POST'])
@@ -2372,7 +2439,27 @@ def settings():
         flash('Settings saved.', 'success')
         return redirect(url_for('settings'))
 
-    return render_template('settings.html', user=user)
+    # Counted for everyone (indexed): readings stored before a consent existed, or
+    # kept after sync was turned off, must stay deletable from here.
+    health_readings = HealthSample.query.filter_by(user_id=user.id).count()
+    return render_template('settings.html', user=user, health_readings=health_readings,
+                           health_consent_ok=health_consent_current(user))
+
+
+@app.route('/settings/health-consent/withdraw', methods=['POST'])
+def withdraw_health_consent_web():
+    """Withdraw Apple Health consent from the website (the phone may be lost):
+    the same helper as the app's DELETE /api/v1/health/consent."""
+    user = get_user()
+    n = withdraw_health_consent(user)
+    db.session.commit()
+    app.logger.info('Health consent withdrawn by user_id=%s via web; %d readings deleted', user.id, n)
+    flash(f"Apple Health consent withdrawn. {n} stored reading{'s' if n != 1 else ''} deleted. "
+          "To stop the iPhone app asking Apple Health, also turn off Baseline in iPhone Settings → Health.",
+          'success')
+    if user.privacy_policy_version != PRIVACY_POLICY_VERSION:
+        return redirect(url_for('privacy_consent'))
+    return redirect(url_for('settings'))
 
 
 @app.route('/settings/email-preferences', methods=['POST'])
@@ -2818,8 +2905,9 @@ def api_route(rule, methods=('GET',), public=False):
 def health_sync_required(view):
     """Gate for every Health endpoint (stack under @api_route): the account must
     have Health sync turned on by an admin and have consented to the current
-    privacy policy. (The separate Health-data consent joins this check in
-    step 3 of the Apple Health plan.)"""
+    privacy policy. Routes that read or write Health data also stack
+    @health_consent_required (the separate Health consent). Withdrawal is
+    deliberately behind neither."""
     @wraps(view)
     def wrapped(*args, **kwargs):
         user = g.api_user
@@ -2833,6 +2921,18 @@ def health_sync_required(view):
     return wrapped
 
 
+def health_consent_required(view):
+    """Stack under @health_sync_required on routes that read or write Health data:
+    the user's separate Apple Health consent must be the current version."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not health_consent_current(g.api_user):
+            return _api_error(403, 'health_consent_required',
+                              'Give your Apple Health consent in the app to start syncing.')
+        return view(*args, **kwargs)
+    return wrapped
+
+
 def _api_user_json(user):
     return {
         'id': user.id,
@@ -2840,6 +2940,7 @@ def _api_user_json(user):
         'name': user.name,
         'health_sync_enabled': bool(user.health_sync_enabled),
         'consent_current': user.privacy_policy_version == PRIVACY_POLICY_VERSION,
+        'health_consent_current': health_consent_current(user),
     }
 
 
@@ -2896,7 +2997,51 @@ def api_health_sync_status():
     """The app's status screen: sync is allowed, and when a reading last arrived."""
     last = (db.session.query(db.func.max(HealthSample.created_at))
             .filter(HealthSample.user_id == g.api_user.id).scalar())
-    return {'ok': True, 'enabled': True, 'last_synced_at': _iso_utc(last)}
+    return {'ok': True, 'enabled': True, 'health_consent_current': health_consent_current(g.api_user),
+            'last_synced_at': _iso_utc(last)}
+
+
+@api_route('/api/v1/health/consent')
+@health_sync_required
+def api_health_consent_get():
+    """The Health consent text the app shows, its version, and whether this
+    account has given the current one."""
+    user = g.api_user
+    return {'ok': True, 'version': HEALTH_CONSENT_VERSION, **HEALTH_CONSENT_TEXT,
+            'current': health_consent_current(user),
+            'given_at': _iso_utc(user.health_consent_at) if health_consent_current(user) else None}
+
+
+@api_route('/api/v1/health/consent', methods=('POST',))
+@health_sync_required
+def api_health_consent_give():
+    """Record consent: {version} must be the version the app showed (the
+    current one), so nobody consents to wording they didn't see."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or data.get('version') != HEALTH_CONSENT_VERSION:
+        return _api_error(409, 'consent_version_changed',
+                          'The consent wording has changed. Please read it again.')
+    if not health_consent_current(g.api_user):   # re-consenting keeps the original time
+        record_health_consent(g.api_user)
+        db.session.commit()
+    app.logger.info('Health consent given by user_id=%s (version %s)', g.api_user.id, HEALTH_CONSENT_VERSION)
+    return {'ok': True, 'version': HEALTH_CONSENT_VERSION, 'given_at': _iso_utc(g.api_user.health_consent_at)}
+
+
+@api_route('/api/v1/health/consent', methods=('DELETE',))
+def api_health_consent_withdraw():
+    """Withdraw consent and delete every stored reading. Deliberately NOT behind
+    health_sync_required: withdrawing must always work, even if an admin turned
+    sync off or the privacy policy is awaiting re-acceptance."""
+    n = withdraw_health_consent(g.api_user)
+    db.session.commit()
+    app.logger.info('Health consent withdrawn by user_id=%s via app; %d readings deleted', g.api_user.id, n)
+    return {'ok': True, 'deleted': n}
+
+
+class _ConsentGone(Exception):
+    """Raised inside the upload transaction when the Health consent was
+    withdrawn after the gate checked it."""
 
 
 HEALTH_BATCH_MAX = 500          # readings, and separately deleted ids, per request
@@ -2986,6 +3131,7 @@ def _validate_health_sample(item, kind_rules, now_utc, zone):
 
 @api_route('/api/v1/health/samples', methods=('POST',))
 @health_sync_required
+@health_consent_required
 @limiter.limit('600 per hour', key_func=_health_upload_key)
 def api_health_samples():
     """Store a batch of Apple Health readings (SPEC-health-data.md H5).
@@ -3052,6 +3198,12 @@ def api_health_samples():
             delete_ids.add(hk_id)
 
     def _store():
+        # Lock this user's row (see withdraw_health_consent) and re-check the
+        # Health consent inside the transaction that writes the readings.
+        version = (db.session.query(User.health_consent_version)
+                   .filter(User.id == user.id).with_for_update(key_share=True).scalar())
+        if version != HEALTH_CONSENT_VERSION:
+            raise _ConsentGone()
         existing = set()
         if rows:
             existing = {u for (u,) in db.session.query(HealthSample.hk_uuid).filter(
@@ -3070,6 +3222,10 @@ def api_health_samples():
 
     try:
         stored, already, n_deleted = _store()
+    except _ConsentGone:
+        db.session.rollback()
+        return _api_error(403, 'health_consent_required',
+                          'Give your Apple Health consent in the app to start syncing.')
     except (IntegrityError, OperationalError):
         # Two uploads of the same readings raced (background sync + app open),
         # or PostgreSQL broke a lock wait. Start over once: the other request's
@@ -3077,6 +3233,10 @@ def api_health_samples():
         db.session.rollback()
         try:
             stored, already, n_deleted = _store()
+        except _ConsentGone:
+            db.session.rollback()
+            return _api_error(403, 'health_consent_required',
+                              'Give your Apple Health consent in the app to start syncing.')
         except (IntegrityError, OperationalError) as exc:
             db.session.rollback()
             # Type only: the exception text carries the SQL parameters, i.e.
@@ -3120,6 +3280,25 @@ def handle_500(e):
     if _wants_api_json():
         return _api_error(500, 'server_error', 'Something went wrong. Please try again.')
     return e
+
+
+def purge_unconsented_health_samples():
+    """Delete any Apple Health reading whose owner has no Health consent on
+    record (owner decision 11/21/26). Step 2 could store readings before the
+    consent existed; the policy says nothing is read until you consent, so this
+    keeps that true. Expected to delete nothing. A *stale* consent version is
+    not "no consent" — those readings are kept until the user re-consents or
+    deletes them. Counts only in the log."""
+    try:
+        unconsented = db.session.query(User.id).filter(User.health_consent_version.is_(None))
+        n = (HealthSample.query.filter(HealthSample.user_id.in_(unconsented))
+             .delete(synchronize_session=False))
+        db.session.commit()
+        if n:
+            app.logger.warning('Deleted %d Health readings stored without a Health consent', n)
+    except Exception:
+        db.session.rollback()
+        app.logger.warning('Unconsented Health readings purge failed', exc_info=True)
 
 
 def prune_api_tokens():
@@ -6009,6 +6188,8 @@ def dev_reset():
         Symptom.query.filter_by(user_id=user.id).delete()
         Trigger.query.filter_by(user_id=user.id).delete()
         HealthSample.query.filter_by(user_id=user.id).delete()  # synced Apple Health readings (11/21/26)
+        user.health_consent_at = None
+        user.health_consent_version = None
         user.onboarding_complete = False
         user.ai_logging_enabled = False
         user.baseline_episodes_per_month = None
@@ -6348,6 +6529,7 @@ def init_db():
         ensure_admin_user()
         backfill_resend_contacts()
         prune_api_tokens()
+        purge_unconsented_health_samples()
         check_fk_ondelete()
 
 

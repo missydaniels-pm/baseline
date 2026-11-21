@@ -5,13 +5,13 @@
 <div class="wizard-card">
   <h1 class="page-title" style="margin-bottom:8px;">We've updated our Privacy Policy</h1>
   <p style="color:var(--text-muted); margin-bottom:16px;">
-    Before you continue, here's what changed on October 19, 2026:
+    Before you continue, here's what changed on November 21, 2026. Nothing changes for you unless
+    you're invited to use Baseline's iPhone app.
   </p>
   <ul style="color:var(--text); margin:0 0 16px 18px; padding:0; line-height:1.6;">
-    <li style="margin-bottom:8px;"><strong>Backups.</strong> When you delete your account, your data leaves Baseline right away. It stays only in our encrypted backups until they expire, about 30 days later.</li>
-    <li style="margin-bottom:8px;"><strong>Where backups are kept.</strong> Encrypted backups are stored with Cloudflare, which also helps deliver the site. Cloudflare can't read them.</li>
-    <li style="margin-bottom:8px;"><strong>More detail</strong> about what we collect (such as triggers and why an experiment ended), the doctor summary, and which service providers handle data for us.</li>
-    <li><strong>Your consent.</strong> We're now asking you to say yes to Baseline storing the health information you enter.</li>
+    <li style="margin-bottom:8px;"><strong>Apple Health (iPhone app).</strong> Baseline's new invitation-only iPhone app can read heart rate variability and blood glucose from Apple Health — only with a separate consent you give in the app.</li>
+    <li style="margin-bottom:8px;"><strong>iPhone app sign-ins.</strong> We keep a record of iPhone app sign-ins (a device name, and when it was created and last used).</li>
+    <li><strong>How Health data is protected.</strong> It is never sold, used for ads, sent to AI services or shared with anyone other than the service providers that host Baseline, and withdrawing your Health consent deletes it.</li>
   </ul>
   <p style="margin-bottom:24px;">
     <a href="{{ url_for('privacy') }}" target="_blank" rel="noopener" style="color:var(--accent);">Read the full Privacy Policy<span class="sr-only"> (opens in a new tab)</span></a>
@@ -36,6 +36,16 @@
       You can <a href="{{ url_for('logout') }}" style="color:var(--accent);">log out</a> and decide later,
       or delete your account and all its data now (our encrypted backups expire after about 30 days).
     </p>
+    {% if health_data %}
+    <form method="POST" action="{{ url_for('withdraw_health_consent_web') }}" style="margin:0 0 16px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <p style="margin:0 0 8px;">
+        You can also withdraw your Apple Health consent without accepting the new policy: Baseline
+        stops syncing and deletes every stored Health reading right away. This can't be undone.
+      </p>
+      <button type="submit" class="btn btn-secondary">Withdraw Health consent and delete my Health data</button>
+    </form>
+    {% endif %}
     <form method="POST" action="{{ url_for('delete_account') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label for="delete-confirm-input" style="font-size:13px; font-weight:600; display:block; margin-bottom:6px;">

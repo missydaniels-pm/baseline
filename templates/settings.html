@@ -86,6 +86,58 @@
   <a href="{{ url_for('doctor_summary') }}" class="btn btn-secondary">Open Doctor Summary</a>
 </div>
 
+{% if user.health_sync_enabled or user.health_consent_at or health_readings %}
+<hr class="divider">
+
+<div class="settings-section" id="apple-health">
+  <h2 class="section-title" style="margin-bottom:12px;">Apple Health</h2>
+  {% if health_consent_ok %}
+    <div class="settings-row-desc" style="margin-bottom:16px;">
+      Connected through the iPhone app since {{ user.health_consent_at.strftime('%B %-d, %Y') }}.
+      Baseline has {{ health_readings }} stored reading{{ '' if health_readings == 1 else 's' }}
+      (heart rate variability and blood glucose).
+    </div>
+    <details class="health-withdraw">
+      <summary class="btn btn-secondary">Withdraw consent…</summary>
+      <div class="health-withdraw-confirm">
+        <p class="settings-row-desc" style="margin:12px 0;">
+          Baseline will stop syncing and <strong>immediately delete all {{ health_readings }}
+          stored Apple Health reading{{ '' if health_readings == 1 else 's' }}</strong>. This can't be
+          undone (encrypted backups expire within about 30 days). Your episodes and everything else
+          you've logged are not affected.
+        </p>
+        <form method="POST" action="{{ url_for('withdraw_health_consent_web') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button type="button" class="btn btn-secondary"
+              onclick="this.closest('details').open = false">Keep my data</button>
+            <button type="submit" class="btn" style="background:var(--high); color:#fff; border:none;">
+              Withdraw and delete my Health data
+            </button>
+          </div>
+        </form>
+      </div>
+    </details>
+  {% else %}
+    <div class="settings-row-desc">
+      Apple Health sync is available for your account. Connect it from Baseline's iPhone app — it
+      asks for your consent before reading anything.
+      {% if health_readings %}
+        Baseline still has {{ health_readings }} reading{{ '' if health_readings == 1 else 's' }} from
+        before the consent wording changed; they are kept until you give consent again in the app or
+        delete them here. Deleting can't be undone.
+      {% endif %}
+    </div>
+    {% if health_readings %}
+    <form method="POST" action="{{ url_for('withdraw_health_consent_web') }}" style="margin-top:12px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-secondary">Delete my stored Health data</button>
+    </form>
+    {% endif %}
+  {% endif %}
+</div>
+{% endif %}
+
 <hr class="divider">
 
 <div class="settings-section">

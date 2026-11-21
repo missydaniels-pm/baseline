@@ -3305,6 +3305,12 @@ button.tp-dot-btn:hover .tp-dot { transform: scale(1.12); }
 }
 .consent-exit summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 
+/* ── Settings → Apple Health: withdraw is a two-step reveal (11/21/26) ── */
+.health-withdraw > summary { list-style: none; display: inline-block; cursor: pointer; }
+.health-withdraw > summary::-webkit-details-marker { display: none; }
+.health-withdraw > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.health-withdraw[open] > summary { margin-bottom: 4px; }
+
 /* ── Show/hide password (static/js/password-toggle.js, 10/19/26) ───────── */
 .password-field { position: relative; }
 .password-field input { display: block; padding-right: 44px; }

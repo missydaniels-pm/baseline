@@ -89,6 +89,11 @@ here in the same commit.
   `PRIVACY_POLICY_VERSION` to that date (`test_privacy_consent.py` fails if they differ). Every
   signed-in user is then asked to consent again on their next request. Update the summary bullets
   in `privacy_consent.html` to say what changed. A typo fix is not material: don't bump.
+- **The separate Apple Health consent** (`HEALTH_CONSENT_VERSION` / `HEALTH_CONSENT_TEXT`, 11/21/26)
+  follows the same rule: wording changes need the owner's approval; a material change bumps the
+  version, and the app asks again. Withdrawal must always be reachable (never gate it behind the sync
+  flag or the privacy gate) and goes through `withdraw_health_consent()` — the one place that deletes
+  readings.
 - New endpoints are gated by default. Only `CONSENT_GATE_EXEMPT` (the consent page and its exits:
   logout, delete account) passes; don't add to it without a reason.
 
@@ -322,7 +327,8 @@ here in the same commit.
   JSON automatically (`handle_http_error`, `handle_500`); web paths keep Flask's pages.
 - **Input:** `request.get_json(silent=True)`; check it's a dict and every field's type before use.
 - **Health endpoints** stack `@health_sync_required` under `@api_route` (admin flag + current privacy
-  consent; the separate Health consent joins it in step 3).
+  consent); routes that read or write Health data also stack `@health_consent_required` (the separate
+  Health consent). Withdrawal is behind neither.
 - **Batch uploads** (the Health samples precedent): a hard batch cap, per-item validation that
   reports `rejected: [{id, reason}]` and stores the rest (never clamps a value), idempotency from the
   client's own ids (UNIQUE per user → upsert, no keys table), deletes scoped to the user, and a

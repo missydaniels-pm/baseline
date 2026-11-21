@@ -226,3 +226,117 @@ windows in step 7 as described here.
   after the token and Health-sync checks, so refused requests don't spend it.
 - **Adding a kind** needs a migration that drops and re-adds `health_samples_kind_check`
   (create_all never alters an existing constraint).
+
+---
+
+## 8. Step 3 — privacy policy addition + separate Health consent (**owner-approved 11/21/26**)
+
+**Owner decisions (11/21/26):** C1 (a) — consent in the iPhone app, text served by the API, withdraw
+in the app or web Settings; C2 (a) — two columns on `users`; C3 — version bump, one re-acceptance;
+**wording below approved as drafted**, with one owner-approved correction (code review, 11/21/26):
+"never shared with anyone" → "never shared with anyone other than the service providers that host
+Baseline (see Section 4)" — the readings live in Railway's database and encrypted R2 backups, so the
+original sentence was literally false. Also approved: an init-db sweep deleting any reading whose
+owner has no Health consent on record, so "nothing is read until you consent" is guaranteed.
+
+**Not legal advice.** Written against Washington's My Health My Data Act as the project has read it
+(consent for collecting consumer health data must be a clear, separate, affirmative act that says
+what is collected, why, and how to withdraw) and Apple's HealthKit rules (no advertising use, no
+selling, a privacy policy, purpose shown to the user). The health-tech-lawyer row stays the gate
+before Baseline goes beyond the close circle (plan step 8).
+
+**What exists:** one consent per user — `privacy_consent_at` + `privacy_policy_version`, written by
+`record_privacy_consent()` at signup and on `/privacy/consent`; bumping `PRIVACY_POLICY_VERSION`
+makes every signed-in user re-accept on their next page. `health_sync_required` checks the admin
+flag + current privacy consent.
+
+### Decisions
+- **C1 — Where the Health consent is given.**
+  - **(a) In the iPhone app, before it asks Apple Health for permission** (recommended). The app
+    shows the consent text fetched from the server (`GET /api/v1/health/consent` → `{version,
+    text}`), so the wording lives in one place, and records it with `POST /api/v1/health/consent
+    {version}`. Withdraw from the app (`DELETE /api/v1/health/consent`) **or** from the website
+    (Settings shows "Apple Health: connected since …" + "Withdraw and delete my Health data",
+    only for accounts with sync on or a consent on record). *Short:* consent at the moment it
+    matters; people who never use the app never see it. *Long:* the endpoint ships now and the app
+    uses it in step 4; the Settings row is a small Jinja addition React redoes.
+  - **(b) On the website first** (Settings → "Connect Apple Health" → consent → then the phone can
+    sync). *Short:* testable now with no app. *Long:* an extra trip to the website before the phone
+    works; the consent is far from the moment of use.
+- **C2 — How consent is recorded.**
+  - **(a) Two columns on `users`** — `health_consent_at`, `health_consent_version` — plus a
+    `HEALTH_CONSENT_VERSION` constant, mirroring the privacy consent (recommended; Rule 3).
+    Withdrawal clears both and deletes every `health_samples` row in the same transaction, logs
+    "health consent withdrawn, N readings deleted" (counts only), and stops sync immediately (the
+    gate checks the version).
+  - **(b) A consent-events table** (granted / withdrawn, version, time) — a durable history. *Long:*
+    better evidence if anyone asks "when did I consent / withdraw"; nothing else in the app keeps
+    consent history yet.
+  - **Either way — a known gap:** a whole-system restore from backup would bring withdrawn readings
+    back, the same problem as deleted accounts (BACKLOG "Emergency restore must re-apply account
+    deletions", reopened 11/20/26). That row should cover consent withdrawals too.
+- **C3 — Policy version.** The Health and phone-sign-in additions are material (new data, new
+  purpose), so `PRIVACY_POLICY_VERSION` is bumped and every user re-accepts once on the website —
+  the owner's 11/21/26 choice (fold the phone-sign-in line in here; one re-acceptance, not two).
+  `privacy_consent.html`'s "what changed" bullets get the summary below.
+
+### Draft additions to `privacy.html` (wording for approval)
+- **§1 Data We Collect — new item, "Apple Health data (iPhone app, by invitation only)":** If you
+  use Baseline's iPhone app and give your separate consent, we read heart rate variability (HRV)
+  and blood glucose readings from Apple Health — each reading's value, its time, and the name of
+  the app or device that recorded it — and store them in your account. We read only the types you
+  allow in Apple Health, and nothing is read until you consent in the app.
+- **§1 — new item, "Phone sign-ins":** when you sign in on the iPhone app we keep a record of that
+  sign-in: a device name (for example, your phone's name), when it was created, and when it was
+  last used. The sign-in key itself is stored only in scrambled (hashed) form.
+- **§2 How We Use Your Data — new item:** to show you your Apple Health readings and compare them
+  with your episodes and experiments — for example, whether your HRV or glucose tends to change in
+  the hours before an episode.
+- **§3 Data We Do Not Collect — new item:** Apple Health data is never sold, never used for
+  advertising or marketing, never shared with anyone other than the service providers that host Baseline (see Section 4), and never sent to Anthropic or any other AI
+  service; it is not used by the AI check-in.
+- **Administrative Access — add:** administrators decide which accounts can use the iPhone app
+  (it is invitation-only) and can see whether Health sync is on for an account; they cannot see
+  your Health readings in that view.
+- **§6 Your Rights — new item, "Withdraw Health consent":** at any time, in the iPhone app or in
+  Settings on the website. Baseline then stops reading Apple Health and **immediately deletes
+  every Health reading it has stored** for you. You can also turn off Baseline's access in iPhone
+  Settings → Health → Data Access & Devices; that stops new readings but does not delete what
+  Baseline already stored — withdraw consent in Baseline to delete it.
+- **§7 Data Retention — add:** Apple Health readings are kept while your Health consent stands and
+  are deleted when you withdraw it or delete your account; encrypted backups expire within about
+  30 days.
+- **Summary for `privacy_consent.html` ("what changed"):** Baseline's new invitation-only iPhone app
+  can read heart rate variability and blood glucose from Apple Health, only with a separate consent
+  you give in the app; we keep a record of iPhone app sign-ins; Health data is never sold, shared,
+  used for ads or sent to AI services, and withdrawing consent deletes it.
+
+### Draft Health consent screen (shown in the app; text served by the API)
+> **Connect Apple Health to Baseline**
+>
+> Baseline will read your **heart rate variability** and **blood glucose** readings from Apple
+> Health — each reading's value, its time, and the app or device that recorded it — and store them
+> in your Baseline account so you can compare them with your episodes.
+>
+> - Used only to show you your own data and patterns.
+> - Never sold, never used for advertising, never shared with anyone other than the service
+>   providers that host Baseline, and never sent to AI
+>   services.
+> - Apple Health asks you next which readings to share; you can change that any time in iPhone
+>   Settings.
+> - You can withdraw this consent any time, here or in Baseline Settings on the web. When you do,
+>   every Health reading Baseline has stored is deleted immediately (encrypted backups expire
+>   within about 30 days).
+>
+> ☐ I agree to let Baseline collect and store my Apple Health data as described.
+> **[Agree and continue]**  ·  Not now
+
+### Build (after approval)
+`users.health_consent_at` / `health_consent_version` (C2 a), `HEALTH_CONSENT_VERSION` +
+`HEALTH_CONSENT_TEXT` (one source for the API and tests); `GET/POST/DELETE /api/v1/health/consent`;
+`health_sync_required` also requires the current Health consent (403 `health_consent_required`);
+the Settings row with withdraw (CSRF form, confirm step — it deletes data); `privacy.html` edits,
+effective date, version bump, `privacy_consent.html` summary; help.html gets a short "iPhone app
+(by invitation)" note. Tests: grant, re-grant with an old version, withdraw from API and from web
+deletes readings (counts), gate order (flag → privacy → Health consent), withdraw is user-scoped,
+the version bump re-prompts on the web.

@@ -91,7 +91,8 @@ def main():
           f'[issue] correct email (any case/spaces) + password gets a token ({r.status_code})')
     token = j['token']
     check(j['user'] == {'id': alice_id, 'email': 'alice@example.test', 'name': 'T',
-                        'health_sync_enabled': False, 'consent_current': True},
+                        'health_sync_enabled': False, 'consent_current': True,
+                        'health_consent_current': False},
           f'[issue] response carries the user ({j.get("user")})')
     check(r.headers.get('Cache-Control') == 'no-store', '[issue] token response is no-store')
     with app.app_context():
@@ -264,7 +265,7 @@ def main():
         on = db.session.get(User, alice_id).health_sync_enabled
     check(r.status_code == 302 and on, '[admin] admin turns Health sync on')
     r = c.get('/api/v1/health/sync-status', headers=bearer(token))
-    check(r.status_code == 200 and r.get_json() == {'ok': True, 'enabled': True, 'last_synced_at': None},
+    check(r.status_code == 200 and r.get_json() == {'ok': True, 'enabled': True, 'health_consent_current': False, 'last_synced_at': None},
           '[health] flag on -> 200')
     check(c.get('/api/v1/me', headers=bearer(token)).get_json()['user']['health_sync_enabled'] is True,
           '[me] reports health_sync_enabled')

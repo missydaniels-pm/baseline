@@ -69,7 +69,7 @@
   <div class="privacy-container">
     <div class="privacy-brand">Base<span>line</span></div>
     <h1>Privacy Policy</h1>
-    <p class="privacy-effective">Effective October 19, 2026</p>
+    <p class="privacy-effective">Effective November 21, 2026</p>
 
     <p>
       Baseline is a personal health tracking application. We take the privacy of your health data
@@ -83,6 +83,8 @@
       <li><strong>Health data you enter:</strong> the symptoms and other items you choose to track; episodes (scores, duration, how much they affected your day, notes, and possible triggers); protocols and interventions; experiments and their outcomes, including why an experiment was ended; and daily compliance logs.</li>
       <li><strong>AI check-in messages:</strong> if you opt in to AI logging, the text you type on the Check-in page is sent to Anthropic's API to generate structured health records. These messages are stored in your account history.</li>
       <li><strong>Usage activity:</strong> we log internal usage events — such as logins, page views, and signup timestamps — tied to your account. These records contain only event types, timestamps, and which pages you visited. They never include the content of your health data, notes, or check-in messages.</li>
+      <li><strong>Apple Health data (iPhone app, by invitation only):</strong> if you use Baseline's iPhone app and give your separate consent, we read heart rate variability (HRV) and blood glucose readings from Apple Health — each reading's value, its time, and the name of the app or device that recorded it — and store them in your account. We read only the types you allow in Apple Health, and nothing is read until you consent in the app.</li>
+      <li><strong>Phone sign-ins:</strong> when you sign in on the iPhone app we keep a record of that sign-in: a device name (for example, your phone's name), when it was created, and when it was last used. The sign-in key itself is stored only in scrambled (hashed) form.</li>
     </ul>
 
     <h2>2. How We Use Your Data</h2>
@@ -92,6 +94,7 @@
       <li>To understand how the application is used — which features are visited, how often users log in, and whether the app is meeting its users' needs. This helps us prioritize improvements. Usage activity records never contain health data content.</li>
       <li>If AI logging is enabled, to send your check-in text to Anthropic's Claude API for natural language processing. Anthropic's data usage policy applies to that interaction.</li>
       <li>To produce a doctor summary when you ask for one. It is generated on request from your own data and shown only to you; Baseline does not send it anywhere — you decide whether to print, save or share it. It is not stored by your browser or the app's offline cache.</li>
+      <li>To show you your Apple Health readings and compare them with your episodes and experiments — for example, whether your HRV or glucose tends to change in the hours before an episode.</li>
     </ul>
 
     <h3 style="font-size:1rem;font-weight:600;margin-top:18px;margin-bottom:8px;color:var(--text);">Email We Send</h3>
@@ -125,6 +128,7 @@
       <li>We do not use third-party analytics or advertising trackers. Internal usage activity (logins, page views) is collected and stored only in our own database — it is never sent to third parties.</li>
       <li>We do not sell or rent your data, and we do not share it with anyone except the service providers listed in Section 4, which process it only to run Baseline on our behalf.</li>
       <li>We do not track you across other websites or apps.</li>
+      <li>Apple Health data is never sold, never used for advertising or marketing, never shared with anyone other than the service providers that host Baseline (see Section 4), and never sent to Anthropic or any other AI service; it is not used by the AI check-in.</li>
     </ul>
 
     <h2>4. Third-Party Services</h2>
@@ -162,8 +166,10 @@
       directory that includes email address, account verification status, join date, most recent
       login time, email-preferences state, and the count of episodes a user has logged. This view
       does <em>not</em> expose episode notes, symptom scores, protocols, experiments, check-in
-      messages, or any other health-data content. Administrators cannot edit your account from
-      this view. All pages that access health data content (e.g. Anthropic check-in parsing) run
+      messages, or any other health-data content. Administrators decide which accounts can use the
+      iPhone app (it is invitation-only) and can see whether Health sync is on for an account; they
+      cannot see your Health readings in that view, and turning Health sync on or off is the only
+      change they can make there. All pages that access health data content (e.g. Anthropic check-in parsing) run
       only for the signed-in user whose data is being processed.
     </p>
 
@@ -182,6 +188,7 @@
       <li><strong>Access:</strong> view all health data stored in your account at any time through the app.</li>
       <li><strong>Delete:</strong> permanently delete your account and all associated health data from Settings. Deletion from the live service is immediate and irreversible; encrypted backups expire after about 30 days (see Data Retention).</li>
       <li><strong>Withdraw consent:</strong> disable AI logging at any time in Settings to stop sending data to Anthropic's API.</li>
+      <li><strong>Withdraw Health consent:</strong> at any time, in the iPhone app or in Settings on the website. Baseline then stops reading Apple Health and immediately deletes every Health reading it has stored for you. You can also turn off Baseline's access in iPhone <em>Settings &rarr; Health &rarr; Data Access &amp; Devices</em>; that stops new readings but does not delete what Baseline already stored — withdraw consent in Baseline to delete it.</li>
       <li><strong>Manage email:</strong> opt out of app-update emails at any time via <em>Settings &rarr; Email Preferences</em> or the <em>Unsubscribe</em> link in any such email.</li>
     </ul>
 
@@ -189,7 +196,9 @@
     <p>
       Your data is retained for as long as your account exists. When you delete your account, all
       data — episodes, protocols, experiments, compliance logs, check-in history, usage activity
-      logs, and tracking records — is immediately and permanently removed from our live database.
+      logs, tracking records, Apple Health readings and phone sign-ins — is immediately and
+      permanently removed from our live database. Apple Health readings are kept while your Health
+      consent stands and are deleted when you withdraw it.
       For disaster recovery we keep encrypted nightly backups of the database for about 30 days; a
       deleted account's data remains only in those encrypted backups until they expire, about
       30 days after deletion, and is never restored into the live service except to recover from
