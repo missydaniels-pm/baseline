@@ -67,7 +67,7 @@ def main():
     # ── 1. Importing app touches no database ──
     import app as app_module
     from app import app, PRIVACY_POLICY_VERSION
-    check(str(app.config['SQLALCHEMY_DATABASE_URI']).endswith(DB_URL.split('///')[-1]),
+    check(app.config['SQLALCHEMY_DATABASE_URI'] == normalize_database_url(DB_URL),
           '[import] app is pointed at the test database')
     if sqlite:
         check(not os.path.exists(_sqlite_path), '[import] no SQLite file was created')
